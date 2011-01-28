@@ -1,0 +1,3 @@
+completed in 34.06s
+Dropped packets (non-tcp, bad-tcp, ipv6, eth, non-eth): 0, 0, 0, 0, 0
+Kept packets: 18400

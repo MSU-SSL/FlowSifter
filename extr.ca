@@ -1,0 +1,27 @@
+X -> HTTP1[bodylength := -1; xml := 0] ;
+HTTP1 -> HTTP_START1 HEADERS1 BODY1 HTTP1 ;
+HTTP1 -> ;
+
+HTTP_START1 -> /HTTP/ TEXT CRLF ;                 # HTTP REPLY
+HTTP_START1 99 -> bounds( NONWS ) REQUESTPART1  ; # HTTP REQUEST
+
+REQUESTPART1 -> LWS bounds( URL ) LWS VERSION CRLF;
+#REQUESTPART1 -> LWS URL LWS VERSION CRLF;
+
+HEADERS1 -> HEADER1 CRLF HEADERS1 ;
+HEADERS1 -> ;
+
+HEADER1 -> /Host:/ bounds( DEFAULTVALUE ) ;
+HEADER1 -> /Content-Type:/ bounds( CT_VAL ) ;
+HEADER1 -> /Authorization:/ bounds( DEFAULTVALUE ) ;
+HEADER1 -> /Transfer-Encoding:/ bounds( DEFAULTVALUE ) ;
+HEADER1 -> /Content-[Ll]ength:/ GETSIZE[bodylength := 0] ;
+HEADER1 -> /[^:\n]*:/ DEFAULTVALUE;
+
+#CT_VAL -> /text\/xml/ [xml := 1] ;
+CT_VAL -> ;
+CT_VAL -> LWS CT_VAL ;
+CT_VAL -> NONWS CT_VAL ;
+
+BODY1 -> CRLF[bodylength := skip(bodylength)] ;
+

@@ -1,0 +1,33 @@
+----------- start print global variables ----------
+bool is_orig
+void * matchresult
+ExpectBody expect_body
+int stat_num
+normal_bytestring * header_name_field
+bool process_header
+int chunk_length
+----------- end print global variables -----------
+
+method : matchresult = match_http_method(this)
+uri : matchresult = match_http_uri(this)
+reason : expect_body = expect_reply_body(stat_num)
+vers_str : expect_body = BODY_MAYBE
+stat_str : stat_num = bytestring_to_int(this, 10)
+name : header_name_field = record_parsed_field(this)
+name : matchresult = match_http_header_name(this)
+value : process_header = http_header(this)
+value : matchresult = match_http_header_value(this)
+name : header_name_field = record_parsed_field(this)
+name : matchresult = match_http_header_name(this)
+value : process_header = http_header(this)
+value : matchresult = match_http_header_value(this)
+length_line : chunk_length = bytestring_to_int(this, 16)
+name : header_name_field = record_parsed_field(this)
+name : matchresult = match_http_header_name(this)
+value : process_header = http_header(this)
+value : matchresult = match_http_header_value(this)
+length_line : chunk_length = bytestring_to_int(this, 16)
+name : header_name_field = record_parsed_field(this)
+name : matchresult = match_http_header_name(this)
+value : process_header = http_header(this)
+value : matchresult = match_http_header_value(this)

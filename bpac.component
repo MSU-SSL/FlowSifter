@@ -1,0 +1,5 @@
+dist/lib/ocaml/bpac.cmxa
+dist/lib/ocaml/bpac.cma
+dist/lib/ocaml/bpac.cmi
+dist/lib/ocaml/bpac.a
+dist/lib/ocaml/libbpac.a

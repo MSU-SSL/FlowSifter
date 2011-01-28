@@ -1,0 +1,5 @@
+dist/lib/ocaml/upac.cmxa
+dist/lib/ocaml/upac.cma
+dist/lib/ocaml/upac.cmi
+dist/lib/ocaml/upac.a
+dist/lib/ocaml/libupac.a

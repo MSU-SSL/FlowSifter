@@ -1,0 +1,10 @@
+GET http://10.192.168.3/index.html HTTP/1.1
+Server: Purveyor Encrypt Export/v2.0.1 OpenVMS
+MIME-version: 1.0
+Content-type: text/html
+Date: Mon Mar  1 16:26:32 UTC 1999
+Last-modified: Fri, 03 Oct 1997 17:37:04 GMT
+Content-length: 10
+Content-type: html/post
+
+abcdefghij

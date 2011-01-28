@@ -1,0 +1,40 @@
+#HTTP grammar
+HTTP -> HTTP_START HEADERS BODY HTTP;
+HTTP -> ;
+
+CRLF -> /\r?\n/ ;
+LWS -> /(\r?\n)?[ \t]+/ ;
+NONWS -> /[^\x00-\x1f\x7f ]+/ ; # excludes cr, lf, tab, space
+TEXT -> /[^\x00-\x1f\x7f]+/ ;   # excludes cr, lf, tab
+
+HTTP_START -> /HTTP/ TEXT CRLF ;
+HTTP_START -> /GET/ REQUESTPART ;
+HTTP_START -> /POST/ REQUESTPART ;
+HTTP_START -> /PUT/ REQUESTPART ;
+HTTP_START -> /HEAD/ REQUESTPART ;
+HTTP_START -> /OPTIONS/ REQUESTPART ;
+HTTP_START -> /DELETE/ REQUESTPART ;
+HTTP_START -> /TRACE/ REQUESTPART ;
+HTTP_START -> /CONNECT/ REQUESTPART ;
+HTTP_START 99 -> NONWS REQUESTPART  ;
+
+REQUESTPART -> LWS URL LWS VERSION CRLF;
+
+URL -> NONWS ;
+
+VERSION -> NONWS ;
+VERSION -> ;
+
+HEADERS -> HEADER CRLF HEADERS ;
+HEADERS -> ;
+
+HEADER -> /Content-Length:/ GETSIZE[bodylength := 0] ;
+HEADER -> /[^:\r]*:/ DEFAULTVALUE;
+
+DEFAULTVALUE -> LWS DEFAULTVALUE ;
+DEFAULTVALUE -> TEXT DEFAULTVALUE ;
+DEFAULTVALUE -> ;
+
+GETSIZE -> LWS [bodylength := getnum()];
+
+BODY -> CRLF[bodylength := skip(bodylength)] ;

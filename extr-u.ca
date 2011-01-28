@@ -1,0 +1,8 @@
+HTTP1 -> HTTP_START HEADERS1 BODY HTTP1 ;
+HTTP1 -> ;
+
+HEADERS1 -> HEADER1 CRLF HEADERS1 ;
+HEADERS1 -> ;
+
+HEADER1 -> /Content-[Ll]ength:/ GETSIZE ;
+HEADER1 -> bounds( /[^:\n]*:/ ) bounds( DEFAULTVALUE ) ;
