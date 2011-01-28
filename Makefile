@@ -60,40 +60,13 @@ pcap.cmo: pcap.ml
 %.cmo: %.ml
 	ocamlfind ocamlc -package batteries -thread $(OCAMLFLAGS) -c $^
 
-#flow.cma: $(FLOW:.cmx=.cmo)
-#	ocamlmklib -o flow $(FLOW:.cmx=.cmo) $^
-#
-#flow.cmxa: $(FLOW)
-#	ocamlmklib -o flow $(FLOW:.cmx=.o) $^
+bench-bpac: bpac.cmxa $(FLOW) pcap.cmx bench.ml
+	ocamlfind ocamlopt -package batteries,camlp4.macro -syntax camlp4o -thread -annot -c bench.ml
+	ocamlfind ocamlopt -annot -package batteries,bitstring -thread -linkpkg -I . -cclib -lstdc++ -cclib -lpcre bpac.cmxa libocamlviz.cmxa $(FLOW) pcap.cmx bench.cmx -o $@
 
-#bench: bpac.cmxa upac.cmxa flow.cmxa pcap.cmx bench.cmx
-#	ocamlfind ocamlopt -annot -package batteries,bitstring -syntax camlp4o -thread -linkpkg -I . -cclib -lstdc++ -cclib -lpcre bpac.cmxa upac.cmxa libocamlviz.cmxa flow.cmxa pcap.cmx bench.cmx -o $@
-
-
-
-bench-bpac: bpac.cmxa pcap.cmx bench.ml
-	ocamlfind ocamlopt -package batteries,camlp4.macro -syntax camlp4o -thread -c bench.ml
-	ocamlfind ocamlopt -annot -package batteries,bitstring -thread -linkpkg -I . -cclib -lstdc++ -cclib -lpcre bpac.cmxa pcap.cmx bench.cmx -o $@
-
-bench-upac: upac.cmxa pcap.cmx bench.ml
-	ocamlfind ocamlopt -package batteries,camlp4.macro -syntax camlp4o -thread -c bench.ml
-	ocamlfind ocamlopt -annot -package batteries,bitstring -thread -linkpkg -I . -cclib -lstdc++ -cclib -lpcre upac.cmxa pcap.cmx bench.cmx -o $@
-
-bench-flow: $(FLOW) pcap.cmx bench.ml
-#	ocamlbuild -no-hygiene bench.native
-#	mv bench.native bench-flow
-#
-	ocamlfind ocamlopt -package batteries,camlp4.macro -syntax camlp4o -thread -c $(OCAMLFLAGS) -ppopt "-DFLOW" bench.ml
-	ocamlfind ocamlopt -annot -package batteries,bitstring -thread -linkpkg -I . $(OCAMLFLAGS) libocamlviz.cmxa $(FLOW) pcap.cmx bench.cmx -o $@
-
-bench-flow.b: $(FLOW:.cmx=.cmo) pcap.cmo bench.ml
-	ocamlfind ocamlc -package batteries,camlp4.macro -syntax camlp4o -thread -c $(OCAMLFLAGS) -ppopt "-DFLOW" bench.ml
-	ocamlfind ocamlc -annot -package batteries,bitstring -thread -linkpkg -I . $(OCAMLFLAGS) libocamlviz.cma  $(FLOW:.cmx=.cmo) pcap.cmo bench.cmo -o $@
-
-
-bench-null: pcap.cmx bench.ml
-	ocamlfind ocamlopt -package batteries,camlp4.macro -syntax camlp4o -thread -c $(OCAMLFLAGS) -ppopt "-DNULL" bench.ml
-	ocamlfind ocamlopt -annot -package batteries,bitstring -thread -linkpkg -I . $(OCAMLFLAGS) pcap.cmx bench.cmx -o $@
+bench-upac: upac.cmxa $(FLOW) pcap.cmx bench.ml
+	ocamlfind ocamlopt -package batteries,camlp4.macro -syntax camlp4o -thread -annot -c bench.ml
+	ocamlfind ocamlopt -annot -package batteries,bitstring -thread -linkpkg -I . -cclib -lstdc++ -cclib -lpcre upac.cmxa libocamlviz.cmxa $(FLOW) pcap.cmx bench.cmx -o $@
 
 clean:
 	rm -f *.a *.o *.cmi *.cmx *.cmo *.cmxa *.annot
@@ -130,7 +103,7 @@ TRACE2=traces/jub-http.pcap # 345M, mostly content
 	./$^ -5 $(TRACE2) | tee -a $@
 	echo >> $@
 
-MODES=bpac flow null upac 
+MODES=bpac upac 
 MEM_MODES=bpac flow null
 
 bench-all: $(patsubst %,bench-%,$(MODES))

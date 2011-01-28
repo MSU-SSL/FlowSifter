@@ -5,15 +5,24 @@ let buf_size = 100;;
 
 Gc.set { (Gc.get()) with Gc.minor_heap_size = 1_000_000; } ;;
 
-module Null = struct
-  let new_parser () = ()
+module type Parser = sig 
+  type t
+  val get_parser : unit -> t
+  val put_parser : t -> unit
+  val add_data : t -> string -> unit
+  val get_event_count : unit -> int
+end
+
+module Null : Parser = struct
+  type t = unit
   let get_parser () = ()
   let put_parser () = ()
   let add_data () _ = ()
   let get_event_count () = 0
 end
 
-module Flow = struct 
+module Flow : Parser = struct 
+  type t = (string -> unit) * int ref
   let extr_ca = Sys.argv.(2)
   include Prog_parse
   let get_parser = new_parser "spec.ca" extr_ca
@@ -26,7 +35,7 @@ module Flow = struct
     Printf.printf "#Bytes passed to parser: %d  Percentage of flow skipped: %2.1f\n" !Pcap.kept_bytes (100. *. float (!Ns_parse.inner_skip - !Prog_parse.skip_missed) /. float !Pcap.kept_bytes))
 end
 
-module Pac = struct
+module Pac : Parser = struct
   include Anypac
 
   let get_parser = new_parser
@@ -77,26 +86,6 @@ let get_vmsize () =
     List.nth fields 22 
   else
     "Not enough fields in " ^ stat_data
-
-let ht = Hashtbl.create 50000
-let last_time = ref (Sys.time ())
-let do_print = rep_cnt < 10
-let round_num = ref (-1)
-
-let pre_round t0 =
-  let time = Sys.time () -. t0 in
-  Gc.compact ();
-  let vmsize = get_vmsize () in
-  let ht_size = Hashtbl.fold (fun _ _ acc -> acc+1) ht 0 in
-  Hashtbl.iter (fun _ p -> put_parser p; decr conc_flows) ht;
-  Hashtbl.clear ht;
-  if do_print && !round_num = 0 then
-    printf "round time max_flows flow_count vms_size ht_size\n";
-  if do_print && !round_num > 0 then
-    printf "%d %4.2f %d %d %s %d\n%!" !round_num (time -. !last_time) !max_flows !flow_count vmsize ht_size;
-  last_time := time
-
-let get_t0 () = Sys.time () |> tap (printf "# Init time: %4.2f\n")
 
 module EBuf = struct
   type t = string * int
@@ -154,36 +143,56 @@ module SList = struct
 end
 module PB = SList
 
-let add_pkt (flow, offset, data, fin) =
-  let p = 
-    try Hashtbl.find ht flow 
-    with Not_found -> 
-      let p = get_parser ()
-      |> tap (Hashtbl.add ht flow) 
-      in
-      incr flow_count;
-      incr conc_flows;
-      if !max_flows < !conc_flows then max_flows := !conc_flows;
-      p
-  in
-  if String.length data > 0 then 
-    add_data p data;
-  if fin then begin
-    Hashtbl.remove ht flow;
-    put_parser p;
-    decr conc_flows;
-  end
 
+let get_t0 () = Sys.time () |> tap (printf "# Init time: %4.2f\n")
 
-let parse_flow fl = 
-  let p = get_parser () in
-  List.iter (add_data p) fl;
-  put_parser p
+let round_num = ref (-1)
 
-let parse_flow2 fl = 
-  let p = get_parser () in
-  add_data p fl;
-  put_parser p
+module Run (P: Parser) = struct
+
+  let ht = Hashtbl.create 50000
+  let last_time = ref (Sys.time ())
+  let do_print = rep_cnt < 10
+
+  let pre_round t0 =
+    let time = Sys.time () -. t0 in
+    Gc.compact ();
+    let vmsize = get_vmsize () in
+    let ht_size = Hashtbl.fold (fun _ _ acc -> acc+1) ht 0 in
+    Hashtbl.iter (fun _ p -> P.put_parser p; decr conc_flows) ht;
+    Hashtbl.clear ht;
+    if do_print && !round_num = 0 then
+      printf "round time max_flows flow_count vms_size ht_size\n";
+    if do_print && !round_num > 0 then
+      printf "%d %4.2f %d %d %s %d\n%!" !round_num (time -. !last_time) !max_flows !flow_count vmsize ht_size;
+    last_time := time
+
+  let act_packet (flow, offset, data, fin) =
+    let p = 
+      try Hashtbl.find ht flow 
+      with Not_found -> 
+	let p = P.get_parser ()
+	|> tap (Hashtbl.add ht flow) 
+	in
+	incr flow_count;
+	incr conc_flows;
+	if !max_flows < !conc_flows then max_flows := !conc_flows;
+	p
+    in
+    if String.length data > 0 then 
+      P.add_data p data;
+    if fin then begin
+      Hashtbl.remove ht flow;
+      P.put_parser p;
+      decr conc_flows;
+    end
+
+  let act_flow fl = 
+    let p = P.get_parser () in
+    P.add_data p fl;
+    P.put_parser p
+end
+;;
 
 let ht2 = Hashtbl.create 50000
 let assemble strs =
@@ -217,7 +226,7 @@ let assemble strs =
     ) else
       Hashtbl.replace ht2 flow (joined, isn)
   in
-  List.enum strs |> Enum.map Pcap.to_pkt_stream |> Enum.concat |> Enum.iter act_pkt;
+  Enum.map Pcap.to_pkt_stream strs |> Enum.concat |> Enum.iter act_pkt;
   let stream_len = Vect.enum !flows |> Enum.map String.length |> Enum.reduce (+) in
   printf "# %d streams re-assembled, total_len: %d\n" (Vect.length !flows) stream_len;
   let flows2 = ref Vect.empty in
@@ -226,69 +235,37 @@ let assemble strs =
   printf "# %d streams un-fin'ed, total_len: %d\n" (Vect.length !flows2) stream_len; 
   Vect.concat !flows !flows2
 
-let main_loop f xs =
+let main_loop pre_round f xs =
   let t0 = get_t0 () in
+  round_num := -1;
   while incr round_num; !round_num < rep_cnt do
     pre_round t0;
-    f xs;
+    Vect.iter f xs;
   done;
   pre_round t0
 
 let pre_parse strs = 
-  List.enum strs 
-  |> Enum.map Pcap.to_pkt_stream 
+  Enum.map Pcap.to_pkt_stream strs
   |> Enum.concat 
   |> Vect.of_enum
   
 let () = 
   if fns = [] then failwith "Not enough arguments";
-  if pre_assemble 
-  then 
-    let loop_act flows = Vect.iter parse_flow2 flows in
-    List.map read_file_as_str fns |> assemble |> main_loop loop_act
-  else 
-    let loop_act packets = Vect.iter add_pkt packets in
-    List.map read_file_as_str fns |> pre_parse |> main_loop loop_act
+  List.enum fns |> Enum.map read_file_as_str 
+  |> if pre_assemble then 
+      fun file_data ->
+	let xs = assemble file_data in
+	let module M = Run(Null) in main_loop M.pre_round M.act_flow xs;
+	let module M = Run(Flow) in main_loop M.pre_round M.act_flow xs;
+	let module M = Run(Pac)  in main_loop M.pre_round M.act_flow xs
+    else
+      fun file_data -> 
+	let xs = pre_parse file_data in
+	let module M = Run(Null) in main_loop M.pre_round M.act_packet xs;
+	let module M = Run(Flow) in main_loop M.pre_round M.act_packet xs;
+	let module M = Run(Pac)  in main_loop M.pre_round M.act_packet xs
 
-(*
-let main_one input_file =
-  let p = new_parser () in
-  let ic = open_in input_file in
-  let buf = String.create buf_size in
-  try
-      while true do
-	let len = input ic buf 0 buf_size in
-	Printf.printf "len: %d\n" len;
-	if len = 0 then raise End_of_file;
-	add_data p buf
-      done;
-      assert false;
-  with End_of_file -> Printf.printf "Events: %d\n" (get_event_count p)
 
-(*let () = main_one "http_conversation.txt" *)
-
-let main_many dir dup =
-  let fns = Sys.readdir dir |> Array.map (Filename.concat dir) in
-  let fns = List.make dup fns |> Array.concat in
-  printf "%d streams (%d dup)\n" (Array.length fns) dup;
-  let ics = Array.map open_in fns in
-  let ps = Array.init (Array.length fns) (fun _ -> new_parser ()) in
-  let buf = String.create buf_size in
-  let did_work = ref true in
-  while !did_work do
-    did_work := false;
-    Array.iter2 (fun ic p ->
-      let len = input ic buf 0 buf_size in
-      if len > 0 then did_work := true;
-      add_data p buf
-    ) ics ps;
-  done;
-  printf "Events: %a\n" 
-    (Array.print (fun oc p -> BatInt.print oc (get_event_count p))) ps;
-  ()
- 
-(*let () = main_many "flows" 100 *)
-
- *)
-
-let () = Printf.printf "#completed in %4.2fs, %d events\n" (Sys.time ()) (get_event_count ())
+let () = 
+  Printf.printf "#completed in %4.2fs, (f:%d vs p:%d) events\n" 
+    (Sys.time ()) (Flow.get_event_count ()) (Pac.get_event_count ())
