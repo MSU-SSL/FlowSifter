@@ -16,13 +16,15 @@ end
 module Make (Name : Names_t) = struct
   (* Two Unary expression a_exp and p_exp have an implicit variable bound to them *)
 
+  type parser_state = int * int ref * string
+
   (* This is an arithimatic expression *)
   type a_exp =
       Plus of a_exp * a_exp
     | Sub of a_exp * a_exp
     | Multiply of a_exp * a_exp
     | Divide of a_exp * a_exp
-    | Function of string * a_exp list
+    | Function of string * (parser_state -> int list -> int) * a_exp list
     | Constant of int  (* This is a specific number used to the define
 			  the transformation of Variable *)
     | Variable (* This reference the uniary variable of the expression *)
@@ -94,7 +96,7 @@ module Make (Name : Names_t) = struct
       |	Sub (l,r)      -> loop l; IO.nwrite oc " - "; loop r
       |	Multiply (l,r) -> loop l; IO.nwrite oc " * "; loop r
       |	Divide (l,r)   -> loop l; IO.nwrite oc " / "; loop r
-      | Function (s,es) -> fprintf oc "%s(%a)" s (List.print (print_a_exp var) ~sep:",") es
+      | Function (s,_,es) -> fprintf oc "%s(%a)" s (List.print (print_a_exp var) ~sep:",") es
       | Constant x -> Int.print oc x
       | Variable -> Name.print_var oc var
     in
@@ -103,11 +105,11 @@ module Make (Name : Names_t) = struct
 
   (* Evaluates an arthimatic expression where value is bound to the
      implicit variable *)
-  let eval_a_exp get_f exp value =
+  let eval_a_exp state exp value =
     let rec val_a_exp = function
       | Variable -> value
       | Constant const -> const
-      | Function (a, exp_list) -> (get_f a) (List.map val_a_exp exp_list)
+      | Function (_, f, exp_list) -> (f state) (List.map val_a_exp exp_list)
       | Divide (a,b) -> (val_a_exp a) / (val_a_exp b)
       | Multiply (a,b) -> (val_a_exp a) * (val_a_exp b)
       | Sub (a,b) -> (val_a_exp a) - (val_a_exp b)
@@ -132,11 +134,11 @@ module Make (Name : Names_t) = struct
     loop
 
   (* This bind value to the implicit variable and evaluates the p_exp*)
-  let eval_p_exp get_f exp value =
+  let eval_p_exp state exp value =
     let rec val_a_exp = function
       | Variable -> value
       | Constant const -> const
-      | Function (a, exp_list) -> (get_f a) (List.map val_a_exp exp_list)
+      | Function (_s, f, exp_list) -> (f state) (List.map val_a_exp exp_list)
       | Divide (a,b) -> (val_a_exp a) / (val_a_exp b)
       | Multiply (a,b) -> (val_a_exp a) * (val_a_exp b)
       | Sub (a,b) -> (val_a_exp a) - (val_a_exp b)
@@ -155,8 +157,13 @@ module Make (Name : Names_t) = struct
     in
       val_p_exp exp ;;
 
+  let rec aeq ae1 ae2 = match ae1,ae2 with
+      Function (s1,_,e1), Function (s2,_,e2) -> s1 = s2 && List.length e1 = List.length e2 && List.for_all2 aeq e1 e2
+    | _ -> false
+
+(*
   (* Creates a lookup table for a p_exp for a range of variable values, assuming functions return zero *)
-  let make_p_table exp size = Array.init size (eval_p_exp (fun _ _ -> 0) exp) ;;
+  let make_p_table exp size = Array.init size (eval_p_exp (0,ref 0,"") exp) ;;
 
   (* Makes a list of values that will be true within the given p_table *)
   let make_true_list p_table =
@@ -177,7 +184,7 @@ module Make (Name : Names_t) = struct
 	| None -> List.rev c_list
     in
     bool_interval 0 p_table.(0) []
-
+*)
 
   (* Composition functions *)
 
@@ -185,7 +192,7 @@ module Make (Name : Names_t) = struct
     let rec subst = function
       | Variable -> sub_a_expr
       | Constant _const as x -> x
-      | Function (a, exp_list) -> Function (a, List.map subst exp_list)
+      | Function (name, fn, exp_list) -> Function (name, fn, List.map subst exp_list)
       | Divide (a,b) -> Divide (subst a,subst b)
       | Multiply (a,b) ->  Multiply (subst a, subst b)
       | Sub (a,b) -> Sub (subst a,subst b)

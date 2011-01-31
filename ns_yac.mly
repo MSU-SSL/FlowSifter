@@ -13,7 +13,7 @@
 
   module VM = Ns_types.ParsedPCFG.VarMap
   let to_map l = List.fold_left (fun acc (v,e) -> VM.add v e acc) VM.empty l
-
+    
 %}
 
 %token <string> NT
@@ -39,7 +39,7 @@
 
 spec: spec = ns_rule+ EOF { spec }
 
-ns_rule:
+    ns_rule:
   | NT BRACK? INT? BECOMES term* SEMI { ($1,$2,$3,$5) }
   | error { printf "ERROR(line %d): couldn't parse rule\n%!" ($startpos.pos_lnum); exit 1 }
 
@@ -63,7 +63,7 @@ a_exp:
   | a_exp MUL a_exp { Multiply($1,$3) }
   | a_exp SUB a_exp { Sub($1,$3) }
   | a_exp DIV a_exp { Divide($1,$3) }
-  | var=NT LPAREN args=separated_list(COMMA, a_exp) RPAREN { Function(var, args) }
+  | var=NT LPAREN args=separated_list(COMMA, a_exp) RPAREN { Function(var, get_f var, args) }
   | INT { Constant $1 }
   | NT { check_var $1; Variable }
   | LPAREN a_exp RPAREN { $2 }
@@ -82,3 +82,4 @@ p_exp:
   | LPAREN p_exp RPAREN { $2 }
 
 %%
+

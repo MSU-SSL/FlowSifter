@@ -7,48 +7,44 @@ Gc.set { (Gc.get()) with Gc.minor_heap_size = 1_000_000; } ;;
 
 module type Parser = sig 
   type t
-  val get_parser : unit -> t
-  val put_parser : t -> unit
+  val id : string
+  val new_parser : unit -> t
+  val delete_parser : t -> unit
   val add_data : t -> string -> unit
   val get_event_count : unit -> int
 end
 
 module Null : Parser = struct
   type t = unit
-  let get_parser () = ()
-  let put_parser () = ()
+  let id = "null"
+  let new_parser () = ()
+  let delete_parser () = ()
   let add_data () _ = ()
   let get_event_count () = 0
 end
 
+let trace_len = ref (-1.)
+
 module Flow : Parser = struct 
-  type t = (string -> unit) * int ref
+  type t = string -> unit
+  let id = "sifter"
   let extr_ca = Sys.argv.(2)
   include Prog_parse
-  let get_parser = new_parser "spec.ca" extr_ca
-  let put_parser = delete_parser
+  let new_parser = new_parser "spec.ca" extr_ca
     
   let () = at_exit (fun () -> 
-    Printf.printf "#Bytes skip()ed: %d  Times this exceeded the current packet: %d bytes asked to skip trans-packet: %d\n" !Ns_parse.inner_skip !Ns_parse.skip_over !Prog_parse.total_skip; 
+(*    Printf.printf "#Bytes skip()ed: %d  Times this exceeded the current packet: %d bytes asked to skip trans-packet: %d\n" !Ns_parse.inner_skip !Ns_parse.skip_over !Prog_parse.total_skip; 
     Printf.printf "#Packets skipped entirely: %d Packets skipped partially: %d\n" !Prog_parse.pkt_skip !Prog_parse.pkt_partial_skip;
-    Printf.printf "#Skip missed: %d\n" !Prog_parse.skip_missed;
-    Printf.printf "#Bytes passed to parser: %d  Percentage of flow skipped: %2.1f\n" !Pcap.kept_bytes (100. *. float (!Ns_parse.inner_skip - !Prog_parse.skip_missed) /. float !Pcap.kept_bytes))
+    Printf.printf "#Skip missed: %d\n" !Prog_parse.skip_missed; *)
+    let trace_len = !trace_len /. 8. in
+    let parsed = float !Ns_parse.parsed_bytes /. float (1024 * 1024) in
+    Printf.printf "#Trace payload length: %.1f MB Bytes parsed: %.1f Percentage of flow parsed: %2.1f\n" trace_len parsed (100. *. parsed /. trace_len)
+  )
 end
 
 module Pac : Parser = struct
   include Anypac
-
-  let get_parser = new_parser
-  let put_parser = delete_parser
-(*
-  let parsers = Stack.create () 
-  
-  let get_parser () =
-  if Stack.is_empty parsers 
-  then new_parser() 
-  else Stack.pop parsers
-  let put_parser p = reset_parser p; Stack.push p parsers
-*)
+  let id = "pac"
 end
 
 let rep_cnt = int_of_string Sys.argv.(1) 
@@ -76,6 +72,8 @@ let read_file_as_str fn =
   Pervasives.close_in ic;
   printf "done\n%!";
   ret
+
+let list_avg l = List.reduce (+.) l /. (List.length l |> float)
 
 let get_vmsize () =
   let pid = Unix.getpid () in
@@ -143,74 +141,67 @@ module SList = struct
 end
 module PB = SList
 
-
-let get_t0 () = Sys.time () |> tap (printf "# Init time: %4.2f\n")
-
 let round_num = ref (-1)
 
 module Run (P: Parser) = struct
 
-  let ht = Hashtbl.create 50000
+  let ht = Hashtbl.create 1000
   let last_time = ref (Sys.time ())
-  let do_print = rep_cnt < 10
 
-  let pre_round t0 =
-    let time = Sys.time () -. t0 in
-    Gc.compact ();
-    let vmsize = get_vmsize () in
-    let ht_size = Hashtbl.fold (fun _ _ acc -> acc+1) ht 0 in
-    Hashtbl.iter (fun _ p -> P.put_parser p; decr conc_flows) ht;
+  let post_round time =
+    Hashtbl.iter (fun _ p -> P.delete_parser p; decr conc_flows) ht;
     Hashtbl.clear ht;
-    if do_print && !round_num = 0 then
-      printf "round time max_flows flow_count vms_size ht_size\n";
-    if do_print && !round_num > 0 then
-      printf "%d %4.2f %d %d %s %d\n%!" !round_num (time -. !last_time) !max_flows !flow_count vmsize ht_size;
-    last_time := time
+(*    Gc.compact (); *)
+    printf "%s\t%d\t%4.2f\n%!" P.id !round_num time
 
-  let act_packet (flow, offset, data, fin) =
+  let act_packet (flow, data, fin) =
     let p = 
       try Hashtbl.find ht flow 
+      with Not_found -> P.new_parser ()	|> tap (Hashtbl.add ht flow) 
+    in
+    P.add_data p data;
+    if fin then (Hashtbl.remove ht flow; P.delete_parser p;)
+	
+  let act_flow fl = 
+    let p = P.new_parser () in
+    P.add_data p fl;
+    P.delete_parser p
+end
+;;
+
+let parseable = 
+  let ht = Hashtbl.create 1000 in
+  fun (flow, offset, data, (syn,ack,fin)) ->
+    let exp = 
+      try Hashtbl.find ht flow 
       with Not_found -> 
-	let p = P.get_parser ()
-	|> tap (Hashtbl.add ht flow) 
-	in
 	incr flow_count;
 	incr conc_flows;
 	if !max_flows < !conc_flows then max_flows := !conc_flows;
-	p
+	(ref (offset+1)) |> tap (Hashtbl.add ht flow)
     in
-    if String.length data > 0 then 
-      P.add_data p data;
-    if fin then begin
-      Hashtbl.remove ht flow;
-      P.put_parser p;
-      decr conc_flows;
-    end
-
-  let act_flow fl = 
-    let p = P.get_parser () in
-    P.add_data p fl;
-    P.put_parser p
-end
-;;
+    let dlen = String.length data in
+    let should_parse = dlen > 0 && offset = !exp in
+    if should_parse then exp := !exp + dlen;
+    if fin then (Hashtbl.remove ht flow; decr conc_flows);
+    if should_parse then Some (flow,data,fin) else None
 
 let ht2 = Hashtbl.create 50000
 let assemble strs =
   let flows = ref Vect.empty in
-  let act_pkt ((sip,dip,sp,dp as flow), offset, data, fin) = 
-    let offset = Int32.to_int offset in
+  let act_pkt ((sip,dip,sp,dp as flow), offset, data, (syn,ack,fin)) = 
     (*    if offset < 0 || offset > 1 lsl 25 then printf "Offset: %d, skipping\n%!" offset 
 	  else *)
     let prev, isn = 
       try Hashtbl.find ht2 flow 
-      with Not_found -> PB.empty, offset in
-    let offset = offset - isn - 1 in
+      with Not_found -> PB.empty, offset + 1 in
+    let offset = offset - isn in
 (*    if snd prev > 0 && data <> ""
     then printf 
       "(%lx,%lx,%d,%d): joining %d bytes at offset %d to prev of %d bytes (close: %B)\n" 
       sip dip sp dp (String.length data) offset (snd prev) fin;  *)
     let joined, isn = (* TODO: handle pre-arrivals? *)
-      if data = "" then
+      if data = "" || offset = -1 then
 	prev, isn (* no change *)
       else if offset < 0 || offset > 160_000 + (PB.get_exp prev) then (
 	(* assume new flow *)
@@ -228,42 +219,73 @@ let assemble strs =
   in
   Enum.map Pcap.to_pkt_stream strs |> Enum.concat |> Enum.iter act_pkt;
   let stream_len = Vect.enum !flows |> Enum.map String.length |> Enum.reduce (+) in
-  printf "# %d streams re-assembled, total_len: %d\n" (Vect.length !flows) stream_len;
+(*  printf "# %d streams re-assembled, total_len: %d\n" (Vect.length !flows) stream_len; *)
   let flows2 = ref Vect.empty in
   Hashtbl.iter (fun (sip,dip,sp,dp) (j,_) -> let j = PB.get_all j in if String.length j > 0 then ((*Printf.printf "(%lx,%lx,%d,%d): %S\n" sip dip sp dp (j);*) flows2 := Vect.append j !flows2)) ht2;
-  let stream_len = Vect.enum !flows2 |> Enum.map String.length |> Enum.reduce (+) in
-  printf "# %d streams un-fin'ed, total_len: %d\n" (Vect.length !flows2) stream_len; 
+  let stream_len2 = Vect.enum !flows2 |> Enum.map String.length |> Enum.reduce (+) in
+(*  printf "# %d streams un-fin'ed, total_len: %d\n" (Vect.length !flows2) stream_len2; *)
+  trace_len := float ((stream_len + stream_len2) * 8) /. float (1024 * 1024);
   Vect.concat !flows !flows2
 
-let main_loop pre_round f xs =
-  let t0 = get_t0 () in
-  round_num := -1;
-  while incr round_num; !round_num < rep_cnt do
-    pre_round t0;
+let main_loop post_round f xs =
+  let ret = ref [] in
+  round_num := 0;
+  while incr round_num; !round_num <= rep_cnt do
+    let tpre = Sys.time () (*and vm_pre = get_vmsize ()*) in
     Vect.iter f xs;
+    let time = Sys.time () -. tpre in
+    post_round time;
+(*    printf "#vm_pre: %s\tvm_post: %s\n" vm_pre (get_vmsize ()); *)
+    ret := time :: !ret
   done;
-  pre_round t0
+  Gc.compact ();
+  List.rev !ret
+
+let mbit_size v =
+  let byte_size = 
+    Vect.fold_left (fun acc (_,x,_) -> acc + String.length x) 0 v 
+  in
+  float (byte_size * 8) /. float (1024 * 1024)
 
 let pre_parse strs = 
   Enum.map Pcap.to_pkt_stream strs
   |> Enum.concat 
+  |> Enum.filter_map parseable
   |> Vect.of_enum
-  
+  |> tap (fun xs -> trace_len := mbit_size xs)
+
+let print_header () = 
+  Gc.compact();
+  let t0 = Sys.time () in
+  printf "# Init time: %4.2f\n" t0;
+  printf "parser\tround\ttime\n%!"
+
+ 
 let () = 
   if fns = [] then failwith "Not enough arguments";
-  List.enum fns |> Enum.map read_file_as_str 
-  |> if pre_assemble then 
-      fun file_data ->
-	let xs = assemble file_data in
-	let module M = Run(Null) in main_loop M.pre_round M.act_flow xs;
-	let module M = Run(Flow) in main_loop M.pre_round M.act_flow xs;
-	let module M = Run(Pac)  in main_loop M.pre_round M.act_flow xs
+  let strs = List.enum fns |> Enum.map read_file_as_str in
+  let tpac,tflow,tnull = (
+    if pre_assemble then 
+      let xs = assemble strs in
+      print_header ();
+      (let module M = Run(Pac) in main_loop M.post_round M.act_flow xs),
+      (let module M = Run(Flow) in main_loop M.post_round M.act_flow xs),
+      (let module M = Run(Null)  in main_loop M.post_round M.act_flow xs)
     else
-      fun file_data -> 
-	let xs = pre_parse file_data in
-	let module M = Run(Null) in main_loop M.pre_round M.act_packet xs;
-	let module M = Run(Flow) in main_loop M.pre_round M.act_packet xs;
-	let module M = Run(Pac)  in main_loop M.pre_round M.act_packet xs
+      let xs = pre_parse strs in
+      print_header ();
+      (let module M = Run(Pac) in main_loop M.post_round M.act_packet xs),
+      (let module M = Run(Flow) in main_loop M.post_round M.act_packet xs),
+      (let module M = Run(Null)  in main_loop M.post_round M.act_packet xs)
+  )
+  in
+
+  let rates ts= List.map2 (-.) ts tnull |> List.map (fun t -> !trace_len /. t) in
+  let fr,pr = rates tflow, rates tpac in
+  printf "#Flow rates: %a\n" (List.print Float.print) (rates tflow);
+  printf "# Pac rates: %a\n" (List.print Float.print) (rates tpac);
+  printf "#speed ratio: %4.2f\n" (list_avg fr /. list_avg pr);
+  ()
 
 
 let () = 

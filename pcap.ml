@@ -23,10 +23,12 @@ let dropped_packets_v6 = ref 0
 let dropped_packets_eth = ref 0
 let dropped_packets_non_eth = ref 0
 
+(*
 let () = at_exit (fun () ->  
   Printf.printf "#Dropped packets (non-tcp, bad-tcp, ipv6, eth, non-eth): %d, %d, %d, %d, %d\n" !dropped_packets_non_tcp !dropped_packets_bad_tcp !dropped_packets_v6 !dropped_packets_eth !dropped_packets_non_eth;
   Printf.printf "#Kept packets: %d of %d bytes\n" !kept_packets !kept_bytes
 )
+*)
 
 let rec main () =
   if Array.length Sys.argv <= 1 then failwith "libpcap dumpfile";
@@ -38,7 +40,7 @@ let rec main () =
   |> BatEnum.filter_map (decode_packet network)
   |> BatEnum.iter print_packet
       
-and print_packet (_,_,p,fin) = printf "%d:%B " (String.length p) fin
+and print_packet (_,_,p,(_,_,fin)) = printf "%d:%B " (String.length p) fin
 (* Determine the endianness (at runtime) from the magic number. *)
 and endian_of = function
   | 0xa1b2c3d4_l -> Bitstring.BigEndian
@@ -111,7 +113,7 @@ and decode_ip packet =
 	5 : 4; tos : 8; length : 16;
 	identification : 16; flags : 3; fragoffset : 13;
 	ttl : 8; protocol : 8; checksum : 16; sip : 32; dip : 32;
-	contents : -1 : bitstring } ->
+	contents : (length * 8 - 160) : bitstring } ->
 (*      printf "IP len: %d " length; *)
       if protocol = 6 then  (* TCP decode *)
 	decode_tcp sip dip contents
@@ -136,8 +138,8 @@ and decode_tcp sip dip packet =
 (*	printf "TCP seqno: %ld\n" seqno; *)
 	incr kept_packets;
 	kept_bytes := !kept_bytes + (Bitstring.bitstring_length payload lsr 3);
-	Some ((sip,dip,s_port,d_port), seqno, 
-	      Bitstring.string_of_bitstring payload, fin)
+	Some ((sip,dip,s_port,d_port), Int32.to_int seqno, 
+	      Bitstring.string_of_bitstring payload, (syn,ack,fin))
     | { _ } -> incr dropped_packets_bad_tcp; None
 and decode_packet = function
   | 101l -> decode_ip

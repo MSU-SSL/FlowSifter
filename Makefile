@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 CPPFLAGS =  -O2
-OCAMLFLAGS = -annot
+OCAMLFLAGS = -annot -unsafe
 
 .PHONY: clean hwrun %.threadlog bench-all
 

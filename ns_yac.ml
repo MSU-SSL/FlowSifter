@@ -103,7 +103,7 @@ and _menhir_state =
 
   module VM = Ns_types.ParsedPCFG.VarMap
   let to_map l = List.fold_left (fun acc (v,e) -> VM.add v e acc) VM.empty l
-
+    
 
 # 109 "ns_yac.ml"
 let _eRR =
@@ -1086,7 +1086,7 @@ and _menhir_goto_loption_separated_nonempty_list_COMMA_a_exp__ : _menhir_env -> 
         in
         
 # 66 "ns_yac.mly"
-                                                           ( Function(var, args) )
+                                                           ( Function(var, get_f var, args) )
 # 1091 "ns_yac.ml"
          in
         _menhir_goto_a_exp _menhir_env _menhir_stack _menhir_s _v) : 'freshtv350)) : 'freshtv352)
@@ -2620,6 +2620,7 @@ and spec : (Lexing.lexbuf -> token) -> Lexing.lexbuf -> (
         assert (Pervasives.(>=) _menhir_env._menhir_shifted 0);
         _menhir_env._menhir_shifted <- (-1);
         _menhir_errorcase _menhir_env (Obj.magic _menhir_stack) MenhirState69) : 'freshtv2)) : 'freshtv4))
+
 
 
 

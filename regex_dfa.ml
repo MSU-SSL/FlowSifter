@@ -290,7 +290,7 @@ let is_same ?(eq = (=)) q1 q2 =
 
 (* let pass = Value.observe_int_ref "dist pass" (ref 0) *)
 
-let dist_test dfa =
+let dist_test ~dec_comp dfa =
   let n = Array.length dfa.qs in
 
 (* POSSIBLE OPTIMIZATION FOR DEPENDENCIES
@@ -310,7 +310,7 @@ let dist_test dfa =
   for i = 0 to n-1 do
     for j = i+1 to n-1 do
       (* states with different finalness are unequal *)
-      if dfa.qs.(i).dec <> dfa.qs.(j).dec then set_not_eq i j
+      if not (dec_comp dfa.qs.(i).dec dfa.qs.(j).dec) then set_not_eq i j
     done
   done;
   (*  print_bmatrix n m;   *)
@@ -331,7 +331,7 @@ let dist_test dfa =
   done;
   m
 
-let dist_test x = log_f "Dist Test" dist_test x
+(* let dist_test x = log_f "Dist Test" dist_test x *)
 
 let print_diffs rep dfa = 
   let print_d i q = 
@@ -350,9 +350,9 @@ let print_diffs rep dfa =
   in
   Array.iteri print_d dfa.qs
   
-let minimize dfa =
+let minimize ?(dec_comp=Pervasives.(=)) dfa =
   let dfa = remove_unreachable dfa in
-  let m = dist_test dfa in (* returns a matrix of state equivalences *)
+  let m = dist_test ~dec_comp dfa in (* returns a matrix of state equivalences *)
   (* first state equal to each state *)
   let n = Array.length dfa.qs in
   let rep i = Enum.find (fun j -> BitSet.is_set m (i*n+j)) (0--^n) in
