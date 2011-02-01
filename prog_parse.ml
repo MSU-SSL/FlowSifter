@@ -16,31 +16,24 @@ let () = at_exit (fun () -> Printf.printf "#Parsers generated: %d  Parse failure
 let gen_parser p e = 
   let proto = parse_file_as_spec p 
   and extr = parse_file_as_extraction e in
-Printf.printf "A%!";
   let ca0 = merge_cas ~proto ~extr |> regularize in
-Printf.printf "B%!";
   let ca,var_count = destring extr.start ca0 in
-Printf.printf "C%!";
   let ca_cache = ref Map.empty in
 (*  fill_cache ca_cache ca; *)
   let compile_ca = compile_ca ~ca_cache in
-Printf.printf "C2%!";
   let ca = optimize ca compile_ca in
-Printf.printf "D%!";
   let dfa0 = ca.(0) (Array.make var_count 0) (0, ref 0, "") in
-Printf.printf "E%!";
   fun () -> (* allow creating many parsers *)
     incr parsers;
     let vars = Array.make var_count 0 in    
-    let q = ref (dfa0, dfa0.Regex_dfa.q0)
+    let q = ref (init_state dfa0 0)
     and skip_left = ref 0
     and base_pos = ref 0 in
     let rec parse str =
       let len = String.length str in
       if !skip_left = 0 then 
 	try 
-	  let q_new, skip = simulate_ca_string ~ca ~vars base_pos str !q in
-	  q := q_new; skip_left := skip;
+	  q := simulate_ca_string ~ca ~vars skip_left base_pos str !q;
 	  base_pos := !base_pos + len;
 	with Ns_parse.Parse_failure -> 
 	  incr parse_fail;

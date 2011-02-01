@@ -159,3 +159,4 @@ timelog-all: $(patsubst %, %.20-timelog, $(MODES)) $(patsubst %, %.50-timelog, $
 flib/flow.o: flib/flow.c
 	gcc -static -o flib/flow.o -c flib/flow.c 
 
+include mldeps

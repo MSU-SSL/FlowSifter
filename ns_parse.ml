@@ -219,20 +219,20 @@ let dec_rules comp =
     | Some r1, Some r2 -> if comp r1 r2 = -1 then Some r1 else Some r2 in
   (None, (fun i -> Some i),lowest_precedence: 'a opt_rules)
 
-let comp_dec (p1,_,_) (p2,_,_) = Int.compare p1 p2
+type ca_data = (int * a_exp) list * int option
+type 'a pri_dec = {pri: int; item: 'a} 
 
-type ca_var_state = (string,int) Map.t
-type dfa_dec = (int * (int * a_exp) list * int option)
+let comp_dec d1 d2 = Int.compare d1.pri d2.pri
 
 let dec_eq a b = match a,b with
-    Some (p1,ps1,n1), Some (p2,ps2,n2) ->
+    Some {pri=p1; item=(ps1,n1)}, Some {pri=p2; item=(ps2,n2)} ->
       p1 = p2 && n1 = n2 && List.length ps1 = List.length ps2 && List.for_all2 (fun (v1,e1) (v2,e2) -> v1 = v2 && aeq e1 e2) ps1 ps2
 | _ -> false
 
-let print_dfa_dec oc (p,al,q) =
+let print_dfa_dec oc d =
   let so = Option.print String.print in
   Printf.fprintf oc "{%d,%a,%a}%!" 
-    p (List.print print_action) al so q
+    d.pri (List.print print_action) (fst d.item) so (snd d.item)
 
 
 (*let comp_p = Point.create "comp_ca"
@@ -240,7 +240,7 @@ let comp_t = Time.create "comp_ca" *)
 
 let make_rx_pair r =
   let to_pair rx = 
-    (r.prio,r.act,r.nt:dfa_dec), 
+    ({pri=r.prio; item=(r.act,r.nt)} : ca_data pri_dec), 
     (rx |> String.lchop |> String.rchop) (* remove /rx/'s slashes *)
   in
   Option.map to_pair r.rx 
@@ -283,33 +283,61 @@ let parsed_bytes = ref 0
 
 exception Parse_failure
 
-let rec simulate_ca_string ~ca ~vars base_pos (flow_data:string) pst = 
+type 'a resume_ret = 
+  | End_of_input of 
+      ('a, int array, ca_data pri_dec option) Regex_dfa.state * int 
+    * ca_data * int
+  | Dec of ca_data * int
+
+let rec resume_arr qs input pri item ri q i =
+  if i > String.length input then
+    End_of_input (q,pri,item,ri)
+  else
+    let q_next_id = q.Regex_dfa.map.(Char.code input.[i]) in
+    if q_next_id = -1 then 
+      Dec (item,ri)
+    else
+      let q = qs.(q_next_id) in
+      let next_i = i+1 in
+      match q.Regex_dfa.dec with
+	| Some d when d.pri <= pri ->
+	  resume_arr qs input d.pri d.item next_i q next_i
+	| _ -> 
+	  resume_arr qs input pri item ri q next_i
+
+let init_state dfa pos =
+  let q0 = dfa.Regex_dfa.q0 in
+  match q0.Regex_dfa.dec with 
+      Some {pri=p; item=i} -> (dfa.Regex_dfa.qs, q0, p, i, pos)
+    | None -> (dfa.Regex_dfa.qs, q0, max_int, ([], None), pos)
+
+let rec simulate_ca_string ~ca ~vars skip_left base_pos flow_data
+    (qs,q, pri, item, ri) = 
   let flow_len = String.length flow_data in
   let pos = ref 0 in
-  let rec run_d2fa (dfa0,q as pst) =
-    if !pos > flow_len then (pst, !pos - flow_len)
-    else
-      let pri, ret = 
-	match q.Regex_dfa.dec with 
-	    Some (pri,act,caq) -> pri, (act,caq,!pos)
-	  | None -> max_int, ([],None,!pos) in
-      let dfa_result = Regex_dfa.resume_arr dfa0 flow_data pri ret q !pos in
+  let ca_state = (!base_pos, pos, flow_data) in
+  let rec run_d2fa qs q pri item ri =
+    if !pos > flow_len then (
+      skip_left := !pos - flow_len; 
+      (qs, q, pri, item, ri)
+    ) else
+      let dfa_result = resume_arr qs flow_data pri item ri q !pos in
       match dfa_result with
-	| `Dec (acts,Some q_next,pos_new) -> 
+	| Dec ((acts,Some q_next),pos_new) -> 
 	  parsed_bytes := !parsed_bytes + (pos_new - !pos);
 	  pos := pos_new;
-	  if acts <> [] then 
-	    List.iter (run_act (!base_pos, pos, flow_data) vars) acts;
-	  let dfa = ca.(q_next) vars (!base_pos, pos, flow_data) in
-	  (*	eprintf "\nCT%d At position %d, transitioning to state %s, vars:%a.\n%!"
-		!ca_trans !pos q_next print_vars !vars; *)
-	  run_d2fa (dfa, dfa.Regex_dfa.q0)
-	| `Dec (_acts, None, _pos_new) -> raise Parse_failure
-	| `End_of_input q_j -> (dfa0,q_j),0
+	  if acts <> [] then List.iter (run_act ca_state vars) acts;
+	  let dfa = ca.(q_next) vars ca_state in
+	  (match dfa.Regex_dfa.q0.Regex_dfa.dec with
+	    | None -> 
+	      run_d2fa dfa.Regex_dfa.qs dfa.Regex_dfa.q0 max_int ([],None) !pos
+	    | Some {pri=p; item=i} ->
+	      run_d2fa dfa.Regex_dfa.qs dfa.Regex_dfa.q0 p i !pos)
+	| Dec ((_acts, None), _pos_new) -> raise Parse_failure
+	| End_of_input (q_final, pri, item, ri) -> 
+	  (qs,q_final,pri,item,ri)
   in
-  Point.observe sim_p; Time.start sim_t;
-  finally (fun () -> Time.stop sim_t) 
-    run_d2fa pst
+  run_d2fa qs q pri item ri
 
 exception Unknown_nonterminal of string
 let verify_grammar g = 
