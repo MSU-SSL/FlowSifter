@@ -48,8 +48,6 @@ module Pac : Parser = struct
 end
 
 let rep_cnt = int_of_string Sys.argv.(1) 
-let pre_assemble = rep_cnt < 0
-let rep_cnt = abs rep_cnt
 (* argv.2 is only used in flowsifter *)
 let fns = Sys.argv |> Array.to_list |> List.drop 3 
 
@@ -73,7 +71,7 @@ let read_file_as_str fn =
   printf "done\n%!";
   ret
 
-let list_avg l = List.reduce (+.) l /. (List.length l |> float)
+let list_avg l = if l = [] then failwith "list_avg: empty list" else List.reduce (+.) l /. (List.length l |> float) 
 
 let get_vmsize () =
   let pid = Unix.getpid () in
@@ -141,18 +139,20 @@ module SList = struct
 end
 module PB = SList
 
-let round_num = ref (-1)
-
 module Run (P: Parser) = struct
 
   let ht = Hashtbl.create 1000
   let last_time = ref (Sys.time ())
 
-  let post_round time =
+  let post_round round time =
     Hashtbl.iter (fun _ p -> P.delete_parser p; decr conc_flows) ht;
+    if (!conc_flows <> 0) then (
+      printf "#ERR: conc_flows = %d after cleanup\n" !conc_flows;
+      conc_flows := 0
+    );
     Hashtbl.clear ht;
 (*    Gc.compact (); *)
-    printf "%s\t%d\t%4.2f\n%!" P.id !round_num time
+    printf "%s\t%d\t%4.2f\n%!" P.id round time
 
   let act_packet (flow, data, fin) =
     let p = 
@@ -225,17 +225,23 @@ let assemble strs =
   let stream_len2 = Vect.enum !flows2 |> Enum.map String.length |> Enum.reduce (+) in
 (*  printf "# %d streams un-fin'ed, total_len: %d\n" (Vect.length !flows2) stream_len2; *)
   trace_len := float ((stream_len + stream_len2) * 8) /. float (1024 * 1024);
+  printf "#Flows pre-assembled (len: %.2f mbit)\n" !trace_len;
   Vect.concat !flows !flows2
 
-let main_loop post_round f xs =
+let main_loop rep_cnt post_round f xs =
   let ret = ref [] in
-  round_num := 0;
+  let round_num = ref 0 in
   while incr round_num; !round_num <= rep_cnt do
-    let tpre = Sys.time () (*and vm_pre = get_vmsize ()*) in
+    let vm_pre = get_vmsize () in
+    let tpre = Sys.time () in
     Vect.iter f xs;
     let time = Sys.time () -. tpre in
-    post_round time;
-(*    printf "#vm_pre: %s\tvm_post: %s\n" vm_pre (get_vmsize ()); *)
+    let vm_dirty = get_vmsize () and flows_cleaned = !conc_flows in
+    post_round !round_num time;
+    let vm_post = get_vmsize () in
+    printf "#vm_pre: %s\tvm_post: %s\n" vm_pre vm_post;
+    if flows_cleaned > 0 then 
+      printf "#vm_dirty: %s\tconc_flows: %d\tper_flow: %d\n" vm_dirty flows_cleaned ((int_of_string vm_dirty - int_of_string vm_post) / flows_cleaned);
     ret := time :: !ret
   done;
   Gc.compact ();
@@ -252,7 +258,7 @@ let pre_parse strs =
   |> Enum.concat 
   |> Enum.filter_map parseable
   |> Vect.of_enum
-  |> tap (fun xs -> trace_len := mbit_size xs)
+  |> tap (fun xs -> trace_len := mbit_size xs; printf "#Flows pre-filtered for parsability (len: %.2f mbit)\n" !trace_len)
 
 let print_header () = 
   Gc.compact();
@@ -263,20 +269,22 @@ let print_header () =
  
 let () = 
   if fns = [] then failwith "Not enough arguments";
+  let pre_assemble = rep_cnt < 0 in
+  let reps = abs rep_cnt in
   let strs = List.enum fns |> Enum.map read_file_as_str in
   let tpac,tflow,tnull = (
     if pre_assemble then 
       let xs = assemble strs in
       print_header ();
-      (let module M = Run(Pac) in main_loop M.post_round M.act_flow xs),
-      (let module M = Run(Flow) in main_loop M.post_round M.act_flow xs),
-      (let module M = Run(Null)  in main_loop M.post_round M.act_flow xs)
+      (let module M = Run(Pac) in main_loop reps M.post_round M.act_flow xs),
+      (let module M = Run(Flow) in main_loop reps M.post_round M.act_flow xs),
+      (let module M = Run(Null)  in main_loop reps M.post_round M.act_flow xs)
     else
       let xs = pre_parse strs in
       print_header ();
-      (let module M = Run(Pac) in main_loop M.post_round M.act_packet xs),
-      (let module M = Run(Flow) in main_loop M.post_round M.act_packet xs),
-      (let module M = Run(Null)  in main_loop M.post_round M.act_packet xs)
+      (let module M = Run(Pac) in main_loop reps M.post_round M.act_packet xs),
+      (let module M = Run(Flow) in main_loop reps M.post_round M.act_packet xs),
+      (let module M = Run(Null)  in main_loop reps M.post_round M.act_packet xs)
   )
   in
 

@@ -29,9 +29,19 @@ exception Invalid_arg_count of string
 let wrong_args name = raise (Invalid_arg_count name)
 
 let matches = ref 0
+let saves = Hashtbl.create 100
+
+let () = at_exit (fun () -> Hashtbl.iter (fun k v -> Printf.printf "%d %s\n" !v k) saves)
 
 let ca_functions = ref 
   [ "pos", (fun (base_pos, sim_pos, flow_data) -> function [] -> base_pos + !sim_pos | _ -> wrong_args "pos");
+    "save", (fun (base_pos, sim_pos, flow_data) -> function | [start_pos; end_pos] -> 
+      let str = try String.sub flow_data (start_pos+1) (end_pos - start_pos) |> String.trim |> String.lowercase with _ -> "??" in
+      (try Hashtbl.find saves str |> incr with Not_found -> Hashtbl.add saves str (ref 1));
+      incr matches;
+      0
+      | _ -> wrong_args "save"
+    );
     "bounds" ,
     (fun (base_pos, sim_pos, flow_data) -> function 
       | [start_pos; end_pos] when start_pos <= end_pos -> 
