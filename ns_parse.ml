@@ -241,7 +241,8 @@ let comp_t = Time.create "comp_ca" *)
 let make_rx_pair r =
   let to_pair rx = 
     ({pri=r.prio; item=(r.act,r.nt)} : ca_data pri_dec), 
-    (rx |> String.lchop |> String.rchop) (* remove /rx/'s slashes *)
+    (rx |> String.lchop |> String.rchop), (* remove /rx/'s slashes *)
+    [`Extended]
   in
   Option.map to_pair r.rx 
     

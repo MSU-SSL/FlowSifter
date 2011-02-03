@@ -99,12 +99,14 @@ let catch_range chars =
     | '}':: chars -> `Repeat (v0,Some v0), chars
     | _ -> failwith "Expecting } or , for range"
 
-let stream_tokenize str = 
+let stream_tokenize ~extended str = 
   let rec make_token = function 
     | [] -> None
     | '\\'::_ as l -> catch_escape l
     | '['::t -> Some ( catch_class t )
-    | '(' :: '?' :: ':' :: t | '('::t  
+    | '(' :: 'i' :: ':' :: t -> Some ( `Substart_i, t )
+    | '(' :: '?' :: ':' :: t 
+    | '(' :: t  
 	-> Some ( `Substart, t )
     | ')'::t -> Some ( `Substop, t )
     | '^'::t -> Some ( `Caret, t )
@@ -209,8 +211,11 @@ let iset_of_string str =
 
 (**  Takes a ascii str and returns a ISet.t  t
      assume that the regex is not anchored unless explicitly anchored *)
-let regex_of_ascii_str ~dec str = 
-  let stream = stream_tokenize str in
+let regex_of_ascii_str ~dec str modifiers = 
+  let ignore_case = ref (List.mem `Ignore_case modifiers) in
+  let extended = List.mem `Extended modifiers in
+  (* TODO: add more options here *)
+  let stream = stream_tokenize ~extended str in
   let escape_char_set = function (* TODO: implement more \. escapes *)
       'n' -> iset_of_string "\n"
     | 'r' -> iset_of_string "\r"
@@ -238,11 +243,25 @@ let regex_of_ascii_str ~dec str =
     match Enum.get stream with
     | None -> Concat (List.rev acc)
     | Some (`Char a) ->
-	aux ((Value (ISet.singleton a))::acc)
+      let s = 
+	if !ignore_case then 
+	  let c = Char.chr a |> Char.lowercase in
+	  let c_up = Char.uppercase c in
+	  ISet.singleton (Char.code c) |> ISet.add (Char.code c_up)
+	else
+	  ISet.singleton a
+      in
+      aux ((Value s)::acc)
     | Some (`Escape a) -> 
 	aux (Value (value_of_escape a)::acc)
     | Some (`Class a) -> 
 	aux ((regex_of_class a)::acc) 
+    | Some (`Substart_i) -> 
+      let outer = !ignore_case in
+      ignore_case := true;
+      let inner_rx = aux [] in
+      ignore_case := outer;
+      aux (inner_rx :: acc)
     | Some (`Substart) -> 
 	aux ((aux [] )::acc) 
     | Some (`Substop) ->  Concat (List.rev acc) 
@@ -295,16 +314,15 @@ let regex_match_iset rx str =
     | Some _ -> false (* partial match *)
     | None -> false
 
-let line_to_regex ?(allow_comments=false) ~anchor (dec,line) =
-  if allow_comments && (String.length line < 1 || line.[0] = '#') then None else begin
-(*    eprintf "#Regex:  %s\n" line; *)
-    let l = if anchor then "^" ^ line else line in
-    Some (regex_of_ascii_str ~dec l)
-  end
-
 let join_regex e_rx = Union (List.of_enum e_rx)
 
-let rx_of_dec_strings ?(anchor=false) ?allow_comments ?(max_regs=max_int) rxs =
-   Enum.filter_map (line_to_regex ~anchor ?allow_comments) rxs
-     |> Enum.take max_regs
-     |> join_regex
+let mod_if b f x = if b then f x else x
+
+let rx_of_dec_strings ?(anchor=false) ?(allow_comments=false) ?(max_regs=max_int) rxs =
+  rxs 
+  |> mod_if allow_comments 
+      (Enum.filter (fun (d,r,o) -> String.length r = 0 || r.[0] <> '#'))
+  |> Enum.take max_regs
+  |> mod_if anchor (Enum.map (fun (d,r,o) -> (d,"^" ^ r,o)))
+  |> Enum.map (fun (dec, rx, modifiers) -> regex_of_ascii_str ~dec rx modifiers)
+  |> join_regex
