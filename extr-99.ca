@@ -8,13 +8,23 @@ HEADERS1 -> CRLF [bodylength := skip(bodylength)] ;
 
 HEADER1 99 -> 
 	/[^:\n]*:/ 
-	[cn := save (cn, pos() - 1 ); cv := pos()] 
+	[cn := bounds (cn, pos() - 1 ); cv := pos()] 
 	DEFAULTVALUE1 ;
 HEADER1 -> 
 	/Content-[Ll]ength:/ 
 	[cn := save (cn, pos() - 1 ); cv := pos()]
 	GETSIZE1 ;
 
+HEADER1 -> /(?i:user-agent:)/ [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
+HEADER1 -> /(?i:host:)/ [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
+HEADER1 -> /(?i:accept:)/ [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
+HEADER1 -> /(?i:content-type:)/ [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
+HEADER1 -> /(?i:server:)/ [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
+HEADER1 -> /(?i:date:)/ [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
+HEADER1 -> /(?i:content-length:)/ [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
+HEADER1 -> /(?i:referer:)/ [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
+HEADER1 -> /(?i:last-modified:)/ [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
+HEADER1 -> /(?i:accept-ranges:)/ [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
 
 
 
@@ -25,159 +35,3 @@ DEFAULTVALUE1 -> TEXT LWS DEFAULTVALUE1 ;
 GETSIZE1 -> LWS [bodylength := getnum(); cv := bounds(cv, pos() - 1)];
 
 ###
-HEADER1 -> 
-/Accept:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Accept-Charset:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Accept-Language:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Accept-ranges:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Allow:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Allow-ranges:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/cache-control:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Connection:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Content:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Content-Language:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Content-Location:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Content-transfer-encoding:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Content-Type:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Date:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Date-created:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Etag:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Expires:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Generator:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Host:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Last-modified:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Last Modified:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Last-Modified:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Link:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Location:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Message-ID:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Mime-version:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/PICS-Label:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/pragma:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Referer:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Refresh:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/RequestStartSec:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/RequestStartUsec:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Security-Scheme:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Server:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Set-cookie:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Status:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Travel agents:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/UA-color:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/UA-CPU:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/UA-OS:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/UA-pixels:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/URI:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/User-Agent:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Vary:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/Version:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/WWW-authenticate:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/X-CGI-prog:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/X-DATE:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/X-LRECL:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/X-Pad:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/X-RECFM:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
-HEADER1 -> 
-/x-Remote-Address:/
- [cn := save (cn, pos() - 1 ); cv := pos()] DEFAULTVALUE1 ;
