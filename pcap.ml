@@ -1,4 +1,4 @@
-open BatStd
+open Batteries
 open Printf
 
 (* Print out packets from a tcpdump / libpcap / wireshark capture file.
@@ -154,4 +154,146 @@ let to_pkt_stream str =
   (* Read the packets and Enum them out. *)
   BatEnum.from_loop bits (libpcap_packet endian file_header)
   |> BatEnum.filter_map (decode_packet network)
+
+(*** IMPLEMENTATIONS OF reassembly buffers ***)
+
+module EBuf = struct
+  type t = string * int
+  let add_data (pbuf, plen) data offset = 
+    let blen = String.length pbuf in
+    let dlen = String.length data in
+    let have_len = ref blen in
+    let need_len = offset + dlen in
+    while !have_len < need_len do
+      have_len := 2 * !have_len;
+    done;
+    let pbuf = 
+      if !have_len <> blen then
+	let new_buf = String.create !have_len in
+	String.blit pbuf 0 new_buf 0 blen;
+	new_buf
+      else
+	pbuf
+    in
+    String.blit data 0 pbuf offset dlen;
+    (pbuf, plen + dlen)
+  let get_data (pbuf, plen) = String.head pbuf plen
+  let get_exp (_pbuf,plen) = plen
+end
+
+module SList = struct
+  type t = {queue: (int * string) list}
+  let rec add_pkt_aux offset data = function 
+    | (off,_)::_ as l when offset < off -> (offset,data) :: l
+    | e::t (* offset >= off *) -> e :: add_pkt_aux offset data t
+    | [] -> [(offset,data)]
+  let add_pkt t data offset = {queue = add_pkt_aux offset data t.queue}
+  let rec get_data_aux str = function
+    | [] -> ()
+    | (o,d)::t -> String.blit d 0 str o (String.length d); get_data_aux str t
+  let get_all t = 
+    if t.queue = [] then "" else
+      let len = List.map (fun (on,pn) -> on + String.length pn) t.queue |> List.max in
+      let str = (String.create len) in
+      get_data_aux str t.queue;
+      str
+  let get_exp = function
+    | {queue=[]} -> 1
+    | {queue=(on,pn)::_} -> on + String.length pn
+  let rec count_ready_aux acc = function
+    | [_] -> acc + 1
+    | (o,p)::((a,_)::_ as tl) when a = o + String.length p -> count_ready_aux (acc+1) tl
+    | _ -> acc
+  let count_ready {queue=q} = count_ready_aux 0 q
+  let get_one = function
+    | {queue=[]} -> raise Not_found
+    | {queue=h::t} -> h, {queue=t}
+  let singleton d = {queue=[(0,d)]}
+  let empty = {queue=[]}
+end
+module PB = SList
+
+
+
+let max_flows = ref 0
+let conc_flows = ref 0
+let flow_count = ref 0
+
+(*** FLOW REASSEMBLY ***)
+let parseable = 
+  let ht = Hashtbl.create 1000 in
+  fun (flow, offset, data, (_syn,_ack,fin)) ->
+    let exp = 
+      try Hashtbl.find ht flow 
+      with Not_found -> 
+	incr flow_count;
+	incr conc_flows;
+	if !max_flows < !conc_flows then max_flows := !conc_flows;
+	(ref (offset+1)) |> tap (Hashtbl.add ht flow)
+    in
+    let dlen = String.length data in
+    let should_parse = (dlen > 0 && offset = !exp) || fin in
+    if should_parse then exp := !exp + dlen;
+    if fin then (Hashtbl.remove ht flow; decr conc_flows);
+    if should_parse then Some (flow,data,fin) else None
+
+let ht2 = Hashtbl.create 50000
+let assemble strs =
+  let flows = ref Vect.empty in
+  let act_pkt ((_sip,_dip,_sp,_dp as flow), offset, data, (_syn,_ack,fin)) = 
+    (*    if offset < 0 || offset > 1 lsl 25 then printf "Offset: %d, skipping\n%!" offset 
+	  else *)
+    let prev, isn = 
+      try Hashtbl.find ht2 flow 
+      with Not_found -> PB.empty, offset + 1 in
+    let offset = offset - isn in
+(*    if snd prev > 0 && data <> ""
+    then printf 
+      "(%lx,%lx,%d,%d): joining %d bytes at offset %d to prev of %d bytes (close: %B)\n" 
+      sip dip sp dp (String.length data) offset (snd prev) fin;  *)
+    let joined, isn = (* TODO: handle pre-arrivals? *)
+      if data = "" || offset = -1 then
+	prev, isn (* no change *)
+      else if offset < 0 || offset > 160_000 + (PB.get_exp prev) then (
+	(* assume new flow *)
+(*	printf "offset: %d expected: %d, assuming missing fin\n%!" offset (snd prev); *)
+	flows := Vect.append (PB.get_all prev) !flows; 
+	(PB.singleton data), offset
+      ) else 
+	PB.add_pkt prev data offset, isn
+    in
+    if fin then (
+      flows := Vect.append (PB.get_all joined) !flows;
+      Hashtbl.remove ht2 flow
+    ) else
+      Hashtbl.replace ht2 flow (joined, isn)
+  in
+  Enum.map to_pkt_stream strs |> Enum.concat |> Enum.iter act_pkt;
+  let stream_len = Vect.enum !flows |> Enum.map String.length |> Enum.reduce (+) in
+(*  printf "# %d streams re-assembled, total_len: %d\n" (Vect.length !flows) stream_len; *)
+  let flows2 = ref Vect.empty in
+  Hashtbl.iter (fun (_sip,_dip,_sp,_dp) (j,_) -> let j = PB.get_all j in if String.length j > 0 then ((*Printf.printf "(%lx,%lx,%d,%d): %S\n" sip dip sp dp (j);*) flows2 := Vect.append j !flows2)) ht2;
+  let stream_len2 = Vect.enum !flows2 |> Enum.map String.length |> Enum.reduce (+) in
+(*  printf "# %d streams un-fin'ed, total_len: %d\n" (Vect.length !flows2) stream_len2; *)
+  let trace_len = float ((stream_len + stream_len2) * 8) /. float (1024 * 1024) in
+  printf "#Flows pre-assembled (len: %.2f mbit)\n" trace_len;
+  Vect.concat !flows !flows2, trace_len
+
+(*** FILTER DUPLICATE/OUT-OF-ORDER PACKETS ***)
+let mbit_size v =
+  let byte_size = 
+    Vect.fold_left (fun acc (_,x,_) -> acc + String.length x) 0 v 
+  in
+  float (byte_size * 8) /. float (1024 * 1024)
+
+let pre_parse strs = 
+  let packet_stream = 
+    Enum.map to_pkt_stream strs
+    |> Enum.concat 
+    |> Enum.filter_map parseable
+    |> Vect.of_enum
+  in
+  let trace_len = mbit_size packet_stream in
+  printf "#Flows pre-filtered for parsability (len: %.2f mbit)\n" trace_len;
+  packet_stream, trace_len
 

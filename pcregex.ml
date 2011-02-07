@@ -104,7 +104,8 @@ let stream_tokenize ~extended str =
     | [] -> None
     | '\\'::_ as l -> catch_escape l
     | '['::t -> Some ( catch_class t )
-    | '(' :: 'i' :: ':' :: t -> Some ( `Substart_i, t )
+    | '(' :: '?' :: 'i' :: ':' :: t -> Some ( `Substart_i true, t )
+    | '(' :: '?' :: '-' :: 'i' :: ':' :: t -> Some ( `Substart_i false, t )
     | '(' :: '?' :: ':' :: t 
     | '(' :: t  
 	-> Some ( `Substart, t )
@@ -117,8 +118,8 @@ let stream_tokenize ~extended str =
     | '+'::t -> Some ( `Repeat (1,None), t )
     | '{'::t -> Some ( catch_range t )
     | c::t 
-	when (c == '\n') || (c==' ') 
-	  || (c=='\r') || (c=='\t') -> make_token t
+	when extended && ((c == '\n') || (c==' ') 
+	  || (c=='\r') || (c=='\t')) -> make_token t
     | c::t   -> Some ( (`Char (Char.code c)), t )
   in
     Enum.unfold (String.explode str) make_token ;;
@@ -238,7 +239,7 @@ let regex_of_ascii_str ~dec str modifiers =
   let dup_n rx n = Concat (List.make n rx) in
   let rec zero_thru_n rx n = if n > 0 then Union [epsilon; Concat [rx; zero_thru_n rx (n-1)]] else epsilon in
   let rec aux acc = 
-    let mod_head f = match acc with [] -> assert false 
+    let mod_head f = match acc with [] -> failwith ("Modifying token found without anything to modify: " ^ str)
       | h :: t -> aux (f h :: t) in
     match Enum.get stream with
     | None -> Concat (List.rev acc)
@@ -256,9 +257,9 @@ let regex_of_ascii_str ~dec str modifiers =
 	aux (Value (value_of_escape a)::acc)
     | Some (`Class a) -> 
 	aux ((regex_of_class a)::acc) 
-    | Some (`Substart_i) -> 
+    | Some (`Substart_i new_ignore) -> 
       let outer = !ignore_case in
-      ignore_case := true;
+      ignore_case := new_ignore;
       let inner_rx = aux [] in
       ignore_case := outer;
       aux (inner_rx :: acc)
@@ -321,7 +322,7 @@ let mod_if b f x = if b then f x else x
 let rx_of_dec_strings ?(anchor=false) ?(allow_comments=false) ?(max_regs=max_int) rxs =
   rxs 
   |> mod_if allow_comments 
-      (Enum.filter (fun (d,r,o) -> String.length r = 0 || r.[0] <> '#'))
+      (Enum.filter (fun (_d,r,_o) -> String.length r = 0 || r.[0] <> '#'))
   |> Enum.take max_regs
   |> mod_if anchor (Enum.map (fun (d,r,o) -> (d,"^" ^ r,o)))
   |> Enum.map (fun (dec, rx, modifiers) -> regex_of_ascii_str ~dec rx modifiers)

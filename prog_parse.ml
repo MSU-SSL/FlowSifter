@@ -20,7 +20,7 @@ let gen_parser p e =
   let ca,var_count = destring extr.start ca0 in
   let ca_cache = ref Map.empty in
 (*  fill_cache ca_cache ca; *)
-  let compile_ca = compile_ca ~ca_cache in
+  let compile_ca = compile_ca ca_cache in
   let ca = optimize ca compile_ca in
   let dfa0 = ca.(0) (Array.make var_count 0) (0, ref 0, "") in
   fun () -> (* allow creating many parsers *)

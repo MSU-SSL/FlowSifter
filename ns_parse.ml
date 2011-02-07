@@ -248,7 +248,7 @@ let make_rx_pair r =
     
 (* Compiles a list of rules into an automaton with decisions of
    (priority, action, nt) *)
-let compile_ca ~ca_cache =
+let compile_ca _ca_cache =
   (* TODO: pre-compile all possible rule combinations from the given ca *)
   (fun rules ->
 (*    Point.observe comp_p;
@@ -271,7 +271,7 @@ let compile_ca ~ca_cache =
 
 
 let fill_cache cache ca =
-  let comp = compile_ca ~ca_cache:cache in
+  let comp = compile_ca cache in
   Enum.iter (comp |- ignore) (get_all_rule_groups ca)
 
 let print_vars oc m = 

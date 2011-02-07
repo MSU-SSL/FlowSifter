@@ -420,7 +420,7 @@ let to_array dfa =
     Array.init 256 (fun i -> try IMap.find i m with Not_found -> -1) in
   map_qs (fun q -> {q with map = to_arr q.map}) dfa
 
-let rec resume_arr dfa input pri (_,_,ri as ret) q i =
+let rec resume_arr dfa input pri ret q i =
   if i >= String.length input then 
     `End_of_input q
   else

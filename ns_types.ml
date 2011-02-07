@@ -31,7 +31,9 @@ let wrong_args name = raise (Invalid_arg_count name)
 let matches = ref 0
 let saves = Hashtbl.create 100
 
+(*
 let () = at_exit (fun () -> Hashtbl.iter (fun k v -> Printf.printf "%d %s\n" !v k) saves)
+*)
 
 let ca_functions = ref 
   [ "pos", (fun (base_pos, sim_pos, flow_data) -> function [] -> base_pos + !sim_pos | _ -> wrong_args "pos");
