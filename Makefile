@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 CPPFLAGS =  -O2
-OCAMLFLAGS = -annot -unsafe
+OCAMLFLAGS = -annot -unsafe -w Z
 
 .PHONY: clean hwrun %.threadlog bench-all
 
@@ -34,7 +34,7 @@ upac.cmxa: lib_u/binpac.o lib_u/http_pac_fast.o lib_u/http_matcher.o lib_u/libub
 #### Compile flow.cmxa
 ####
 
-FLOW=hashtbl_param.cmx ean_std.cmx pcregex.cmx minreg.cmx PCFG.cmx ns_types.cmx simplify.cmx ns_yac.cmx ns_lex.cmx ruleset.cmx tcam.cmx decider.cmx fdd.cmx bdd.cmx optimizers.cmx regex_dfa.cmx disj_set.cmx d2fa.cmx vsdfa.cmx ns_parse.cmx prog_parse.cmx
+FLOW=hashtbl_param.cmx ean_std.cmx pcregex.cmx minreg.cmx PCFG.cmx ns_types.cmx simplify.cmx ns_yac.cmx ns_lex.cmx ruleset.cmx tcam.cmx decider.cmx fdd.cmx bdd.cmx optimizers.cmx regex_dfa.cmx disj_set.cmx d2fa.cmx vsdfa.cmx ns_parse.cmx prog_parse.cmx arg2.cmx
 
 ns_yac.ml: ns_yac.mly
 	menhir ns_yac.mly
@@ -60,12 +60,10 @@ pcap.cmo: pcap.ml
 %.cmo: %.ml
 	ocamlfind ocamlc -package batteries -thread $(OCAMLFLAGS) -c $^
 
-bench-bpac: bpac.cmxa $(FLOW) pcap.cmx bench.ml
-	ocamlfind ocamlopt -package batteries,camlp4.macro -syntax camlp4o -thread -annot -c bench.ml
+bench-bpac: bpac.cmxa pcap.cmx bench.cmx
 	ocamlfind ocamlopt -annot -package batteries,bitstring -thread -linkpkg -I . -cclib -lstdc++ -cclib -lpcre bpac.cmxa libocamlviz.cmxa $(FLOW) pcap.cmx bench.cmx -o $@
 
-bench-upac: upac.cmxa $(FLOW) pcap.cmx bench.ml
-	ocamlfind ocamlopt -package batteries,camlp4.macro -syntax camlp4o -thread -annot -c bench.ml
+bench-upac: upac.cmxa pcap.cmx bench.cmx
 	ocamlfind ocamlopt -annot -package batteries,bitstring -thread -linkpkg -I . -cclib -lstdc++ -cclib -lpcre upac.cmxa libocamlviz.cmxa $(FLOW) pcap.cmx bench.cmx -o $@
 
 clean:
@@ -158,5 +156,8 @@ timelog-all: $(patsubst %, %.20-timelog, $(MODES)) $(patsubst %, %.50-timelog, $
 
 flib/flow.o: flib/flow.c
 	gcc -static -o flib/flow.o -c flib/flow.c 
+
+mldeps:
+	ocamldep *.ml *.mll *.mly > mldeps
 
 include mldeps
