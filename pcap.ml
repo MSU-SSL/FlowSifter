@@ -215,7 +215,7 @@ module PB = SList
 
 
 
-let max_flows = ref 0
+let max_conc = ref 0
 let conc_flows = ref 0
 let flow_count = ref 0
 
@@ -228,7 +228,7 @@ let parseable =
       with Not_found -> 
 	incr flow_count;
 	incr conc_flows;
-	if !max_flows < !conc_flows then max_flows := !conc_flows;
+	if !max_conc < !conc_flows then max_conc := !conc_flows;
 	(ref (offset+1)) |> tap (Hashtbl.add ht flow)
     in
     let dlen = String.length data in
@@ -245,7 +245,10 @@ let assemble strs =
 	  else *)
     let prev, isn = 
       try Hashtbl.find ht2 flow 
-      with Not_found -> PB.empty, offset + 1 in
+      with Not_found -> 
+	incr flow_count; incr conc_flows; 
+	if !max_conc < !conc_flows then max_conc := !conc_flows;
+	PB.empty, offset + 1 in
     let offset = offset - isn in
 (*    if snd prev > 0 && data <> ""
     then printf 
@@ -264,6 +267,7 @@ let assemble strs =
     in
     if fin then (
       flows := Vect.append (PB.get_all joined) !flows;
+      decr conc_flows;
       Hashtbl.remove ht2 flow
     ) else
       Hashtbl.replace ht2 flow (joined, isn)
@@ -276,7 +280,7 @@ let assemble strs =
   let stream_len2 = Vect.enum !flows2 |> Enum.map String.length |> Enum.reduce (+) in
 (*  printf "# %d streams un-fin'ed, total_len: %d\n" (Vect.length !flows2) stream_len2; *)
   let trace_len = float ((stream_len + stream_len2) * 8) /. float (1024 * 1024) in
-  printf "#Flows pre-assembled (len: %.2f mbit)\n" trace_len;
+  printf "#Flows pre-assembled (len: %.2f mbit max_conc: %d flows: %d)\n" trace_len !max_conc !flow_count;
   Vect.concat !flows !flows2, trace_len
 
 (*** FILTER DUPLICATE/OUT-OF-ORDER PACKETS ***)
@@ -294,6 +298,6 @@ let pre_parse strs =
     |> Vect.of_enum
   in
   let trace_len = mbit_size packet_stream in
-  printf "#Flows pre-filtered for parsability (len: %.2f mbit)\n" trace_len;
+  printf "#Flows pre-filtered for parsability (len: %.2f mbit max_conc: %d flows: %d)\n" trace_len !max_conc !flow_count;
   packet_stream, trace_len
 
