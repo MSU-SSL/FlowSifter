@@ -7,7 +7,7 @@ type parser = [`Null | `Sift | `Pac]
 let p_to_string = function `Null -> "Null" | `Sift -> "Sift" | `Pac -> "Pac "
 (*** GLOBAL CONFIGURATION ***)
 
-let check_mem_per_packet = true
+let check_mem_per_packet = false
 let pre_assemble = ref (not check_mem_per_packet)
 let rep_cnt = ref 1
 let fns = ref []
@@ -101,7 +101,6 @@ let read_file_as_str fn =
 let list_avg l = if l = [] then failwith "list_avg: empty list" else List.reduce (+.) l /. (List.length l |> float) 
 
 let get_vmsize () =
-  Gc.compact ();
   let pid = Unix.getpid () in
   let fn = sprintf "/proc/%d/stat" pid in
   let stat_data = File.with_file_in fn (IO.read_all) in
@@ -170,7 +169,6 @@ let main_loop post_round f rep_cnt xs =
       printf "#vm_dirty: %s\tconc_flows: %d\tper_flow: %d\n" vm_dirty flows_cleaned ((int_of_string vm_dirty - int_of_string vm_post) / flows_cleaned);
     ret := time :: !ret
   done;
-  Gc.compact ();
   List.rev !ret
 
 let print_header () = 
