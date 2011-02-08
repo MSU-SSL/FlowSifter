@@ -74,10 +74,11 @@ let catch_class char_list =
 	Buffer.add_string acc " \\t\\r\\n\\v\\f"; aux count b
 (* TODO: COMPLETE LIST OF POSIX BRACKET EXPRESSIONS FROM HERE:
    http://www.regular-expressions.info/posixbrackets.html *)
-    | '['::b ->  (Buffer.add_char acc '[') ; aux (count+1) b
+    | '['::b ->  (Buffer.add_char acc '[') ; aux (count+1) b 
+(*    | ']'::b when Buffer.length acc = 0 -> Buffer.add_char acc ']'; aux count b *)
     | ']'::b when count == 0 -> `Class (Buffer.contents acc), b
-    | ']'::b when count != 0 ->  (Buffer.add_char acc ']') ; aux (count-1) b
-    | a::b -> (Buffer.add_char acc a) ; aux  (count) b
+    | ']'::b when count != 0 ->  (Buffer.add_char acc ']') ; aux (count-1) b 
+    | a::b -> (Buffer.add_char acc a) ; aux count b
     | [] -> `Class (Buffer.contents acc), []
   in  
     aux 0 char_list 
@@ -144,9 +145,8 @@ let iset_of_class any set_of_escape str =
     | `Escape x -> ISet.union (set_of_escape x) acc
   in
   let (positive, tokens) = class_tokenize str in
-  if positive 
-  then fold aux ISet.empty tokens
-  else ISet.diff any (fold aux ISet.empty tokens)
+  let listed = fold aux ISet.empty tokens in
+  if positive then listed else ISet.diff any listed
 
 let rev_compare x y = - (Pervasives.compare x y)
 
