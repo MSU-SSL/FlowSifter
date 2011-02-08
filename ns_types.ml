@@ -53,9 +53,10 @@ let ca_functions = ref
 		start_pos end_pos;  *)
 	incr matches;
 	0
-      | [s;e] -> 
-	let str = try (String.sub flow_data (s-(min 10 s)) 20) with _ -> "??" in
-	Printf.printf "zero-size match: %d to %d at %S\n" s e str;
+      | [s1;e] -> 
+	let s = s1 - base_pos in
+	Printf.printf "base_pos %d s1 %d e %d sim_pos %d\n%!" base_pos s1 e !sim_pos;
+	Printf.printf "zero-size match: %d to %d at %S\n\n%S\n\n" s1 e (String.head flow_data s) (String.tail flow_data s);
 	0
       | _ -> wrong_args "bounds"
     );
