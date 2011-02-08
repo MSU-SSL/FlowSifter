@@ -6,6 +6,7 @@ CRLF -> /\r?\n/ ;
 LWS -> /(\r?\n)?[ \t]+/ ;
 NONWS -> /[^\x00-\x1f\x7f ]+/ ; # excludes cr, lf, tab, space
 TEXT -> /[^\x00-\x1f\x7f]+/ ;   # excludes cr, lf, tab
+TOKEN -> /[^\x00-\x1f()<>@,;:\\"\/[]?={} ]+/ ; # excludes CTLs and separators
 
 HTTP_START -> /HTTP/ TEXT CRLF ;
 #HTTP_START -> /GET/ REQUESTPART ;
@@ -26,11 +27,11 @@ VERSION -> ;
 HEADERS -> HEADER CRLF HEADERS ;
 HEADERS -> ;
 
-HEADER -> /Content-Length:/ GETSIZE[bodylength := 0] ;
-HEADER -> /[^:\r]*:/ DEFAULTVALUE;
+HEADER -> TOKEN /:/ VALUE;
+HEADER -> /(?i:Content-Length):/ GETSIZE[bodylength := 0] ;
 
-DEFAULTVALUE -> TEXT ;
-DEFAULTVALUE -> TEXT LWS DEFAULTVALUE ;
+VALUE -> TEXT ;
+VALUE -> TEXT LWS VALUE ;
 
 GETSIZE -> LWS [bodylength := getnum()];
 
