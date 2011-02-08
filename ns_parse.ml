@@ -134,7 +134,7 @@ let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) =
       try Hashtbl.find ca_ht ca_label
       with Not_found -> Ref.post_incr next_avail_ca
         |> tap (fun i -> Hashtbl.add ca_ht ca_label i) 
-(*	|> tap (fun i -> printf "CA %d from %s\n" i ca_label) *)
+    (*	|> tap (fun i -> printf "CA %d from %s\n" i ca_label) *)
     in
     to_int_c start |> ignore; (* make sure start state is #0 *)
     let fix_pair (v,a) = (to_int_v v, a) in
@@ -146,7 +146,6 @@ let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) =
 
     let ret = Array.create !next_avail_ca (Obj.magic 0) in
     Enum.iter (fun (ca, pro) -> ret.(ca) <- pro) pmap;
-
 (*    printf "varmap: %a\nca_statemap: %a\n ca: %a\n"
       (Hashtbl.print String.print Int.print) var_ht
       (Hashtbl.print String.print Int.print) ca_ht
@@ -219,7 +218,7 @@ let dec_rules comp =
     | Some r1, Some r2 -> if comp r1 r2 = -1 then Some r1 else Some r2 in
   (None, (fun i -> Some i),lowest_precedence: 'a opt_rules)
 
-type ca_data = (int * a_exp) list * int option
+type ca_data = (int * a_exp) list * int
 type 'a pri_dec = {pri: int; item: 'a} 
 
 let comp_dec d1 d2 = Int.compare d1.pri d2.pri
@@ -230,7 +229,7 @@ let dec_eq a b = match a,b with
 | _ -> false
 
 let print_dfa_dec oc d =
-  let so = Option.print String.print in
+  let so = Option.print Int.print in
   Printf.fprintf oc "{%d,%a,%a}%!" 
     d.pri (List.print print_action) (fst d.item) so (snd d.item)
 
@@ -240,7 +239,7 @@ let comp_t = Time.create "comp_ca" *)
 
 let make_rx_pair r =
   let to_pair rx = 
-    ({pri=r.prio; item=(r.act,r.nt)} : ca_data pri_dec), 
+    ({pri=r.prio; item=(r.act,Option.default (-1) r.nt)} : ca_data pri_dec), 
     (rx |> String.lchop |> String.rchop), (* remove /rx/'s slashes *)
     [`Extended]
   in
@@ -282,7 +281,7 @@ let sim_t = Time.create "sim"
 
 let parsed_bytes = ref 0
 
-exception Parse_failure
+exception Parse_complete
 
 type 'a resume_ret = 
   | End_of_input of 
@@ -306,14 +305,20 @@ let rec resume_arr qs input pri item ri q i =
 	| _ -> 
 	  resume_arr qs input pri item ri q next_i
 
+let null_state = -1
+
 let init_state dfa pos =
   let q0 = dfa.Regex_dfa.q0 in
   match q0.Regex_dfa.dec with 
       Some {pri=p; item=i} -> (dfa.Regex_dfa.qs, q0, p, i, pos)
-    | None -> (dfa.Regex_dfa.qs, q0, max_int, ([], None), pos)
+    | None -> (dfa.Regex_dfa.qs, q0, max_int, ([], null_state), pos)
+
+let ca_trans = ref 0
+
+let () = at_exit (fun () -> printf "#CA Transitions: %d\n" !ca_trans)
 
 let rec simulate_ca_string ~ca ~vars skip_left base_pos flow_data
-    (qs,q, pri, item, ri) = 
+    (qs, q, pri, item, ri) = 
   let flow_len = String.length flow_data in
   let pos = ref 0 in
   let ca_state = (!base_pos, pos, flow_data) in
@@ -324,18 +329,23 @@ let rec simulate_ca_string ~ca ~vars skip_left base_pos flow_data
     ) else
       let dfa_result = resume_arr qs flow_data pri item ri q !pos in
       match dfa_result with
-	| Dec ((acts,Some q_next),pos_new) -> 
+	| Dec ((acts,q_next),pos_new) -> 
+	  incr ca_trans;
 	  parsed_bytes := !parsed_bytes + (pos_new - !pos);
 	  pos := pos_new;
 	  if acts <> [] then List.iter (run_act ca_state vars) acts;
-	  let dfa = ca.(q_next) vars ca_state in
-	  (match dfa.Regex_dfa.q0.Regex_dfa.dec with
-	    | None -> 
-	      run_d2fa dfa.Regex_dfa.qs dfa.Regex_dfa.q0 max_int ([],None) !pos
-	    | Some {pri=p; item=i} ->
-	      run_d2fa dfa.Regex_dfa.qs dfa.Regex_dfa.q0 p i !pos)
-	| Dec ((_acts, None), _pos_new) -> raise Parse_failure
+	  if q_next = null_state then
+	      raise Parse_complete
+	  else
+	    let dfa = ca.(q_next) vars ca_state in
+	    ( match dfa.Regex_dfa.q0.Regex_dfa.dec with
+	      | None -> 
+		run_d2fa dfa.Regex_dfa.qs dfa.Regex_dfa.q0 max_int ([],null_state) !pos
+	      | Some {pri=p; item=i} ->
+		run_d2fa dfa.Regex_dfa.qs dfa.Regex_dfa.q0 p i !pos
+	    )
 	| End_of_input (q_final, pri, item, ri) -> 
+	  parsed_bytes := !parsed_bytes + (String.length flow_data - !pos);
 	  (qs,q_final,pri,item,ri)
   in
   run_d2fa qs q pri item ri

@@ -6,11 +6,10 @@ open ParsedPCFG
 open Ns_parse
 
 let pkt_skip = ref 0
-let pkt_partial_skip = ref 0
-let parse_fail = ref 0
+let parse_done = ref 0
 let parsers = ref 0
 
-let () = at_exit (fun () -> Printf.printf "#Parsers generated: %d  Parse failures: %d\n" !parsers !parse_fail)
+let () = at_exit (fun () -> Printf.printf "#Parsers generated: %d  Parse completions: %d\n" !parsers !parse_done)
 (* generates an incremental parser for the language defined by a 
    protocol grammar specification and extraction language *)
 let gen_parser p e = 
@@ -30,21 +29,20 @@ let gen_parser p e =
     and skip_left = ref 0
     and base_pos = ref 0 in
     let rec parse str =
-      let len = String.length str in
       if !skip_left = 0 then 
 	try 
 	  q := simulate_ca_string ~ca ~vars skip_left base_pos str !q;
-	  base_pos := !base_pos + len;
-	with Ns_parse.Parse_failure -> 
-	  incr parse_fail;
+	  base_pos := !base_pos + String.length str;
+	with Ns_parse.Parse_complete -> 
+	  incr parse_done;
       else (* skip_left > 0 *)
+	let len = String.length str in
 	if !skip_left >= len then ( (* skip the packet entirely *)
 	  skip_left := !skip_left - len; 
 	  base_pos := !base_pos + len; 
 	  incr pkt_skip
 	) else (* parse only part of the packet *)
 	  let str_to_parse = String.tail str !skip_left in
-	  incr pkt_partial_skip;
 	  skip_left := 0;
 	  parse str_to_parse
     in
