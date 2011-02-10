@@ -213,6 +213,19 @@ module SList = struct
 end
 module PB = SList
 
+let read_file_as_str fn =
+  let ic = Pervasives.open_in_bin fn in
+  let len = (Pervasives.in_channel_length ic) in
+  printf "#Reading %s (len %d)...%!" fn len;
+  let old_gc = Gc.get() in
+  Gc.set {old_gc with Gc.space_overhead = 0};
+  let ret = String.create len in
+  Gc.set old_gc;
+  Pervasives.really_input ic ret 0 len;
+
+  Pervasives.close_in ic;
+  printf "done\n%!";
+  ret
 
 
 let max_conc = ref 0
@@ -238,7 +251,8 @@ let parseable =
     if should_parse then Some (flow,data,fin) else None
 
 let ht2 = Hashtbl.create 50000
-let assemble strs =
+let assemble fns =
+  let strs = Enum.map read_file_as_str fns in
   let flows = ref Vect.empty in
   let act_pkt ((_sip,_dip,_sp,_dp as flow), offset, data, (_syn,_ack,fin)) = 
     (*    if offset < 0 || offset > 1 lsl 25 then printf "Offset: %d, skipping\n%!" offset 
@@ -283,16 +297,24 @@ let assemble strs =
   printf "#Flows pre-assembled (len: %.2f mbit max_conc: %d flows: %d)\n" trace_len !max_conc !flow_count;
   Vect.concat !flows !flows2, trace_len
 
-(*** FILTER DUPLICATE/OUT-OF-ORDER PACKETS ***)
 let mbit_size v =
   let byte_size = 
     Vect.fold_left (fun acc (_,x,_) -> acc + String.length x) 0 v 
   in
   float (byte_size * 8) /. float (1024 * 1024)
 
-let pre_parse strs = 
+let mbit_sizef v =
+  let byte_size = 
+    Vect.fold_left (fun acc x -> acc + String.length x) 0 v 
+  in
+  float (byte_size * 8) /. float (1024 * 1024)
+
+(*** FILTER DUPLICATE/OUT-OF-ORDER PACKETS ***)
+let pre_parse fns = 
   let packet_stream = 
-    Enum.map to_pkt_stream strs
+    fns
+    /@ read_file_as_str
+    /@ to_pkt_stream
     |> Enum.concat 
     |> Enum.filter_map parseable
     |> Vect.of_enum

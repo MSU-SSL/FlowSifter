@@ -11,6 +11,7 @@ let check_mem_per_packet = false
 let pre_assemble = ref (not check_mem_per_packet)
 let rep_cnt = ref 1
 let fns = ref []
+let mux = ref false
 let extr_ca = ref "extr.ca"
 let parsers : parser list ref = ref [`Null; `Sift; `Pac]
 
@@ -23,6 +24,8 @@ let args =
      "Don't assemble the pcap files into flows");
     (Both ('a', "assemble"), [Set pre_assemble], [], 
      "Assemble the pcap files into flows");
+    (Both ('m', "mux"), [Set mux], [], 
+     "Mux the given flow files into a simulated pcap");
     (Both ('n', "rep-cnt"), [Int_var rep_cnt], [],
      "Set the number of repetitions to do");
     (Both ('s', "sift"), [set_main `Sift], [], "Run the Flowsifter parser");
@@ -35,7 +38,6 @@ and descr = "FlowSifter Simulation library"
 and notes = "by Eric Norige"
 
 let () = Arg2.parse args (fun x -> fns := x :: !fns) usage_info descr notes
-
 
 (*** PARSER MODULES ***)
 
@@ -83,20 +85,6 @@ end
 (* let is_http ((_sip, _dip, sp, dp),_,_) = sp = 80 || dp = 80 *)
 
 (*** HELPER FUNCTIONS ***)
-
-let read_file_as_str fn =
-  let ic = Pervasives.open_in_bin fn in
-  let len = (Pervasives.in_channel_length ic) in
-  printf "#Reading %s (len %d)...%!" fn len;
-  let old_gc = Gc.get() in
-  Gc.set {old_gc with Gc.space_overhead = 0};
-  let ret = String.create len in
-  Gc.set old_gc;
-  Pervasives.really_input ic ret 0 len;
-
-  Pervasives.close_in ic;
-  printf "done\n%!";
-  ret
 
 let list_avg l = if l = [] then failwith "list_avg: empty list" else List.reduce (+.) l /. (List.length l |> float) 
 
@@ -195,11 +183,11 @@ let run_fs_packet =
 (*** MAIN ***) 
 let main () = 
   if !fns = [] then failwith "Not enough arguments";
-  let strs = List.enum !fns |> Enum.map read_file_as_str in
+  let fns = List.enum !fns in
   let main_loops_perf pre_process acts =
     let main_null = List.assoc `Null acts in
     let main_others = List.map (fun p -> List.assoc p acts) !parsers in
-    let xs,len = pre_process strs in
+    let xs,len = pre_process fns in
     trace_len := len;
     print_header ();
     let a = main_null !rep_cnt xs in
@@ -207,14 +195,28 @@ let main () =
     a,b
   in
   let main_loops_mem pre_process acts =
-    [0.], List.map (fun p -> (List.assoc p acts) !rep_cnt (pre_process strs|>fst)) !parsers
+    [0.], List.map (fun p -> (List.assoc p acts) !rep_cnt (pre_process fns |>fst)) !parsers
   in
   let main_loops = if check_mem_per_packet then main_loops_mem else main_loops_perf in
   let tnull,ts = 
-    if !pre_assemble then 
-      main_loops Pcap.assemble run_fs_flow 
-    else 
-      main_loops Pcap.pre_parse run_fs_packet
+    match !pre_assemble, !mux with
+      |	true, false ->
+	main_loops Pcap.assemble run_fs_flow 
+      | false, false ->
+	main_loops Pcap.pre_parse run_fs_packet
+      | true, true ->
+	let make_flows fns = 
+	  fns 
+          |> Enum.map Pcap.read_file_as_str
+          |> Vect.of_enum 
+	  |> (fun v -> v, Pcap.mbit_sizef v)
+	in
+	main_loops make_flows run_fs_flow
+      | false, true -> 
+	let make_packets = 
+	  assert false
+	in
+	main_loops make_packets run_fs_packet
   in
   let tnull_avg = list_avg tnull in
   let rates = List.map (List.map (fun t -> !trace_len /. (t -. tnull_avg))) ts in
