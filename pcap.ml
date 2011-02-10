@@ -213,18 +213,17 @@ module SList = struct
 end
 module PB = SList
 
-let read_file_as_str fn =
+let read_file_as_str ?(verbose=false) fn =
   let ic = Pervasives.open_in_bin fn in
   let len = (Pervasives.in_channel_length ic) in
-  printf "#Reading %s (len %d)...%!" fn len;
+  if verbose then printf "#Reading %s (len %d)...%!" fn len;
   let old_gc = Gc.get() in
   Gc.set {old_gc with Gc.space_overhead = 0};
   let ret = String.create len in
   Gc.set old_gc;
   Pervasives.really_input ic ret 0 len;
-
   Pervasives.close_in ic;
-  printf "done\n%!";
+  if verbose then printf "done\n%!";
   ret
 
 
@@ -323,3 +322,48 @@ let pre_parse fns =
   printf "#Flows pre-filtered for parsability (len: %.2f mbit max_conc: %d flows: %d)\n" trace_len !max_conc !flow_count;
   packet_stream, trace_len
 
+
+(***  INPUT FROM AN ENUM OF FILES - ONE FLOW PER FILE ***)
+let max_conc = ref 0
+let conc_flows = ref 0
+let flow_count = ref 0
+
+let make_flows fns = 
+  max_conc := 1; flow_count := Enum.count fns;
+  fns |> Enum.map (read_file_as_str ~verbose:false) |> Vect.of_enum |> (fun v -> v, mbit_sizef v)
+    |> tap (fun (_,l) -> printf "#Flows read from file (len: %.2f mbit max_conc: %d flows: %d)\n" l 1 !flow_count;)
+
+let make_packets fns =
+  flow_count := Enum.count fns;
+  let flows = fns |> Enum.map (read_file_as_str ~verbose:false) |> Ean_std.number_enum in
+  let ret = Enum.empty () in
+  let send_byte_count () = 
+    match Random.int 5 with
+	0 -> 0
+      | 1 -> Random.int 50
+      | 2 -> Random.int 200
+      | 3 -> Random.int 1000
+      | 4 -> 1000 + Random.int 500
+      | _ -> 1500
+  in
+  let split_rand (id,s) = 
+    let c = send_byte_count () in 
+    let h,t = String.head s c, String.tail s c in
+    if t = "" then 
+      (id,h,true), None
+    else
+      (id,h,false), Some (id, t)
+  in
+  let rec loop ifp =
+    if Enum.is_empty ifp then () else (
+      Enum.get flows |> Option.may (Enum.push ifp);
+      let l = Enum.count ifp in 
+      if l > !max_conc then max_conc := l;
+      let send, keep = ifp |> Enum.map split_rand |> Enum.uncombine in
+      Random.shuffle send |> Array.enum |> Enum.push ret;
+      Enum.filter_map identity keep |> loop
+    )
+  in
+  loop (Enum.empty ());
+  Enum.concat ret |> Vect.of_enum |> (fun v -> v, mbit_size v)
+    |> tap (fun (_,l) -> printf "#Flows packetized from files (len: %.2f mbit max_conc: %d flows: %d)\n" l !max_conc !flow_count;)

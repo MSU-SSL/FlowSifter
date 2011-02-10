@@ -71,6 +71,7 @@ let () = at_exit (fun () ->
     (*    Printf.printf "#Bytes skip()ed: %d  Times this exceeded the current packet: %d bytes asked to skip trans-packet: %d\n" !Ns_parse.inner_skip !Ns_parse.skip_over !Prog_parse.total_skip; 
 	  Printf.printf "#Packets skipped entirely: %d Packets skipped partially: %d\n" !Prog_parse.pkt_skip !Prog_parse.pkt_partial_skip;
 	  Printf.printf "#Skip missed: %d\n" !Prog_parse.skip_missed; *)
+  if List.mem `Sift !parsers then
   let trace_len = !trace_len /. 8. in
   let parsed = float !Ns_parse.parsed_bytes /. float (1024 * 1024) in
   Printf.printf "#Trace payload length: %.1f MB Bytes parsed: %.1f Percentage of flow parsed: %2.1f\n" trace_len parsed (100. *. parsed /. trace_len)
@@ -106,6 +107,8 @@ let get_vmsize () =
 
 let conc_flows = ref 0
 
+let mem0 = ref 0
+
 let run pr = 
 
   let ht = Hashtbl.create 1000 in
@@ -129,7 +132,7 @@ let run pr =
 	pr.new_parser () |> tap (Hashtbl.add ht flow) 
     in
     pr.add_data p data;
-    if check_mem_per_packet then printf "%d,%s\n" !conc_flows (get_vmsize ());
+    if check_mem_per_packet then printf "%d %d\n" !conc_flows (get_vmsize () |> int_of_string |> (fun x -> x - !mem0));
     if fin then (
       if check_mem_per_packet then decr conc_flows;
       Hashtbl.remove ht flow; pr.delete_parser p;
@@ -149,17 +152,14 @@ let run pr =
 let main_loop post_round f rep_cnt xs =
   let ret = ref [] in
   let round_num = ref 0 in
+  Gc.compact ();
+  mem0 := get_vmsize () |> int_of_string;
+  printf "#Mem0 = %d\n" !mem0;
   while incr round_num; !round_num <= rep_cnt do
-    let vm_pre = get_vmsize () in
     let tpre = Sys.time () in
     Vect.iter f xs;
     let time = Sys.time () -. tpre in
-    let vm_dirty = get_vmsize () and flows_cleaned = !conc_flows in
     post_round !round_num time;
-    let vm_post = get_vmsize () in
-    printf "#vm_pre: %s\tvm_post: %s\n" vm_pre vm_post;
-    if flows_cleaned > 0 then 
-      printf "#vm_dirty: %s\tconc_flows: %d\tper_flow: %d\n" vm_dirty flows_cleaned ((int_of_string vm_dirty - int_of_string vm_post) / flows_cleaned);
     ret := time :: !ret
   done;
   List.rev !ret
@@ -179,68 +179,38 @@ let get_fs = function
 let act_packet (p,ap,_af) = main_loop p ap
 let act_flow (p,_ap,af) = main_loop p af
 
-let make_flows fns = fns |> Vect.of_enum |> (fun v -> v, Pcap.mbit_sizef v)
-
-let make_packets fns =
-  let flows = fns |> Enum.map Pcap.read_file_as_str |> Ean_std.number_enum in
-  let ret = Enum.empty () in
-  let send_byte_count () = 
-    match Random.int 5 with
-	0 -> 0
-      | 1 -> Random.int 50
-      | 2 -> Random.int 200
-      | 3 -> Random.int 1000
-      | 4 -> 1000 + Random.int 500
-      | _ -> 1500
+let expand_dirs e = 
+  let rec exp fn = 
+    if Sys.is_directory fn then 
+      Sys.files_of fn |> Enum.map (fun x -> if String.tail x 1 = "/" then fn ^ x else fn ^ "/" ^ x) |> Enum.map exp |> Enum.flatten
+    else 
+      Enum.singleton fn 
   in
-  let split_rand (id,s) = 
-    let c = send_byte_count () in 
-    let h,t = String.head s c, String.tail s c in
-    if t = "" then 
-      (id,h,true), None
-    else
-      (id,h,false), Some (id, t)
-  in
-  let rec loop ifp =
-    if Enum.is_empty ifp then () else (
-      Enum.get flows |> Option.may (Enum.push ifp);
-      let send, keep = ifp |> Enum.map split_rand |> Enum.uncombine in
-      Random.shuffle send |> Array.enum |> Enum.push ret;
-      Enum.filter_map identity keep |> loop
-    )
-  in
-  loop (Enum.empty ());
-  Enum.concat ret |> Vect.of_enum |> (fun v -> v, Pcap.mbit_size v)
-
+  Enum.map exp e |> Enum.flatten
 
 (*** MAIN ***) 
 let main () = 
   if !fns = [] then failwith "Not enough arguments";
-  let fns = List.enum !fns in
-  let main_loops_perf pre_process act =
+  let fns = List.enum !fns |> expand_dirs in
+  let main_loops_perf act (chunks, len) =
     let main_null = get_fs `Null |> act in
     let main_others = List.map (get_fs |- act) !parsers in
-    let xs,len = pre_process fns in
     trace_len := len;
     print_header ();
-    let a = main_null !rep_cnt xs in
-    let b = List.map (fun f -> f !rep_cnt xs) main_others in
+    let a = main_null !rep_cnt chunks in
+    let b = List.map (fun f -> f !rep_cnt chunks) main_others in
     a,b
   in
-  let main_loops_mem pre_process act =
-    [0.], List.map (fun p -> (get_fs p |> act) !rep_cnt (pre_process fns |>fst)) !parsers
+  let main_loops_mem act (chunks, _len) =
+    [0.], List.map (fun p -> (get_fs p |> act) !rep_cnt chunks) !parsers
   in
   let main_loops = if check_mem_per_packet then main_loops_mem else main_loops_perf in
   let tnull,ts = 
     match !pre_assemble, !mux with
-      |	true, false ->
-	main_loops Pcap.assemble act_flow 
-      | false, false ->
-	main_loops Pcap.pre_parse act_packet
-      | true, true ->
-	main_loops make_flows act_flow
-      | false, true -> 
-	main_loops make_packets act_packet
+      |	true, false ->  fns |> Pcap.assemble     |> main_loops act_flow 
+      | false, false ->	fns |> Pcap.pre_parse    |> main_loops act_packet
+      | true, true ->	fns |> Pcap.make_flows   |> main_loops act_flow
+      | false, true ->  fns |> Pcap.make_packets |> main_loops act_packet
   in
   let tnull_avg = list_avg tnull in
   let rates = List.map (List.map (fun t -> !trace_len /. (t -. tnull_avg))) ts in
