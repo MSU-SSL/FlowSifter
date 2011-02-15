@@ -13,7 +13,7 @@ let rep_cnt = ref 1
 let fns = ref []
 let mux = ref false
 let extr_ca = ref "extr.ca"
-let parsers : parser list ref = ref [`Null; `Sift; `Pac]
+let parsers : parser list ref = ref [`Sift; `Pac]
 
 (*** ARGUMENT HANDLING ***)
 
