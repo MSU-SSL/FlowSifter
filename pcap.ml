@@ -355,7 +355,7 @@ let make_packets fns =
       (id,h,false), Some (id, t)
   in
   let rec loop ifp =
-    if Enum.is_empty ifp then () else (
+    if Enum.is_empty flows && Enum.is_empty ifp then () else (
       Enum.get flows |> Option.may (Enum.push ifp);
       let l = Enum.count ifp in 
       if l > !max_conc then max_conc := l;
@@ -365,5 +365,9 @@ let make_packets fns =
     )
   in
   loop (Enum.empty ());
-  Enum.concat ret |> Vect.of_enum |> (fun v -> v, mbit_size v)
-    |> tap (fun (_,l) -> printf "#Flows packetized from files (len: %.2f mbit max_conc: %d flows: %d)\n" l !max_conc !flow_count;)
+  Enum.concat ret |> Vect.of_backwards |> (fun v -> v, mbit_size v)
+    |> tap (fun (v,l) -> 
+      printf "#Flows packetized (len: %.2f mbit max_conc: %d flows: %d)\n" 
+	l !max_conc !flow_count;
+(*      Vect.print (fun oc (fid,data,fin) -> fprintf oc "%d (%B): %S\n\n" fid fin data) stdout v; *)
+    )
