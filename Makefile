@@ -158,6 +158,6 @@ flib/flow.o: flib/flow.c
 	gcc -static -o flib/flow.o -c flib/flow.c 
 
 mldeps:
-	ocamldep *.ml *.mll *.mly > mldeps
+	ocamlfind ocamldep -package bitstring.syntax -syntax camlp4o *.ml *.mll *.mly > mldeps
 
 include mldeps
