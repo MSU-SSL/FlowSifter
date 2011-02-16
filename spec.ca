@@ -28,11 +28,24 @@ HEADERS -> HEADER CRLF HEADERS ;
 HEADERS -> ;
 
 HEADER -> TOKEN /:/ VALUE;
-HEADER -> /(?i:Content-Length):/ GETSIZE[bodylength := 0] ;
+HEADER -> /(?i:Content-Length):/ GETSIZE[bodyend := 0] ;
 
 VALUE -> TEXT ;
 VALUE -> TEXT LWS VALUE ;
 
-GETSIZE -> LWS [bodylength := getnum()];
+GETSIZE -> LWS [bodyend := getnum()];
 
-BODY -> CRLF[bodylength := skip(bodylength)] ;
+BODY -> CRLF [bodyend := bodyend + pos()] XML;
+
+XML -> XVER XENV ;
+
+XVER -> /<\?xml\ version="1\.0"\?>\s*/ ;
+
+XENV -> /<soap:Envelope\ xmlns:soap="http:\/\/www\.w3\.org\/2003\/05\/soap-envelope">/ XHDR XBDY /<\/soap:Envelope>/ ;
+
+XHDR -> /\s*<soap:Header>\s*<\/soap:Header>\s*/ ;
+
+XBDY -> /\s*<soap:Body>\s*/ ARRAY /\s*<\/soap:Body>\s*/;
+
+ARRAY -> /\s*<array>\s*/ ARRAY /\s*<\/array>\s*/ ARRAY ;
+ARRAY -> ;
