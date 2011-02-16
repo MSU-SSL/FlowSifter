@@ -114,7 +114,7 @@ let razor_1d_int weight_dec (bdd, decs, of_prefix) =
     in
     (* finds the solution pair that merges best over the given default *)
     let make_sol def = 
-      let best_dec = minarg (cost def) (0--^dec_count) in
+      let best_dec = Enum.arg_min (cost def) (0--^dec_count) in
       let cost = cost def best_dec in
       if best_dec = def then
 	{cost = cost;
@@ -146,7 +146,7 @@ let razor_1d_c weight_f (bdd, decs, of_prefix) =
 (*  Point.observe r1dc_p; Time.start r1dc_t; *)
   let bdd = Bdd.map Option.get bdd in (* remove Some from all bdd leaves *)
   let sols = razor_1d_int weight_f (bdd, decs, of_prefix) in
-  let best = minarg (fun i -> sols.(i).cost) (0--^(Array.length decs)) in
+  let best = Array.range decs |> Enum.arg_min (fun i -> sols.(i).cost) in
   let add_default d sol = 
     {sol with rset = Vect.append {pred=of_prefix []; dec=d} sol.rset} in
   sols.(best) |> add_default decs.(best) (*|> tap (fun _ -> Time.stop r1dc_t)*)
