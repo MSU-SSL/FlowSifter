@@ -104,24 +104,6 @@ let wrap2 f label =
 let wrap f _label = f
 let wrap2 f _label = f
 
-let minarg f enum = 
-  match Enum.get enum with
-      None -> failwith "min_arg: Empty enum"
-    | Some v ->
-	let item, eval = ref v, ref (f v) in
-	Enum.iter (fun v -> let fv = f v in 
-		   if fv < !eval then (item := v; eval := fv)) enum;
-	!item
-
-let maxarg f enum = 
-  match Enum.get enum with
-      None -> failwith "max_arg: Empty enum"
-    | Some v ->
-	let item, eval = ref v, ref (f v) in
-	Enum.iter (fun v -> let fv = f v in 
-		   if fv > !eval then (item := v; eval := fv)) enum;
-	!item
-
 let hex_string_of_int oc i = fprintf oc "%X" i
 
 
