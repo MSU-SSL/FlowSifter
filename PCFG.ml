@@ -185,6 +185,25 @@ module Make (Name : Names_t) = struct
     in
     bool_interval 0 p_table.(0) []
 *)
+      
+
+  let rec is_clean_a = function
+    | Variable | Constant _ -> true
+    | Function _ -> false
+    | Divide (a,b) | Multiply (a,b) | Sub (a,b) | Plus (a,b) -> 
+      is_clean_a a && is_clean_a b
+
+  let rec is_clean_p = function
+    | Const _ -> true 
+    | Not a -> 
+      is_clean_p a
+    | Or (a,b) | And (a,b) -> 
+      is_clean_p a && is_clean_p b
+    | Greaterthan (a,b) | GreaterthanEq (a,b)
+    | LessthanEq (a,b) | Lessthan (a,b) 
+    | Equal (a,b) -> 
+      is_clean_a a && is_clean_a b
+
 
   (* Composition functions *)
 
