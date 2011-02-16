@@ -83,8 +83,14 @@ let print_opt_rule oc iirr =
   Printf.fprintf oc "{p:%d; rx:%a acts:%a nt: %a}%!" 
     iirr.prio so iirr.rx (List.print print_iaction) iirr.act io iirr.nt
   
+let print_rule oc x = Pair.print (List.print print_ipred) print_opt_rule oc x
+
+let print_rules oc = function
+  | [r] -> print_rule oc r
+  | l -> List.print ~first:"\n  " ~sep:"\n  " ~last:"\n" print_rule oc l
+
 let print_reg_ds_ca oc (ca: regular_grammar_arr) = 
-  Array.iteri (Regex_dfa.index_print (Pair.print (List.print print_ipred) print_opt_rule |> List.print ~first:"\n  " ~sep:"\n  " ~last:"\n") oc) ca
+  Array.iteri (Regex_dfa.index_print print_rules oc) ca
 
 exception Non_regular_rule of production
 
@@ -146,10 +152,10 @@ let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) =
 
     let ret = Array.create !next_avail_ca (Obj.magic 0) in
     Enum.iter (fun (ca, pro) -> ret.(ca) <- pro) pmap;
-(*    printf "varmap: %a\nca_statemap: %a\n ca: %a\n"
+    printf "varmap: %a\nca_statemap: %a\n ca: %a\n"
       (Hashtbl.print String.print Int.print) var_ht
       (Hashtbl.print String.print Int.print) ca_ht
-      print_reg_ds_ca ret; *)
+      print_reg_ds_ca ret; 
     ret, !next_avail_var
   
 
@@ -161,17 +167,41 @@ let get_rules state pr_list vars =
   let pred_satisfied pred = List.for_all var_satisfied pred in
   List.filter_map (fun (p,e) -> if pred_satisfied p then Some e else None) pr_list
 
+let is_univariate_predicate rs =
+  let v = ref None in
+  let is_v x = match !v with None -> v := Some x; true | Some v -> v = x in
+  let test (p,_) = List.for_all (fun (v,pexp) -> is_v v && is_clean_p pexp) p in
+  if List.for_all test rs then 
+    !v
+  else
+    None
+
+let get_rules_v i rules =
+  let var_satisfied (_,p) = eval_p_exp (0,ref 0, "") p i in
+  let pred_satisfied pred = List.for_all var_satisfied pred in
+  List.filter_map (fun (p,e) -> if pred_satisfied p then Some e else None) rules
+  
 let rules_p = Point.create "rules"
+
+let var_max = 255
 
 (** Removes predicate checks at runtime for non-terminals with no predicates *)
 let optimize ca compile_ca =
-    let opt_prod pr_list =
-      if List.for_all (fun (p,_) -> List.length p = 0) pr_list then
-	let dfa = List.map snd pr_list |> compile_ca in
+    let opt_prod rules =
+      if List.for_all (fun (p,_) -> List.length p = 0) rules then
+	let dfa = List.map snd rules |> compile_ca in
 	(fun _ _ -> dfa)
-      else
-	(fun vars parse_state ->
-	  get_rules parse_state pr_list vars |> compile_ca )
+      else (*match is_univariate_predicate rules with
+	  Some v -> 
+	    let rule_map = 
+	      0--var_max 
+	      |> Enum.map (fun i -> i,(get_rules_v i rules |> compile_ca)) 
+	      |> Enum.fold (fun acc (i,ca) -> IMap.add i ca acc) IMap.empty
+	    in
+	    (fun vars _ -> IMap.find vars.(v) rule_map )
+	| None ->  *)
+	  (fun vars parse_state ->
+	    get_rules parse_state rules vars |> compile_ca )
     in
     Array.map opt_prod ca
 
@@ -294,6 +324,7 @@ let rec resume_arr qs input pri item ri q i =
     End_of_input (q,pri,item,ri)
   else
     let q_next_id = q.Regex_dfa.map.(Char.code input.[i]) in
+(*    printf "DFA@%d " q_next_id; *)
     if q_next_id = -1 then 
       Dec (item,ri)
     else
@@ -330,6 +361,7 @@ let rec simulate_ca_string ~ca ~vars skip_left base_pos flow_data
       let dfa_result = resume_arr qs flow_data pri item ri q !pos in
       match dfa_result with
 	| Dec ((acts,q_next),pos_new) -> 
+	  printf "CA: %d @ pos %d\n" q_next pos_new; 
 	  incr ca_trans;
 	  parsed_bytes := !parsed_bytes + (pos_new - !pos);
 	  pos := pos_new;
