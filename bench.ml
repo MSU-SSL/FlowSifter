@@ -14,6 +14,7 @@ let fns = ref []
 let mux = ref false
 let extr_ca = ref "extr.ca"
 let parsers : parser_t list ref = ref [`Sift; `Pac]
+let baseline = ref true
 
 (*** ARGUMENT HANDLING ***)
 
@@ -28,6 +29,7 @@ let args =
      "Mux the given flow files into a simulated pcap");
     (Both ('n', "rep-cnt"), [Int_var rep_cnt], [],
      "Set the number of repetitions to do");
+    (Both ('b', "no-baseline"), [Clear baseline], [], "Don't use null parser as baseline");
     (Both ('s', "sift"), [set_main `Sift], [], "Run the Flowsifter parser");
     (Both ('p', "pac"), [set_main `Pac], [], "Run the pac parser");
     (Name "null", [Unit (fun () -> parsers := [])], [], "Run only the null parser");
@@ -200,7 +202,7 @@ let main () =
     let main_others = List.map (get_fs |- act) !parsers in
     trace_len := len;
     print_header ();
-    let a = main_null !rep_cnt chunks in
+    let a = if !baseline then main_null !rep_cnt chunks else [0.] in
     let b = List.map (fun f -> f !rep_cnt chunks) main_others in
     a,b
   in
