@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 CPPFLAGS =  -O2
-OCAMLFLAGS = -annot -unsafe -w Z
+OCAMLFLAGS = -annot -w Z -g
 
 .PHONY: clean hwrun %.threadlog bench-all
 
@@ -46,25 +46,25 @@ ns_yac.cmi: ns_yac.ml
 	ocamlc -annot -g -c ns_yac.mli
 
 ns_yac.cmx: ns_yac.cmi ns_yac.ml
-	ocamlfind ocamlopt -package batteries -thread $(OCAMLFLAGS) -c ns_yac.ml
+	ocamlfind ocamlopt -package batteries $(OCAMLFLAGS) -c ns_yac.ml
 
 ns_yac.cmo: ns_yac.cmi ns_yac.ml
-	ocamlfind ocamlc -package batteries -thread $(OCAMLFLAGS) -c ns_yac.ml
+	ocamlfind ocamlc -package batteries $(OCAMLFLAGS) -c ns_yac.ml
 
 pcap.cmo: pcap.ml
 	ocamlfind ocamlc $(OCAMLFLAGS) -c -syntax camlp4o -package batteries,bitstring.syntax,bitstring pcap.ml -o pcap.cmo
 
 %.cmx: %.ml
-	ocamlfind ocamlopt -package batteries -thread $(OCAMLFLAGS) -c $^
+	ocamlfind ocamlopt -package batteries $(OCAMLFLAGS) -c $^
 
 %.cmo: %.ml
-	ocamlfind ocamlc -package batteries -thread $(OCAMLFLAGS) -c $^
+	ocamlfind ocamlc -package batteries $(OCAMLFLAGS) -c $^
 
 bench-bpac: bpac.cmxa pcap.cmx bench.cmx
-	ocamlfind ocamlopt -annot -package batteries,bitstring -thread -linkpkg -I . -cclib -lstdc++ -cclib -lpcre bpac.cmxa libocamlviz.cmxa $(FLOW) pcap.cmx bench.cmx -o $@
+	ocamlfind ocamlopt -annot -package batteries,bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre bpac.cmxa libocamlviz.cmxa $(FLOW) pcap.cmx bench.cmx -o $@
 
 bench-upac: upac.cmxa pcap.cmx bench.cmx
-	ocamlfind ocamlopt -annot -package batteries,bitstring -thread -linkpkg -I . -cclib -lstdc++ -cclib -lpcre upac.cmxa libocamlviz.cmxa $(FLOW) pcap.cmx bench.cmx -o $@
+	ocamlfind ocamlopt -annot -package batteries,bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre upac.cmxa libocamlviz.cmxa $(FLOW) pcap.cmx bench.cmx -o $@
 
 clean:
 	rm -f *.a *.o *.cmi *.cmx *.cmo *.cmxa *.annot
@@ -161,3 +161,5 @@ mldeps:
 	ocamlfind ocamldep -package bitstring.syntax -syntax camlp4o *.ml *.mll *.mly > mldeps
 
 include mldeps
+
+ns_yac.cmi: ns_types.ml

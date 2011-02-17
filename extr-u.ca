@@ -8,11 +8,11 @@ HEADERS1 -> CRLF [bodylength := skip(bodylength)] ;
 
 HEADER1 99 -> 
 	/[^:\n]*:/ 
-	[cn := save (cn, pos() - 1 ); cv := pos()] 
+	[cn := bounds (cn, pos() - 1 ); cv := pos()] 
 	DEFAULTVALUE1 ;
 HEADER1 1 -> 
-	/Content-[Ll]ength:/ 
-	[cn := save (cn, pos() - 1 ); cv := pos()]
+	/(?i:Content-length):/ 
+	[cn := bounds (cn, pos() - 1 ); cv := pos()]
 	GETSIZE1 ;
 
 DEFAULTVALUE1 -> TEXT [cv := bounds(cv, pos() - 1)];

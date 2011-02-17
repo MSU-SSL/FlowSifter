@@ -212,12 +212,7 @@ let iset_of_string str =
 
 (**  Takes a ascii str and returns a ISet.t  t
      assume that the regex is not anchored unless explicitly anchored *)
-let regex_of_ascii_str ~dec str modifiers = 
-  let ignore_case = ref (List.mem `Ignore_case modifiers) in
-  let extended = List.mem `Extended modifiers in
-  (* TODO: add more options here *)
-  let stream = stream_tokenize ~extended str in
-  let escape_char_set = function (* TODO: implement more \. escapes *)
+let ascii_escapes = function (* TODO: implement more \. escapes *)
       'n' -> iset_of_string "\n"
     | 'r' -> iset_of_string "\r"
     | 't' -> iset_of_string "\t"
@@ -228,14 +223,20 @@ let regex_of_ascii_str ~dec str modifiers =
     | 'd' -> iset_of_string "0123456789"
     | 's' -> iset_of_string " \t\r\n"
     | x -> iset_of_string (String.of_char x)
-  in
+
+let ascii_any = ISet.add_range 0 255 ISet.empty
+
+let regex_of_ascii_str ~dec str modifiers = 
+  let ignore_case = ref (List.mem `Ignore_case modifiers) in
+  let extended = List.mem `Extended modifiers in
+  (* TODO: add more options here *)
+  let stream = stream_tokenize ~extended str in
   let value_of_escape = function (* TODO: Implement more escape types *)
       | [] -> failwith "End of string after escape"
-      | [x] -> escape_char_set x
+      | [x] -> ascii_escapes x
       | _ -> failwith "Unknown escape sequence"
   in
-  let any = ISet.add_range 0 255 ISet.empty in
-  let regex_of_class str = Value (iset_of_class any value_of_escape str) in
+  let regex_of_class str = Value (iset_of_class ascii_any value_of_escape str) in
   let dup_n rx n = Concat (List.make n rx) in
   let rec zero_thru_n rx n = if n > 0 then Union [epsilon; Concat [rx; zero_thru_n rx (n-1)]] else epsilon in
   let rec aux acc = 
@@ -267,7 +268,7 @@ let regex_of_ascii_str ~dec str modifiers =
 	aux ((aux [] )::acc) 
     | Some (`Substop) ->  Concat (List.rev acc) 
     | Some (`Caret) -> aux (Value (iset_of_string "^")::acc)
-    | Some (`Any) -> aux ((Value any)::acc)
+    | Some (`Any) -> aux ((Value ascii_any)::acc)
     | Some (`Alternate) -> (* This is tricky *)
 	aux [Union [Concat (List.rev acc) ;aux [] ] ]
     | Some (`Repeat (m,None)) -> (* unbounded *)
@@ -282,12 +283,23 @@ let regex_of_ascii_str ~dec str modifiers =
       | Some (`Caret) -> 
 	  Enum.junk stream;
 	  reduce (aux [])
-      | _ -> reduce (Concat [Kleene (Value any); aux []])
+      | _ -> reduce (Concat [Kleene (Value ascii_any); aux []])
   in
   reduce (Concat [rx; Accept dec])
  ;;
     
-
+let first_char rx = 
+  let rxlen = String.length rx in
+  if (rxlen < 2) || (rx.[0] <> '/') || (rx.[rxlen - 1] <> '/') then ISet.empty
+  else
+    match rx.[1] with
+      | '\\' -> ascii_escapes rx.[2]
+      | '(' -> assert false
+      | '[' -> assert false
+      | '^' -> assert false
+      | '.' -> ascii_any
+      | x -> ISet.singleton (Char.code x)
+	
 let match_char iset c = ISet.mem (Char.code c) iset
 
 let regex_match match_val rx lst = 

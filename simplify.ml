@@ -161,6 +161,15 @@ let make_nt_approximate grammar nt =
   let sg = subgrammar grammar nt in
   let starts = start sg in
   let stops = stop sg in
+  let first_characters = 
+    TSet.union starts stops |> 
+	TSet.enum |> Enum.map Pcregex.first_char |> Enum.reduce ISet.union 
+  in
+  let string_of_iset cs = 
+    ISet.enum cs /@ (fun (lo, hi) -> Char.chr lo --~ Char.chr hi) 
+    |> Enum.flatten |> String.of_enum 
+  in
+  let absorb = "/.[^" ^ string_of_iset first_characters ^ "]*/" in
   let xrementor nti action item acc =
     {name = nti;
      predicates = VarMap.empty;
@@ -183,7 +192,7 @@ let make_nt_approximate grammar nt =
      priority = 25 ;};  (* escape rule *)
     {name = newterm; 
      predicates = VarMap.add approx_counter pred_greater_zero VarMap.empty; 
-     expression = [(Term "/./", VarMap.empty); (Nonterm newterm, VarMap.empty)];
+     expression = [(Term absorb, VarMap.empty); (Nonterm newterm, VarMap.empty)];
      priority = 500 ;} (* absorption rule *)
   ] |> 
     TSet.fold (xrementor newterm act_inc) starts |> 

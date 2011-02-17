@@ -1,4 +1,4 @@
-open Batteries
+open Batteries_uni
 open Printf
 open Ns_types
 open Simplify
@@ -152,10 +152,10 @@ let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) =
 
     let ret = Array.create !next_avail_ca (Obj.magic 0) in
     Enum.iter (fun (ca, pro) -> ret.(ca) <- pro) pmap;
-    printf "varmap: %a\nca_statemap: %a\n ca: %a\n"
+(*    printf "varmap: %a\nca_statemap: %a\n ca: %a\n"
       (Hashtbl.print String.print Int.print) var_ht
       (Hashtbl.print String.print Int.print) ca_ht
-      print_reg_ds_ca ret; 
+      print_reg_ds_ca ret; *)
     ret, !next_avail_var
   
 
@@ -165,7 +165,7 @@ let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) =
 let get_rules state pr_list vars =
   let var_satisfied (v,p) = eval_p_exp state p vars.(v) in
   let pred_satisfied pred = List.for_all var_satisfied pred in
-  List.filter_map (fun (p,e) -> if pred_satisfied p then Some e else None) pr_list
+  List.fold_left (fun acc (p,_) -> let a = acc lsl 1 in if pred_satisfied p then a + 1 else a ) 0 pr_list
 
 let is_univariate_predicate rs =
   let v = ref None in
@@ -191,17 +191,16 @@ let optimize ca compile_ca =
       if List.for_all (fun (p,_) -> List.length p = 0) rules then
 	let dfa = List.map snd rules |> compile_ca in
 	(fun _ _ -> dfa)
-      else (*match is_univariate_predicate rules with
+      else match is_univariate_predicate rules with
 	  Some v -> 
 	    let rule_map = 
-	      0--var_max 
-	      |> Enum.map (fun i -> i,(get_rules_v i rules |> compile_ca)) 
-	      |> Enum.fold (fun acc (i,ca) -> IMap.add i ca acc) IMap.empty
+	      Array.init (var_max+1) (fun i -> get_rules_v i rules |> compile_ca)
 	    in
-	    (fun vars _ -> IMap.find vars.(v) rule_map )
-	| None ->  *)
+	    (fun vars _ -> rule_map.(vars.(v) land var_max))
+	| None ->  
+	  let cas = Array.init (1 lsl (List.length rules)) (fun _ -> assert false) in
 	  (fun vars parse_state ->
-	    get_rules parse_state rules vars |> compile_ca )
+	    cas.(get_rules parse_state rules vars) )
     in
     Array.map opt_prod ca
 
@@ -277,25 +276,25 @@ let make_rx_pair r =
     
 (* Compiles a list of rules into an automaton with decisions of
    (priority, action, nt) *)
-let compile_ca _ca_cache =
+let compile_ca ca_cache =
   (* TODO: pre-compile all possible rule combinations from the given ca *)
   (fun rules ->
-(*    Point.observe comp_p;
-    Time.start comp_t; *)
-       (*     try Map.find rules !ca_cache
-      with Not_found -> *)
-       List.enum rules
-       |> Enum.filter_map make_rx_pair
-       |> Pcregex.rx_of_dec_strings ~anchor:true
-       |> Minreg.of_reg
-(*       |> tap (eprintf "Making DFA from: %a %!" (Minreg.printp ~dec:false) ) *)
-       |> Regex_dfa.build_dfa ~labels:false (dec_rules comp_dec)
-       |> Regex_dfa.minimize ~dec_comp:dec_eq
-       |> Regex_dfa.to_array
-(*       |> tap (Regex_dfa.size |- eprintf "(%d states)\n%!") *)
-(*       |> D2fa.of_dfa *)
-(*       |> tap (fun dfa -> ca_cache := Map.add rules dfa !ca_cache) *)
-    (* |> tap (fun _ -> Time.stop comp_t) *)
+    (*    Point.observe comp_p;
+	  Time.start comp_t; *)
+    try Map.find rules !ca_cache
+    with Not_found -> 
+      List.enum rules
+      |> Enum.filter_map make_rx_pair
+      |> Pcregex.rx_of_dec_strings ~anchor:true
+      |> Minreg.of_reg
+       (*       |> tap (eprintf "Making DFA from: %a %!" (Minreg.printp ~dec:false) ) *)
+      |> Regex_dfa.build_dfa ~labels:false (dec_rules comp_dec)
+      |> Regex_dfa.minimize ~dec_comp:dec_eq
+      |> Regex_dfa.to_array
+  (*       |> tap (Regex_dfa.size |- eprintf "(%d states)\n%!") *)
+  (*       |> D2fa.of_dfa *)
+      |> tap (fun dfa -> ca_cache := Map.add rules dfa !ca_cache) 
+  (* |> tap (fun _ -> Time.stop comp_t) *)
   )
 
 
@@ -320,11 +319,12 @@ type 'a resume_ret =
   | Dec of ca_data * int
 
 let rec resume_arr qs input pri item ri q i =
-  if i > String.length input then
+  if i >= String.length input then (
+(*    printf "EOI: q:%d pri:%d ri:%d\n" q.Regex_dfa.id pri ri;*)
     End_of_input (q,pri,item,ri)
-  else
+  ) else
     let q_next_id = q.Regex_dfa.map.(Char.code input.[i]) in
-(*    printf "DFA@%d " q_next_id; *)
+(*  printf "DFA %C->%d " input.[i] q_next_id; *)
     if q_next_id = -1 then 
       Dec (item,ri)
     else
@@ -341,46 +341,56 @@ let null_state = -1
 let init_state dfa pos =
   let q0 = dfa.Regex_dfa.q0 in
   match q0.Regex_dfa.dec with 
-      Some {pri=p; item=i} -> (dfa.Regex_dfa.qs, q0, p, i, pos)
-    | None -> (dfa.Regex_dfa.qs, q0, max_int, ([], null_state), pos)
+      Some {pri=p; item=i} -> (dfa.Regex_dfa.qs, q0, p, i, pos, "")
+    | None -> (dfa.Regex_dfa.qs, q0, max_int, ([], null_state), pos, "")
 
 let ca_trans = ref 0
 
 let () = at_exit (fun () -> printf "#CA Transitions: %d\n" !ca_trans)
 
-let rec simulate_ca_string ~ca ~vars skip_left base_pos flow_data
-    (qs, q, pri, item, ri) = 
+let rec simulate_ca_string ~ca ~vars fail_drop skip_left base_pos flow_data (qs, q, pri, item, ri, tail_data) = 
+  (*Printf.printf "P:%s\n" flow_data; *)
   let flow_len = String.length flow_data in
   let pos = ref 0 in
   let ca_state = (!base_pos, pos, flow_data) in
-  let rec run_d2fa qs q pri item ri =
-    if !pos > flow_len then (
+  let rec run_d2fa qs q pri item ri tail_data =
+    if !pos >= flow_len then ( (* skipped past end of current packet *)
       skip_left := !pos - flow_len; 
-      (qs, q, pri, item, ri)
+      Some (qs, q, pri, item, !base_pos + ri, "")
+    ) else if !pos < 0 then ( (* handle DFA backtrack into previous packet *)
+      (* TODO: optimize? *)
+      let new_ri = ri + !base_pos in
+      base_pos := !base_pos + !pos;
+      simulate_ca_string ~ca ~vars fail_drop skip_left base_pos (tail_data ^ flow_data) (qs, q, pri, item, new_ri, "")
     ) else
       let dfa_result = resume_arr qs flow_data pri item ri q !pos in
       match dfa_result with
 	| Dec ((acts,q_next),pos_new) -> 
-	  printf "CA: %d @ pos %d\n" q_next pos_new; 
+(*	  printf "CA: %d @ pos %d(%d)\n" q_next (pos_new + !base_pos) pos_new;  *)
 	  incr ca_trans;
 	  parsed_bytes := !parsed_bytes + (pos_new - !pos);
 	  pos := pos_new;
 	  if acts <> [] then List.iter (run_act ca_state vars) acts;
-	  if q_next = null_state then
-	      raise Parse_complete
-	  else
+	  if q_next = null_state then (
+	    fail_drop := !fail_drop + (flow_len - pos_new);
+	    None
+	  ) else
 	    let dfa = ca.(q_next) vars ca_state in
 	    ( match dfa.Regex_dfa.q0.Regex_dfa.dec with
 	      | None -> 
-		run_d2fa dfa.Regex_dfa.qs dfa.Regex_dfa.q0 max_int ([],null_state) !pos
+		run_d2fa dfa.Regex_dfa.qs dfa.Regex_dfa.q0 max_int ([],null_state) !pos ""
 	      | Some {pri=p; item=i} ->
-		run_d2fa dfa.Regex_dfa.qs dfa.Regex_dfa.q0 p i !pos
+		run_d2fa dfa.Regex_dfa.qs dfa.Regex_dfa.q0 p i !pos ""
 	    )
 	| End_of_input (q_final, pri, item, ri) -> 
 	  parsed_bytes := !parsed_bytes + (String.length flow_data - !pos);
-	  (qs,q_final,pri,item,ri)
+(*	  printf "ri_out: %d, last_pos: %d\n" (!base_pos + ri) (!base_pos + flow_len);*)
+	  let tail_out = if ri < 0 then tail_data ^ flow_data else String.tail flow_data ri in
+	  Some (qs,q_final,pri,item, !base_pos + ri,tail_out)
+		
   in
-  run_d2fa qs q pri item ri
+(*  printf "ri_in: %d " ri;*)
+  run_d2fa qs q pri item (ri - !base_pos) tail_data
 
 exception Unknown_nonterminal of string
 let verify_grammar g = 

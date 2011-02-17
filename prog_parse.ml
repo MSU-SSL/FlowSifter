@@ -1,4 +1,4 @@
-open Batteries
+open Batteries_uni
 
 open Ns_types
 open Simplify
@@ -6,10 +6,12 @@ open ParsedPCFG
 open Ns_parse
 
 let pkt_skip = ref 0
-let parse_done = ref 0
 let parsers = ref 0
+let fail_drop = ref 0
 
-let () = at_exit (fun () -> Printf.printf "#Parsers generated: %d  Parse completions: %d\n" !parsers !parse_done)
+let () = at_exit (fun () -> 
+  Printf.printf "#Parsers generated: %d  Bytes dropped after desync: %a\n" !parsers Ean_std.print_size_B !fail_drop;
+)
 (* generates an incremental parser for the language defined by a 
    protocol grammar specification and extraction language *)
 let gen_parser p e = 
@@ -25,16 +27,16 @@ let gen_parser p e =
   fun () -> (* allow creating many parsers *)
     incr parsers;
     let vars = Array.make var_count 0 in    
-    let q = ref (init_state dfa0 0)
+    let q = ref (Some (init_state dfa0 0))
     and skip_left = ref 0
     and base_pos = ref 0 in
     let rec parse str =
       if !skip_left = 0 then 
-	try 
-	  q := simulate_ca_string ~ca ~vars skip_left base_pos str !q;
-	  base_pos := !base_pos + String.length str;
-	with Ns_parse.Parse_complete -> 
-	  incr parse_done;
+	match !q with
+	  | None -> fail_drop := !fail_drop + String.length str
+	  | Some q_in ->
+	    q := simulate_ca_string ~ca ~vars fail_drop skip_left base_pos str q_in;
+	    base_pos := !base_pos + String.length str;
       else (* skip_left > 0 *)
 	let len = String.length str in
 	if !skip_left >= len then ( (* skip the packet entirely *)

@@ -1,4 +1,4 @@
-open Batteries
+open Batteries_uni
 
 type 'a t = 'a IMap.t
 
@@ -23,7 +23,7 @@ let sub min max d = d |> IMap.from min |> IMap.until max
 
 let of_enum e = 
   let add_acc acc (lo,hi,c) = IMap.add_range ~eq:(==) lo hi c acc in
-  Batteries.fold add_acc IMap.empty e
+  Enum.fold add_acc IMap.empty e
 
 let decs d = 
   let accum _ _ c acc = PSet.add c acc in

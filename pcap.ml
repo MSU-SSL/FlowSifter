@@ -1,4 +1,4 @@
-open Batteries
+open Batteries_uni
 open Printf
 
 (* Print out packets from a tcpdump / libpcap / wireshark capture file.
@@ -63,12 +63,12 @@ and libpcap_header bits =
     | { _ } ->
       failwith "not a libpcap/tcpdump packet capture file"
 
-and libpcap_packet e file_header bits =
+and libpcap_packet e _file_header bits =
   bitmatch bits with
-    | { ts_sec : 32 : endian (e); (* packet timestamp seconds *)
-	ts_usec : 32 : endian (e);  (* packet timestamp microseconds *)
+    | { _ts_sec : 32 : endian (e); (* packet timestamp seconds *)
+	_ts_usec : 32 : endian (e);  (* packet timestamp microseconds *)
 	incl_len : 32 : endian (e); (* packet length saved in this file *)
-	orig_len : 32 : endian (e); (* packet length originally on wire *)
+	_orig_len : 32 : endian (e); (* packet length originally on wire *)
 	pkt_data : Int32.to_int incl_len*8 : bitstring;
 	rest : -1 : bitstring
       } ->
@@ -110,9 +110,9 @@ and decode_eth pkt_data =
 and decode_ip packet =
   bitmatch packet with
     | { 4 : 4;                       (* IPv4 *)
-	5 : 4; tos : 8; length : 16;
-	identification : 16; flags : 3; fragoffset : 13;
-	ttl : 8; protocol : 8; checksum : 16; sip : 32; dip : 32;
+	5 : 4; _tos : 8; length : 16;
+	_identification : 16; _flags : 3; _fragoffset : 13;
+	_ttl : 8; protocol : 8; _checksum : 16; sip : 32; dip : 32;
 	contents : (length * 8 - 160) : bitstring } ->
 (*      printf "IP len: %d " length; *)
       if protocol = 6 then  (* TCP decode *)
@@ -120,8 +120,8 @@ and decode_ip packet =
       else
 	(incr dropped_packets_non_tcp; None)
     | { 6 : 4;                      (* IPv6 *)
-	tclass : 8; flow : 20;
-	length : 16; nexthdr : 8; ttl : 8;
+	_tclass : 8; _flow : 20;
+	_length : 16; _nexthdr : 8; _ttl : 8;
 	_(*source*) : 128 : bitstring;
 	_(*dest*) : 128 : bitstring;
 	_(*payload*) : -1 : bitstring } ->
@@ -129,9 +129,9 @@ and decode_ip packet =
     | { _ } -> failwith "Not IPv4 or IPv6"
 and decode_tcp sip dip packet =
   bitmatch packet with
-      { s_port:16; d_port: 16; seqno: 32; ackno: 32; 
+      { s_port:16; d_port: 16; seqno: 32; _ackno: 32; 
 	d_off: 4; _misc: 6; 
-	urg:1; ack:1; psh:1; rst:1; syn: 1; fin: 1;
+	_urg:1; ack:1; _psh:1; _rst:1; syn: 1; fin: 1;
 	_window: 16; _checksum: 16; _urg_ptr: 16;
 	_: (d_off-5)*32: bitstring;
 	payload : -1 : bitstring } ->
@@ -292,21 +292,13 @@ let assemble fns =
   Hashtbl.iter (fun (_sip,_dip,_sp,_dp) (j,_) -> let j = PB.get_all j in if String.length j > 0 then ((*Printf.printf "(%lx,%lx,%d,%d): %S\n" sip dip sp dp (j);*) flows2 := Vect.append j !flows2)) ht2;
   let stream_len2 = Vect.enum !flows2 |> Enum.map String.length |> Enum.reduce (+) in
 (*  printf "# %d streams un-fin'ed, total_len: %d\n" (Vect.length !flows2) stream_len2; *)
-  let trace_len = float ((stream_len + stream_len2) * 8) /. float (1024 * 1024) in
-  printf "#Flows pre-assembled (len: %.2f mbit max_conc: %d flows: %d)\n" trace_len !max_conc !flow_count;
+  let trace_len = stream_len + stream_len2 in
+  printf "#Flows pre-assembled (len: %a max_conc: %d flows: %d)\n" Ean_std.print_size_B trace_len !max_conc !flow_count;
   Vect.concat !flows !flows2, trace_len
 
-let mbit_size v =
-  let byte_size = 
-    Vect.fold_left (fun acc (_,x,_) -> acc + String.length x) 0 v 
-  in
-  float (byte_size * 8) /. float (1024 * 1024)
+let trace_size v = Vect.fold_left (fun acc (_,x,_) -> acc + String.length x) 0 v 
 
-let mbit_sizef v =
-  let byte_size = 
-    Vect.fold_left (fun acc x -> acc + String.length x) 0 v 
-  in
-  float (byte_size * 8) /. float (1024 * 1024)
+let trace_sizef v = Vect.fold_left (fun acc x -> acc + String.length x) 0 v 
 
 (*** FILTER DUPLICATE/OUT-OF-ORDER PACKETS ***)
 let pre_parse fns = 
@@ -315,11 +307,11 @@ let pre_parse fns =
     /@ read_file_as_str
     /@ to_pkt_stream
     |> Enum.concat 
-    |> Enum.filter_map parseable
+    |> Enum.filter_map parseable (* very stateful check of whether we should parse that packet *)
     |> Vect.of_enum
   in
-  let trace_len = mbit_size packet_stream in
-  printf "#Flows pre-filtered for parsability (len: %.2f mbit max_conc: %d flows: %d)\n" trace_len !max_conc !flow_count;
+  let trace_len = trace_size packet_stream in
+  printf "#Flows pre-filtered for parsability (len: %a max_conc: %d flows: %d)\n" Ean_std.print_size_B trace_len !max_conc !flow_count;
   packet_stream, trace_len
 
 
@@ -330,8 +322,9 @@ let flow_count = ref 0
 
 let make_flows fns = 
   max_conc := 1; flow_count := Enum.count fns;
-  fns |> Enum.map (read_file_as_str ~verbose:false) |> Vect.of_enum |> (fun v -> v, mbit_sizef v)
-    |> tap (fun (_,l) -> printf "#Flows read from file (len: %.2f mbit max_conc: %d flows: %d)\n" l 1 !flow_count;)
+  fns |> Enum.map (read_file_as_str ~verbose:false) |> Vect.of_enum 
+    |> (fun v -> v, trace_sizef v)
+    |> tap (fun (_,l) -> printf "#Flows read from file (len: %a max_conc: %d flows: %d)\n" Ean_std.print_size_B l 1 !flow_count;)
 
 let make_packets fns =
   flow_count := Enum.count fns;
@@ -365,9 +358,9 @@ let make_packets fns =
     )
   in
   loop (Enum.empty ());
-  Enum.concat ret |> Vect.of_backwards |> (fun v -> v, mbit_size v)
-    |> tap (fun (v,l) -> 
-      printf "#Flows packetized (len: %.2f mbit max_conc: %d flows: %d)\n" 
-	l !max_conc !flow_count;
+  Enum.concat ret |> Vect.of_backwards |> (fun v -> v, trace_size v)
+    |> tap (fun (_v,l) -> 
+      printf "#Flows packetized (len: %a max_conc: %d flows: %d)\n" 
+	Ean_std.print_size_B l !max_conc !flow_count;
 (*      Vect.print (fun oc (fid,data,fin) -> fprintf oc "%d (%B): %S\n\n" fid fin data) stdout v; *)
     )

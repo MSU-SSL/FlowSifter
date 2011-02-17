@@ -1,5 +1,15 @@
-open Batteries
+open Batteries_uni
 open Printf
+
+let print_size_B oc x =
+  if x < 512 then
+    fprintf oc "%d B" x
+  else if x < 512 * 1024 then
+    fprintf oc "%.1f KiB" (float x /. 1024.)
+  else if x < 512 * 1024 * 1024 then
+    fprintf oc "%.1f MiB" (float x /. 1024. /. 1024.)
+  else if x < 512 * 1024 * 1024 * 1024 then
+    fprintf oc "%.1f GiB" (float x /. 1024. /. 1024. /. 1024.)
 
 (** This is a list of ranges **)
 type nrange = (int * int) list

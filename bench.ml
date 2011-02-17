@@ -1,28 +1,28 @@
-open Batteries
+open Batteries_uni
 open Printf
 
-let () = Gc.set { (Gc.get()) with Gc.minor_heap_size = 1_000_000; } ;;
+let set_mhs n = Gc.set { (Gc.get()) with Gc.minor_heap_size = n; } ;;
 
-type parser = [`Null | `Sift | `Pac]
+type parser_t = [ `Null | `Sift | `Pac ]
 let p_to_string = function `Null -> "Null" | `Sift -> "Sift" | `Pac -> "Pac "
 (*** GLOBAL CONFIGURATION ***)
 
 let check_mem_per_packet = false
-let pre_assemble = ref (not check_mem_per_packet)
+let parse_by_flow = ref (not check_mem_per_packet)
 let rep_cnt = ref 1
 let fns = ref []
 let mux = ref false
 let extr_ca = ref "extr.ca"
-let parsers : parser list ref = ref [`Sift; `Pac]
+let parsers : parser_t list ref = ref [`Sift; `Pac]
 
 (*** ARGUMENT HANDLING ***)
 
 open Arg2
 let set_main x = Unit (fun () -> parsers := [x])
 let args = 
-  [ (Name "no-assemble", [Clear pre_assemble], [], 
+  [ (Name "packets", [Clear parse_by_flow], [], 
      "Don't assemble the pcap files into flows");
-    (Both ('a', "assemble"), [Set pre_assemble], [], 
+    (Both ('f', "flows"), [Set parse_by_flow], [], 
      "Assemble the pcap files into flows");
     (Both ('m', "mux"), [Set mux], [], 
      "Mux the given flow files into a simulated pcap");
@@ -30,8 +30,11 @@ let args =
      "Set the number of repetitions to do");
     (Both ('s', "sift"), [set_main `Sift], [], "Run the Flowsifter parser");
     (Both ('p', "pac"), [set_main `Pac], [], "Run the pac parser");
+    (Name "null", [Unit (fun () -> parsers := [])], [], "Run only the null parser");
     (Both ('x', "extr"), [String_var extr_ca], [], 
      "Use the given extraction grammar");
+    (Name "seed", [Int (fun i -> Random.init i)], [], "Set the random number seed");
+    (Name "mhs", [Int set_mhs], [], "Set the minor heap size");
   ]
 and usage_info = "bench-?pac [options] <trace_data.pcap>"
 and descr = "FlowSifter Simulation library"
@@ -57,7 +60,7 @@ let null_p = {
 (*  get_event_count = (fun () -> 0); *)
 }
   
-let trace_len = ref (-1.)
+let trace_len = ref (-1)
   
 let sift_p = {
   id = "sift";
@@ -72,9 +75,7 @@ let () = at_exit (fun () ->
 	  Printf.printf "#Packets skipped entirely: %d Packets skipped partially: %d\n" !Prog_parse.pkt_skip !Prog_parse.pkt_partial_skip;
 	  Printf.printf "#Skip missed: %d\n" !Prog_parse.skip_missed; *)
   if List.mem `Sift !parsers then
-  let trace_len = !trace_len /. 8. in
-  let parsed = float !Ns_parse.parsed_bytes /. float (1024 * 1024) in
-  Printf.printf "#Trace payload length: %.1f MB Bytes parsed: %.1f Percentage of flow parsed: %2.1f\n" trace_len parsed (100. *. parsed /. trace_len)
+  Printf.printf "#Trace payload length: %a Bytes parsed: %a Percentage of flow parsed: %2.1f\n" Ean_std.print_size_B !trace_len Ean_std.print_size_B !Ns_parse.parsed_bytes (100. *. float !Ns_parse.parsed_bytes /. float !trace_len)
 )
   
 
@@ -114,27 +115,28 @@ let run pr =
   let ht = Hashtbl.create 1000 in
 
   let post_round round time =
+    let mem = !mem0 - (get_vmsize () |> int_of_string) in
     Hashtbl.iter (fun _ p -> pr.delete_parser p; decr conc_flows) ht;
     Hashtbl.clear ht;
-(*    if (!conc_flows <> 0) then (
+    if (!conc_flows <> 0) then (
       printf "#ERR: conc_flows = %d after cleanup\n" !conc_flows;
       conc_flows := 0
-    ); *)
-(*    Gc.compact (); *)
-    if not check_mem_per_packet then printf "%s\t%d\t%4.2f\n%!" pr.id round time
+    ); 
+    Gc.compact (); 
+    if not check_mem_per_packet then printf "%s\t%d\t%4.2f\t%d\n%!" pr.id round time mem
   in
 
   let act_packet (flow, data, fin) =
     let p = 
       try Hashtbl.find ht flow 
       with Not_found -> 
-	if check_mem_per_packet then incr conc_flows;
+	incr conc_flows;
 	pr.new_parser () |> tap (Hashtbl.add ht flow) 
     in
     pr.add_data p data;
     if check_mem_per_packet then printf "%d %d\n" !conc_flows (get_vmsize () |> int_of_string |> (fun x -> x - !mem0));
     if fin then (
-      if check_mem_per_packet then decr conc_flows;
+      decr conc_flows;
       Hashtbl.remove ht flow; pr.delete_parser p;
     )
   in	
@@ -168,7 +170,7 @@ let print_header () =
   Gc.compact();
   let t0 = Sys.time () in
   printf "# Init time: %4.2f\n" t0;
-  printf "parser\tround\ttime\n%!"
+  printf "parser\tround\ttime\tmem_round\n%!"
 
 (*** PARSER STRUCTURE ***)
 let get_fs = function
@@ -193,6 +195,7 @@ let main () =
   if !fns = [] then failwith "Not enough arguments";
   let fns = List.enum !fns |> expand_dirs in
   let main_loops_perf act (chunks, len) =
+    Gc.set { (Gc.get()) with Gc.space_overhead = 0; };
     let main_null = get_fs `Null |> act in
     let main_others = List.map (get_fs |- act) !parsers in
     trace_len := len;
@@ -206,16 +209,16 @@ let main () =
   in
   let main_loops = if check_mem_per_packet then main_loops_mem else main_loops_perf in
   let tnull,ts = 
-    match !pre_assemble, !mux with
+    match !parse_by_flow, !mux with
       |	true, false ->  fns |> Pcap.assemble     |> main_loops act_flow 
       | false, false ->	fns |> Pcap.pre_parse    |> main_loops act_packet
       | true, true ->	fns |> Pcap.make_flows   |> main_loops act_flow
       | false, true ->  fns |> Pcap.make_packets |> main_loops act_packet
   in
   let tnull_avg = list_avg tnull in
-  let rates = List.map (List.map (fun t -> !trace_len /. (t -. tnull_avg))) ts in
+  let rates = List.map (List.map (fun t -> float !trace_len /. (t -. tnull_avg) /. 1024. /. 1024. *. 8.)) ts in
   List.iter2 (fun p rs -> 
-    printf "#%s rates: %a\n" (p_to_string p) (List.print Float.print) rs) !parsers rates;
+    printf "#%s rates (mbps): %a\n" (p_to_string p) (List.print Float.print) rs) !parsers rates;
   (match rates with [_] -> () | [fr;pr] -> printf "#speed ratio: %4.2f\n" (list_avg fr /. list_avg pr) | _ -> printf "#wrong number of rates\n");
   Printf.printf "#completed in %4.2fs, (sift: %d pac: %d ) events\n" 
     (Sys.time ()) (Prog_parse.get_event_count ()) (Anypac.get_event_count ());

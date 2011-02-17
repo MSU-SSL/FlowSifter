@@ -1,4 +1,4 @@
-<*>: pkg_batteries, pkg_threads, use_menhir, annot, debug, ocamlviz
+<*>: pkg_batteries, use_menhir, annot, debug, ocamlviz
 <bench.*>: dflow, syntax_camlp4o, pkg_camlp4.macro
 <{pcap,hwrun}.*>: syntax_bitstring.syntax, pkg_bitstring, pkg_bitstring.syntax
 <*_stubs.c>: include_ocaml

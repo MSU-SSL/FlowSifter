@@ -1,4 +1,4 @@
-open Batteries 
+open Batteries_uni
 
 type action = string
 type non_terminal = string
@@ -31,6 +31,8 @@ let wrong_args name = raise (Invalid_arg_count name)
 let matches = ref 0
 let saves = Hashtbl.create 100
 
+let zero_size = ref 0
+let () = at_exit (fun () -> Printf.printf "#Zero size matches: %d\n" !zero_size)
 (*
 let () = at_exit (fun () -> Hashtbl.iter (fun k v -> Printf.printf "%d %s\n" !v k) saves)
 *)
@@ -55,9 +57,10 @@ let ca_functions = ref
 	incr matches;
 	0
       | [s1;e] -> 
-	let s = s1 - base_pos in let e = e - 1 in
+	incr zero_size;
+(*	let s = s1 - base_pos in let e = e - 1 in
 	Printf.printf "base_pos %d s1 %d e %d sim_pos %d\n%!" base_pos s1 e !sim_pos;
-	Printf.printf "zero-size match: %d to %d at %S\n\n%S\n\n" s1 e (String.head flow_data s) (String.tail flow_data s);
+	Printf.printf "zero-size match: %d to %d at %S\n\n%S\n\n" s1 e (String.head flow_data s) (String.tail flow_data s); *)
 	0
       | _ -> wrong_args "bounds"
     );
