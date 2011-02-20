@@ -1,14 +1,16 @@
 open Batteries_uni
 open Printf
 
-let set_mhs n = Gc.set { (Gc.get()) with Gc.minor_heap_size = n; } ;;
+let set_mhs n = Gc.set { (Gc.get()) with Gc.minor_heap_size = n; } 
+let () = set_mhs 250_000;;
+
 
 type parser_t = [ `Null | `Sift | `Pac ]
 let p_to_string = function `Null -> "Null" | `Sift -> "Sift" | `Pac -> "Pac "
 (*** GLOBAL CONFIGURATION ***)
 
-let check_mem_per_packet = false
-let parse_by_flow = ref (not check_mem_per_packet)
+let check_mem_per_packet = ref false
+let parse_by_flow = ref (not !check_mem_per_packet)
 let rep_cnt = ref 1
 let fns = ref []
 let mux = ref false
@@ -37,6 +39,7 @@ let args =
      "Use the given extraction grammar");
     (Name "seed", [Int (fun i -> Random.init i)], [], "Set the random number seed");
     (Name "mhs", [Int set_mhs], [], "Set the minor heap size");
+    (Name "mem", [Set check_mem_per_packet; Clear parse_by_flow], [], "Do memory testing");
   ]
 and usage_info = "bench-?pac [options] <trace_data.pcap>"
 and descr = "FlowSifter Simulation library"
@@ -109,6 +112,7 @@ let get_vmsize () =
 (*** WRAPPER FOR PARSERS TO HANDLE PACKETS AND FLOWS ***)
 
 let conc_flows = ref 0
+let max_cpp = ref 0
 
 let mem0 = ref 0
 
@@ -117,15 +121,15 @@ let run pr =
   let ht = Hashtbl.create 1000 in
 
   let post_round round time =
-    let mem = !mem0 - (get_vmsize () |> int_of_string) in
+    let mem = (get_vmsize () |> int_of_string) - !mem0 in
+    let parsers = !conc_flows in
     Hashtbl.iter (fun _ p -> pr.delete_parser p; decr conc_flows) ht;
     Hashtbl.clear ht;
     if (!conc_flows <> 0) then (
       printf "#ERR: conc_flows = %d after cleanup\n" !conc_flows;
       conc_flows := 0
     ); 
-    Gc.compact (); 
-    if not check_mem_per_packet then printf "%s\t%d\t%4.2f\t%d\n%!" pr.id round time mem
+    if not !check_mem_per_packet then printf "%s\t%d\t%4.2f\t%d\t%d\n%!" pr.id round time mem parsers
   in
 
   let act_packet (flow, data, fin) =
@@ -136,29 +140,27 @@ let run pr =
 	pr.new_parser () |> tap (Hashtbl.add ht flow) 
     in
     pr.add_data p data;
-    if check_mem_per_packet then printf "%d %d\n" !conc_flows (get_vmsize () |> int_of_string |> (fun x -> x - !mem0));
+    if !check_mem_per_packet && !conc_flows > !max_cpp then (
+      max_cpp := !conc_flows;
+      printf "%d %d\n" !conc_flows (get_vmsize () |> int_of_string |> (fun x -> x - !mem0));
+    );
     if fin then (
       decr conc_flows;
       Hashtbl.remove ht flow; pr.delete_parser p;
     )
   in	
-  let act_flow fl = 
-    let p = pr.new_parser () in
-    pr.add_data p fl;
-    pr.delete_parser p
-  in
-  post_round, act_packet, act_flow
+  post_round, act_packet
 
 ;;
 
 
 (*** RUN FUNCTION IN A LOOP AND INSTRUMENT ***)
-let main_loop post_round f rep_cnt xs =
+let main_loop (post_round, f) rep_cnt xs =
   let ret = ref [] in
   let round_num = ref 0 in
-  Gc.compact ();
+(*  Gc.compact (); *)
   mem0 := get_vmsize () |> int_of_string;
-  printf "#Mem0 = %d\n" !mem0;
+  printf "# Mem0 = %d\n" !mem0;
   while incr round_num; !round_num <= rep_cnt do
     let tpre = Sys.time () in
     Vect.iter f xs;
@@ -172,16 +174,13 @@ let print_header () =
   Gc.compact();
   let t0 = Sys.time () in
   printf "# Init time: %4.2f\n" t0;
-  printf "parser\tround\ttime\tmem_round\n%!"
+  printf "parser\tround\ttime\tmem\tparsers\n%!"
 
 (*** PARSER STRUCTURE ***)
 let get_fs = function
   | `Null -> run null_p
   | `Sift -> run sift_p
   | `Pac -> run pac_p
-
-let act_packet (p,ap,_af) = main_loop p ap
-let act_flow (p,_ap,af) = main_loop p af
 
 let expand_dirs e = 
   let rec exp fn = 
@@ -196,27 +195,28 @@ let expand_dirs e =
 let main () = 
   if !fns = [] then failwith "Not enough arguments";
   let fns = List.enum !fns |> expand_dirs in
-  let main_loops_perf act (chunks, len) =
+  let main_loops_perf (chunks, len) =
     Gc.set { (Gc.get()) with Gc.space_overhead = 0; };
-    let main_null = get_fs `Null |> act in
-    let main_others = List.map (get_fs |- act) !parsers in
+    let main_null = get_fs `Null |> main_loop in
+    let main_others = List.map (get_fs |- main_loop) !parsers in
     trace_len := len;
     print_header ();
     let a = if !baseline then main_null !rep_cnt chunks else [0.] in
     let b = List.map (fun f -> f !rep_cnt chunks) main_others in
     a,b
   in
-  let main_loops_mem act (chunks, _len) =
-    [0.], List.map (fun p -> (get_fs p |> act) !rep_cnt chunks) !parsers
+  let main_loops_mem (chunks, _len) =
+    [0.], List.map (fun p -> (get_fs p |> main_loop) !rep_cnt chunks) !parsers
   in
-  let main_loops = if check_mem_per_packet then main_loops_mem else main_loops_perf in
-  let tnull,ts = 
+  let main_loops = if !check_mem_per_packet then main_loops_mem else main_loops_perf in
+  let pre_process = 
     match !parse_by_flow, !mux with
-      |	true, false ->  fns |> Pcap.assemble     |> main_loops act_flow 
-      | false, false ->	fns |> Pcap.pre_parse    |> main_loops act_packet
-      | true, true ->	fns |> Pcap.make_flows   |> main_loops act_flow
-      | false, true ->  fns |> Pcap.make_packets |> main_loops act_packet
+      |	true, false ->  Pcap.assemble     
+      | false, false ->	Pcap.pre_parse    
+      | true, true ->	Pcap.make_flows   
+      | false, true ->  Pcap.make_packets 
   in
+  let tnull,ts = fns |> pre_process |> main_loops in
   let tnull_avg = list_avg tnull in
   let rates = List.map (List.map (fun t -> float !trace_len /. (t -. tnull_avg) /. 1024. /. 1024. *. 8.)) ts in
   List.iter2 (fun p rs -> 
