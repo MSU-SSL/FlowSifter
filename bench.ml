@@ -57,10 +57,12 @@ type 'a parser_f = {
 (*  get_event_count : unit -> int; *)
 }
 
+let parser_count = ref 0
+
 let null_p = {
   id = "null";
-  new_parser = (fun () -> ());
-  delete_parser = (fun () -> ());
+  new_parser = (fun () -> incr parser_count);
+  delete_parser = (fun () -> decr parser_count);
   add_data = (fun () _ -> ());
 (*  get_event_count = (fun () -> 0); *)
 }
@@ -79,8 +81,7 @@ let () = at_exit (fun () ->
     (*    Printf.printf "#Bytes skip()ed: %d  Times this exceeded the current packet: %d bytes asked to skip trans-packet: %d\n" !Ns_parse.inner_skip !Ns_parse.skip_over !Prog_parse.total_skip; 
 	  Printf.printf "#Packets skipped entirely: %d Packets skipped partially: %d\n" !Prog_parse.pkt_skip !Prog_parse.pkt_partial_skip;
 	  Printf.printf "#Skip missed: %d\n" !Prog_parse.skip_missed; *)
-  if List.mem `Sift !parsers then
-  Printf.printf "#Trace payload length: %a Bytes parsed: %a Percentage of flow parsed: %2.1f\n" Ean_std.print_size_B !trace_len Ean_std.print_size_B !Ns_parse.parsed_bytes (100. *. float !Ns_parse.parsed_bytes /. float !trace_len)
+  Printf.printf "#Trace payload length: %d Bytes parsed: %a Percentage of flow parsed: %2.1f\n" !trace_len Ean_std.print_size_B !Ns_parse.parsed_bytes (100. *. float !Ns_parse.parsed_bytes /. float !trace_len)
 )
   
 
@@ -98,16 +99,20 @@ let pac_p = {
 
 let list_avg l = if l = [] then failwith "list_avg: empty list" else List.reduce (+.) l /. (List.length l |> float) 
 
-let get_vmsize () =
+let vm_size_fn = 
   let pid = Unix.getpid () in
-  let fn = sprintf "/proc/%d/stat" pid in
-  let stat_data = File.with_file_in fn (IO.read_all) in
+  sprintf "/proc/%d/stat" pid
+
+let get_vmsize () =
+  let stat_data = File.with_file_in vm_size_fn (IO.read_all) in
   let fields = String.nsplit stat_data " " in
   if List.length fields > 22 then
-    List.nth fields 22 
+    List.nth fields 22 |> int_of_string
   else
-    "Not enough fields in " ^ stat_data
+    failwith "Couldn't read stat data"
 
+
+let get_ocaml_mem () = 8 * (Gc.stat ()).Gc.live_words
 
 (*** WRAPPER FOR PARSERS TO HANDLE PACKETS AND FLOWS ***)
 
@@ -115,21 +120,28 @@ let conc_flows = ref 0
 let max_cpp = ref 0
 
 let mem0 = ref 0
+let mem0gc = ref 0
+
+let mem () = max (get_vmsize () - !mem0) (get_ocaml_mem() - !mem0gc)
 
 let run pr = 
 
   let ht = Hashtbl.create 1000 in
 
   let post_round round time =
-    let mem = (get_vmsize () |> int_of_string) - !mem0 in
+    let mem_1 = mem () in
     let parsers = !conc_flows in
     Hashtbl.iter (fun _ p -> pr.delete_parser p; decr conc_flows) ht;
-    Hashtbl.clear ht;
+    Hashtbl.clear ht; assert (!parser_count = 0);
     if (!conc_flows <> 0) then (
       printf "#ERR: conc_flows = %d after cleanup\n" !conc_flows;
       conc_flows := 0
     ); 
-    if not !check_mem_per_packet then printf "%s\t%d\t%4.2f\t%d\t%d\n%!" pr.id round time mem parsers
+    Gc.compact ();
+    let mem_2 = mem () in 
+    max_cpp := 0;
+    if not !check_mem_per_packet then 
+      printf "%s\t%d\t%4.2f\t%d\t%d\t%d\n%!" pr.id round time mem_1 parsers mem_2
   in
 
   let act_packet (flow, data, fin) =
@@ -140,9 +152,9 @@ let run pr =
 	pr.new_parser () |> tap (Hashtbl.add ht flow) 
     in
     pr.add_data p data;
-    if !check_mem_per_packet && !conc_flows > !max_cpp then (
+    if !check_mem_per_packet && !conc_flows - !max_cpp >= 10 then (
       max_cpp := !conc_flows;
-      printf "%d %d\n" !conc_flows (get_vmsize () |> int_of_string |> (fun x -> x - !mem0));
+      printf "%s %d %d\n" pr.id !conc_flows (mem ());
     );
     if fin then (
       decr conc_flows;
@@ -150,7 +162,6 @@ let run pr =
     )
   in	
   post_round, act_packet
-
 ;;
 
 
@@ -158,15 +169,14 @@ let run pr =
 let main_loop (post_round, f) rep_cnt xs =
   let ret = ref [] in
   let round_num = ref 0 in
-(*  Gc.compact (); *)
-  mem0 := get_vmsize () |> int_of_string;
-  printf "# Mem0 = %d\n" !mem0;
+  mem0 := get_vmsize (); mem0gc := get_ocaml_mem ();
+  printf "# Mem0 = %d (gc: %d)\n%!" !mem0 !mem0gc;
   while incr round_num; !round_num <= rep_cnt do
     let tpre = Sys.time () in
     Vect.iter f xs;
     let time = Sys.time () -. tpre in
     post_round !round_num time;
-    ret := time :: !ret
+    ret := time :: !ret;
   done;
   List.rev !ret
 
@@ -174,7 +184,7 @@ let print_header () =
   Gc.compact();
   let t0 = Sys.time () in
   printf "# Init time: %4.2f\n" t0;
-  printf "parser\tround\ttime\tmem\tparsers\n%!"
+  printf "parser\tround\ttime\tmem\tparsers\tleak\n%!"
 
 (*** PARSER STRUCTURE ***)
 let get_fs = function
@@ -196,7 +206,6 @@ let main () =
   if !fns = [] then failwith "Not enough arguments";
   let fns = List.enum !fns |> expand_dirs in
   let main_loops_perf (chunks, len) =
-    Gc.set { (Gc.get()) with Gc.space_overhead = 0; };
     let main_null = get_fs `Null |> main_loop in
     let main_others = List.map (get_fs |- main_loop) !parsers in
     trace_len := len;
