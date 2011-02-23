@@ -156,7 +156,7 @@ let to_pkt_stream str =
   |> BatEnum.filter_map (decode_packet network)
 
 (*** IMPLEMENTATIONS OF reassembly buffers ***)
-
+let bslen x = Bitstring.bitstring_length x lsr 3
 module EBuf = struct
   type t = string * int
   let add_data (pbuf, plen) data offset = 
@@ -236,18 +236,6 @@ let new_flow () = incr flow_count; incr conc_flows; max_conc := max !max_conc !c
 let done_flow () = decr conc_flows 
 
 (*** FLOW REASSEMBLY ***)
-let parseable = 
-  let ht = Hashtbl.create 1000 in
-  fun (flow, offset, data, (_syn,_ack,fin)) ->
-    let exp = 
-      try Hashtbl.find ht flow 
-      with Not_found -> new_flow(); (ref (offset+1)) |> tap (Hashtbl.add ht flow)
-    in
-    let dlen = String.length data in
-    let should_parse = (dlen > 0 && offset = !exp) || fin in
-    if fin then (Hashtbl.remove ht flow; done_flow ());
-    if should_parse then (exp := !exp + dlen; Some (flow,data,fin)) else None
-
 let ht2 = Hashtbl.create 50000
 let assemble fns =
   let strs = Enum.map read_file_as_str fns in
@@ -288,17 +276,32 @@ let assemble fns =
   let all_flows = Vect.concat !flows !flows2 in
   printf "# Flows pre-assembled (len: %a max_conc: %d flows: %d)\n" Ean_std.print_size_B trace_len !max_conc !flow_count;
   printf "# Flows in vect: %d\n" (Vect.length all_flows);
-  all_flows, trace_len
+  (*!flows2, stream_len2*) all_flows, trace_len
 
 
 (*** FILTER DUPLICATE/OUT-OF-ORDER PACKETS ***)
+let parseable = 
+  let ht = Hashtbl.create 1000 in
+  fun (flow, offset, data, (_syn,_ack,fin)) ->
+    let exp = 
+      try Hashtbl.find ht flow 
+      with Not_found -> new_flow(); (ref (offset+1)) |> tap (Hashtbl.add ht flow)
+    in
+    let dlen = String.length data in
+    let should_parse = (dlen > 0 && offset = !exp) || fin in
+    if fin then (Hashtbl.remove ht flow; done_flow ());
+    if should_parse then (exp := !exp + dlen; true) else false
+
+let to_flow_packet (flow, _offset, data, (_syn, _ack, fin)) = (flow,data,fin)
+
 let pre_parse fns = 
   let packet_stream = 
-    fns
-    /@ read_file_as_str
-    /@ to_pkt_stream
-    |> Enum.concat 
-    |> Enum.filter_map parseable (* very stateful check of whether we should parse that packet *)
+    (fns
+     /@ read_file_as_str      
+     /@ to_pkt_stream         (* convert each pcap file into a stream of packets *)
+	|> Enum.concat)           (* flatten all the packets into a single stream *)
+    // parseable (* very stateful check of whether we should parse that packet *)
+    /@ to_flow_packet        (* remove unneeded fields *)
     |> Vect.of_enum
   in
   let trace_len = trace_size packet_stream in
