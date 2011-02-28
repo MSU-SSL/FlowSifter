@@ -4,8 +4,10 @@ arg2.cmo:
 arg2.cmx: 
 bdd.cmo: tcam.cmo ruleset.cmo ean_std.cmo 
 bdd.cmx: tcam.cmx ruleset.cmx ean_std.cmx 
-bench.cmo: prog_parse.cmo pcap.cmo ns_parse.cmo arg2.cmo anypac.cmo 
-bench.cmx: prog_parse.cmx pcap.cmx ns_parse.cmx arg2.cmx anypac.cmx 
+bench.cmo: prog_parse.cmo pcap.cmo ns_parse.cmo ean_std.cmo arg2.cmo \
+    anypac.cmo 
+bench.cmx: prog_parse.cmx pcap.cmx ns_parse.cmx ean_std.cmx arg2.cmx \
+    anypac.cmx 
 bpac.cmo: 
 bpac.cmx: 
 d2fa.cmo: regex_dfa.cmo ean_std.cmo disj_set.cmo 
@@ -58,8 +60,8 @@ regex_dfa.cmo: tcam.cmo ruleset.cmo optimizers.cmo minreg.cmo ean_std.cmo
 regex_dfa.cmx: tcam.cmx ruleset.cmx optimizers.cmx minreg.cmx ean_std.cmx 
 ruleset.cmo: ean_std.cmo 
 ruleset.cmx: ean_std.cmx 
-simplify.cmo: ns_types.cmo 
-simplify.cmx: ns_types.cmx 
+simplify.cmo: pcregex.cmo ns_types.cmo 
+simplify.cmx: pcregex.cmx ns_types.cmx 
 tcam.cmo: ruleset.cmo ean_std.cmo 
 tcam.cmx: ruleset.cmx ean_std.cmx 
 upac.cmo: 

@@ -434,3 +434,7 @@ let tcam_size dfa =
   let get_map x = x.map in
   Array.enum dfa.qs |> map (get_map |- Optimizers.raz_dec |- Vect.length) |> Enum.reduce (+)
 
+let to_array dfa = 
+  let to_arr m = 
+    Array.init 256 (fun i -> try IMap.find i m with Not_found -> -1) in
+  map_qs (fun q -> {q with map = to_arr q.map}) dfa
