@@ -355,7 +355,7 @@ let make_packets fns =
   loop (Enum.empty ());
   Enum.concat ret |> Vect.of_backwards |> (fun v -> v, trace_size v)
     |> tap (fun (_v,l) -> 
-      printf "#Flows packetized (len: %a max_conc: %d flows: %d)\n" 
-	Ean_std.print_size_B l !max_conc !flow_count;
+      printf "#Flows packetized (len: %a max_conc: %d flows: %d packets:%d)\n" 
+	Ean_std.print_size_B l !max_conc !flow_count (Vect.length _v);
 (*      Vect.print (fun oc (fid,data,fin) -> fprintf oc "%d (%B): %S\n\n" fid fin data) stdout v; *)
     )
