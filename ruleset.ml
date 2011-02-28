@@ -146,7 +146,7 @@ let print ?(full=false) print_pred print_dec chan rs =
   end;
   print_rv print_pred print_dec chan rs.rs
 
-(** Idemponent but prints some stats on rs (dimensions and size) **)
+(** Print some stats on rs (dimensions and size) **)
 let rs_stats rs = 
   eprintf "RS: %dD - %d rules\n%!" (dims rs) (length rs)
 

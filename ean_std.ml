@@ -336,16 +336,3 @@ let print_statistics ?(oc=stdout) e =
 		     m := mk) e;
 	let stdev = sqrt(!s /. float (!k-1)) in
 	fprintf oc "N: %d Sum: %d Mean: %.1f Stdev: %.1f\n" !k !t !m stdev
-  
-let cache gen init_size =
-  let ht = Hashtbl.create init_size in
-  (fun k -> 
-    try Hashtbl.find ht k
-    with Not_found -> gen k |> tap (Hashtbl.add ht k)),
-  (fun k -> Hashtbl.remove ht k)
-
-let cache_map gen =
-  let ht = ref Map.empty in
-  fun k -> 
-    try Map.find k !ht
-    with Not_found -> gen k |> tap (fun v -> ht := Map.add k v !ht)

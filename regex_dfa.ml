@@ -401,44 +401,6 @@ let print_trace oc dfa trace =
     (List.print Int.print) (qopt_to_dec_l last);
   ()
 
-let rec resume dfa input pri ret q i =
-  if i >= String.length input then 
-    `End_of_input q
-  else
-    try 
-      let q_next_id = IMap.find (Char.code input.[i]) q.map in
-      let q = dfa.qs.(q_next_id) in
-      match q.dec with
-	| Some (pri',act,caq) when pri' <= pri ->
-	  resume dfa input pri' (act,caq,i+1) q (i+1)
-	| _ -> 
-	  resume dfa input pri ret q (i+1)
-    with Not_found -> `Dec ret
-
-let to_array dfa = 
-  let to_arr m = 
-    Array.init 256 (fun i -> try IMap.find i m with Not_found -> -1) in
-  map_qs (fun q -> {q with map = to_arr q.map}) dfa
-
-let rec resume_arr dfa input pri ret q i =
-  if i >= String.length input then 
-    `End_of_input q
-  else
-    let q_next_id = q.map.(Char.code input.[i]) in
-    if q_next_id = -1 then begin
-(*      let loss = i - ri - 1 in
-      if loss > 0 then printf "L%d " loss; *)
-      `Dec ret
-    end
-    else
-      let q = dfa.qs.(q_next_id) in
-      match q.dec with
-	| Some (pri',act,caq) when pri' <= pri ->
-	  resume_arr dfa input pri' (act,caq,i+1) q (i+1)
-	| _ -> 
-	  resume_arr dfa input pri ret q (i+1)
-
-
 module RS = Ruleset
 open RS.Rule
 
