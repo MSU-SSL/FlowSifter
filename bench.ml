@@ -124,6 +124,8 @@ let mem0gc = ref 0
 
 let mem () = max (get_vmsize () - !mem0) (get_ocaml_mem() - !mem0gc)
 
+let run_id = ref ""
+
 let run pr = 
 
   let ht = Hashtbl.create 1000 in
@@ -156,7 +158,7 @@ let run pr =
     incr packet_ctr;
     pr.add_data p data;
     if !check_mem_per_packet && !packet_ctr land 0xff = 0 then (
-      printf "%s %d %d %d\n" pr.id !packet_ctr !conc_flows (mem ());
+      printf "%s %s %d %d %d\n" !run_id pr.id !packet_ctr !conc_flows (mem ());
     );
     if fin then (
       decr conc_flows;
@@ -179,11 +181,10 @@ let main_loop (post_round, f) rep_cnt xs =
   post_round rep_cnt time;
   time
 
-let print_header () = 
-  Gc.compact();
-  let t0 = Sys.time () in
-  printf "# Init time: %4.2f\n" t0;
-  printf "parser\tround\ttime\tmem\tparsers\tleak\n%!"
+let print_header () = Gc.compact()
+(*  let t0 = Sys.time () in*)
+ (* printf "# Init time: %4.2f\n" t0; *)
+(*  printf "parser\tround\ttime\tmem\tparsers\tleak\n%!" *)
 
 (*** PARSER STRUCTURE ***)
 let get_fs = function
@@ -203,7 +204,8 @@ let expand_dirs e =
 (*** MAIN ***) 
 let main () = 
   if !fns = [] then failwith "Not enough arguments";
-  let fns = List.enum !fns |> expand_dirs in
+  run_id := String.concat "," !fns;
+(*  let fns = List.enum !fns |> expand_dirs in *)
   let main_loops (chunks, len) =
     let main_null = get_fs `Null |> main_loop in
     let main_others = List.map (get_fs |- main_loop) !parsers in
@@ -224,7 +226,7 @@ let main () =
       | true, true ->	Pcap.make_flows   
       | false, true ->  Pcap.make_packets 
   in
-  let tnull,ts = fns |> pre_process |> main_loops in
+  let tnull,ts = List.enum !fns |> pre_process |> main_loops in
   let rates = List.map (fun t -> float !trace_len /. (t -. tnull) /. 1024. /. 1024. *. 8.) ts in
   List.iter2 (fun p rs -> 
     printf "#%s rates (mbps): %a\n" (p_to_string p) Float.print rs) !parsers rates;
