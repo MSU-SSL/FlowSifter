@@ -169,18 +169,15 @@ let run pr =
 
 (*** RUN FUNCTION IN A LOOP AND INSTRUMENT ***)
 let main_loop (post_round, f) rep_cnt xs =
-  let ret = ref [] in
-  let round_num = ref 0 in
   mem0 := get_vmsize (); mem0gc := get_ocaml_mem ();
   printf "# Mem0 = %d (gc: %d)\n%!" !mem0 !mem0gc;
-  while incr round_num; !round_num <= rep_cnt do
-    let tpre = Sys.time () in
+  let tpre = Sys.time () in
+  for round_num = 0 to rep_cnt do
     Vect.iter f xs;
-    let time = Sys.time () -. tpre in
-    post_round !round_num time;
-    ret := time :: !ret;
   done;
-  List.rev !ret
+  let time = Sys.time () -. tpre in
+  post_round rep_cnt time;
+  time
 
 let print_header () = 
   Gc.compact();
@@ -215,7 +212,7 @@ let main () =
     let a = 
       if !baseline && not !check_mem_per_packet 
       then main_null !rep_cnt chunks 
-      else [0.] 
+      else 0.
     in
     let b = List.map (fun f -> f !rep_cnt chunks) main_others in
     a,b
@@ -228,11 +225,10 @@ let main () =
       | false, true ->  Pcap.make_packets 
   in
   let tnull,ts = fns |> pre_process |> main_loops in
-  let tnull_avg = list_avg tnull in
-  let rates = List.map (List.map (fun t -> float !trace_len /. (t -. tnull_avg) /. 1024. /. 1024. *. 8.)) ts in
+  let rates = List.map (fun t -> float !trace_len /. (t -. tnull) /. 1024. /. 1024. *. 8.) ts in
   List.iter2 (fun p rs -> 
-    printf "#%s rates (mbps): %a\n" (p_to_string p) (List.print Float.print) rs) !parsers rates;
-  (match rates with [_] -> () | [fr;pr] -> printf "#speed ratio: %4.2f\n" (list_avg fr /. list_avg pr) | _ -> printf "#wrong number of rates\n");
+    printf "#%s rates (mbps): %a\n" (p_to_string p) Float.print rs) !parsers rates;
+  (match rates with [_] -> () | [fr;pr] -> printf "#speed ratio: %4.2f\n" (fr /. pr) | _ -> printf "#wrong number of rates\n");
   Printf.printf "#completed in %4.2fs, (sift: %d pac: %d ) events\n" 
     (Sys.time ()) (Prog_parse.get_event_count ()) (Anypac.get_event_count ());
   ()
