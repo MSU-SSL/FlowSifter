@@ -226,6 +226,9 @@ let read_file_as_str ?(verbose=false) fn =
   if verbose then printf "done\n%!";
   ret
 
+(* get a single flow of packets from an enum of filenames *)
+let packets_of_files fns = (fns /@ read_file_as_str /@ to_pkt_stream |> Enum.concat)          
+
 let trace_size v = Vect.fold_left (fun acc (_,x,_) -> acc + String.length x) 0 v 
 
 let max_conc = ref 0
@@ -234,6 +237,7 @@ let flow_count = ref 0
 
 let new_flow () = incr flow_count; incr conc_flows; max_conc := max !max_conc !conc_flows
 let done_flow () = decr conc_flows 
+
 
 (*** FLOW REASSEMBLY ***)
 let ht2 = Hashtbl.create 50000
@@ -296,10 +300,7 @@ let to_flow_packet (flow, _offset, data, (_syn, _ack, fin)) = (flow,data,fin)
 
 let pre_parse fns = 
   let packet_stream = 
-    (fns
-     /@ read_file_as_str      
-     /@ to_pkt_stream         (* convert each pcap file into a stream of packets *)
-	|> Enum.concat)           (* flatten all the packets into a single stream *)
+    packets_of_files fns
     // parseable (* very stateful check of whether we should parse that packet *)
     /@ to_flow_packet        (* remove unneeded fields *)
     |> Vect.of_enum
@@ -359,3 +360,6 @@ let make_packets fns =
 	Ean_std.print_size_B l !max_conc !flow_count (Vect.length _v);
 (*      Vect.print (fun oc (fid,data,fin) -> fprintf oc "%d (%B): %S\n\n" fid fin data) stdout v; *)
     )
+
+(** ENUM OF FILES -> ENUM OF DEST IPs**)
+
