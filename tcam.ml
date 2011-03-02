@@ -184,7 +184,7 @@ module Entry = struct
   (* Adds an entry to an IMap using the given permutation.  
      Post-permutation, this entry *MUST* be prefix form *)
   let add_to_map ?perm r map =
-    assert (width r.pred < Batteries_config.word_size);
+    assert (width r.pred < Sys.word_size);
     let e = tbits ?perm r.pred in
     let acc_tbit (lo,hi) = function 
 	Star -> (lo lsl 1, hi lsl 1 + 1)
@@ -275,7 +275,7 @@ module Entry = struct
     let a = a lor (a asr 4) in
     let a = a lor (a asr 8) in
     let a = a lor (a asr 16) in
-    let a = if Batteries_config.word_size = 64 then a lor (a asr 32) else a in
+    let a = if Sys.word_size = 64 then a lor (a asr 32) else a in
     a land (lnot (a asr 1))
 
   let first_star_zero f = (* set the star to 0 *)

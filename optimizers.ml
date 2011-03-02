@@ -211,7 +211,7 @@ let struct_of_dec ?bit_width decider =
       None -> (try decider |> IMap.domain |> ISet.max_elt |> bits_v with _ -> 1)
     | Some bw -> bw
   in
-  assert (bit_width <= Batteries_config.word_size - 2);
+  assert (bit_width <= Sys.word_size - 2);
   (* Preprocess the tree into the form we'll use *)
   let bdd = Bdd.of_imap bit_width decider
   and of_prefix = range_of_prefix bit_width in
@@ -404,7 +404,7 @@ let trazor ?rr_lim ?bit_width root =
 	None -> decider |> IMap.domain |> ISet.max_elt |> bits_v 
       | Some bw -> bw
     in
-    assert (bit_width <= Batteries_config.word_size - 2);
+    assert (bit_width <= Sys.word_size - 2);
     (* Preprocess the tree into the form we'll use *)
     let bdd = Bdd.of_imap bit_width decider 
     and of_prefix = tcam_entry_of_prefix [bit_width] in
