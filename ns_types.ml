@@ -38,8 +38,8 @@ let () = at_exit (fun () -> Hashtbl.iter (fun k v -> Printf.printf "%d %s\n" !v 
 *)
 
 let ca_functions = ref 
-  [ "pos", (fun (base_pos, sim_pos, flow_data) -> function [] -> base_pos + !sim_pos | _ -> wrong_args "pos");
-    "save", (fun (base_pos, sim_pos, flow_data) -> function | [start_pos; end_pos] -> 
+  [ "pos", (fun (base_pos, sim_pos, _flow_data) -> function [] -> base_pos + !sim_pos | _ -> wrong_args "pos");
+    "save", (fun (base_pos, _sim_pos, flow_data) -> function | [start_pos; end_pos] -> 
       let start_pos = start_pos - base_pos and end_pos = end_pos - base_pos in
       let str = try String.sub flow_data (start_pos+1) (end_pos - start_pos) |> String.trim |> String.lowercase with _ -> "??" in
       (try Hashtbl.find saves str |> incr with Not_found -> Hashtbl.add saves str (ref 1));
@@ -48,7 +48,7 @@ let ca_functions = ref
       | _ -> wrong_args "save"
     );
     "bounds" ,
-    (fun (base_pos, sim_pos, flow_data) -> function 
+    (fun (_base_pos, _sim_pos, _flow_data) -> function 
       | [start_pos; end_pos] when start_pos < end_pos -> 
 	(* BROKEN BY SPLICING CODE -- check bounds on start/end pos and current flow_data *)
 	(*	let str = String.sub start_pos end_pos flow_data in *)
@@ -56,7 +56,7 @@ let ca_functions = ref
 		start_pos end_pos;  *)
 	incr matches;
 	0
-      | [s1;e] -> 
+      | [_s1;_e] -> 
 	incr zero_size;
 (*	let s = s1 - base_pos in let e = e - 1 in
 	Printf.printf "base_pos %d s1 %d e %d sim_pos %d\n%!" base_pos s1 e !sim_pos;
@@ -65,26 +65,26 @@ let ca_functions = ref
       | _ -> wrong_args "bounds"
     );
     "skip",
-    (fun (base_pos, sim_pos, flow_data) ->  function 
+    (fun (_base_pos, sim_pos, _flow_data) ->  function 
       | [len] ->
 	if len > 0 then	sim_pos := !sim_pos + len;
 	0
       | _ -> wrong_args "skip" );
     "skip_to",
-    (fun (base_pos, sim_pos, flow_data) -> function
+    (fun (_base_pos, sim_pos, _flow_data) -> function
       | [pos] -> if !sim_pos < pos then sim_pos := pos; 0
       | _ -> wrong_args "skip_to" );
     "notify" ,
-    (fun (base_pos, sim_pos, flow_data) ->  function [n] -> 
+    (fun (_base_pos, _sim_pos, _flow_data) ->  function [n] -> 
       (*      Printf.eprintf "*** Match found: %d ***\n" n;  *)
       incr matches; n 
       | _ -> wrong_args "skip" );
     "cur_byte",
-    (fun (base_pos, sim_pos, flow_data) ->  function 
+    (fun (_base_pos, sim_pos, flow_data) ->  function 
       | [] -> Char.code flow_data.[!sim_pos]
       | _ -> wrong_args "cur_byte" );
     "getnum",
-    (fun (base_pos, sim_pos, flow_data) ->  function 
+    (fun (_base_pos, sim_pos, flow_data) ->  function 
       | [] -> 
 	let ret = ref 0 in
 	while (let c = Char.code flow_data.[!sim_pos] in c >= 0x30 && c <= 0x39) do
