@@ -2,10 +2,9 @@ SHELL := /bin/bash
 CPPFLAGS =  -O2
 OCAMLFLAGS = -annot -w Z -g
 
-.PHONY: clean hwrun %.threadlog bench-all
-
 all: bench-all
 
+.PHONY: clean hwrun %.threadlog bench-all runlog.upac runlog.bpac
 
 http-baseconn.o: http-baseconn.cc
 	g++ $(CPPFLAGS) -c -I lib/ $^ -o $@
@@ -34,7 +33,7 @@ upac.cmxa: lib_u/binpac.o lib_u/http_pac_fast.o lib_u/http_matcher.o lib_u/libub
 #### Compile flow.cmxa
 ####
 
-FLOW=hashtbl_param.cmx ean_std.cmx pcregex.cmx minreg.cmx PCFG.cmx ns_types.cmx simplify.cmx ns_yac.cmx ns_lex.cmx ruleset.cmx tcam.cmx decider.cmx fdd.cmx bdd.cmx optimizers.cmx regex_dfa.cmx ns_parse.cmx prog_parse.cmx arg2.cmx
+FLOW=hashtbl_param.cmx ean_std.cmx pcregex.cmx minreg.cmx PCFG.cmx ns_types.cmx simplify.cmx ns_yac.cmx ns_lex.cmx ruleset.cmx tcam.cmx decider.cmx fdd.cmx bdd.cmx optimizers.cmx regex_dfa.cmx ns_parse.cmx prog_parse.cmx arg2.cmx genrec.cmx
 
 ns_yac.ml: ns_yac.mly
 	menhir ns_yac.mly
@@ -157,9 +156,35 @@ timelog-all: $(patsubst %, %.20-timelog, $(MODES)) $(patsubst %, %.50-timelog, $
 flib/flow.o: flib/flow.c
 	gcc -static -o flib/flow.o -c flib/flow.c 
 
-mldeps:
+mldeps: 
 	ocamlfind ocamldep -package bitstring.syntax -syntax camlp4o *.ml *.mll *.mly > mldeps
 
 include mldeps
 
 ns_yac.cmi: ns_types.ml
+
+
+
+##########################
+RUNS =  98w1-mon 98w1-tue 98w1-wed 98w1-thu 98w1-fri \
+	98w2-monday 98w2-tuesday 98w2-wednesday 98w2-thursday 98w2-friday \
+	98w3-monday 98w3-tuesday 98w3-wednesday 98w3-thursday 98w3-friday \
+	98w4-monday 98w4-tuesday 98w4-wednesday 98w4-thursday 98w4-friday \
+	98w5-monday 98w5-tuesday 98w5-wednesday 98w5-thursday 98w5-friday \
+	98w6-monday 98w6-tuesday 98w6-wednesday 98w6-thursday 98w6-friday \
+	98w7-monday 98w7-tuesday 98w7-wednesday 98w7-thursday 98w7-friday \
+	99w1-monday 99w1-tuesday 99w1-wednesday 99w1-thursday 99w1-friday \
+	99w2-monday 99w2-tuesday 99w2-wednesday 99w2-thursday 99w2-friday \
+	99w3-monday 99w3-tuesday 99w3-wednesday 99w3-thursday 99w3-friday \
+	99w4-monday 99w4-tuesday 99w4-wednesday 99w4-thursday 99w4-friday \
+	99w5-monday 99w5-tuesday 99w5-wednesday 99w5-thursday 99w5-friday \
+
+RUNS = 98w1-mon 99w5-monday
+
+runlog.upac: 
+	$(RM) $@
+	for a in $(RUNS); do ~/bpac/bench-upac -x extr-u.ca -n 100 ~/traces/http/use/$$a* | tee -a $@; done
+
+runlog.bpac: 
+	$(RM) $@
+	for a in $(RUNS); do ~/bpac/bench-bpac -x extr-b.ca -n 100 ~/traces/http/use/$$a* | tee -a $@; done
