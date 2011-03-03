@@ -61,7 +61,7 @@ extern "C" value reset_parser (value v_prsr) {
 
 extern "C" value delete_parser (value v_prsr) {
   CAMLparam1 (v_prsr);
-  delete (binpac::FastParser*) v_prsr;
+  delete ((binpac::FastParser*) v_prsr);
   CAMLreturn (Val_unit);  
 }
 
