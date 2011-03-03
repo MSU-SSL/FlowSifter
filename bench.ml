@@ -4,6 +4,7 @@ open Printf
 let set_mhs n = Gc.set { (Gc.get()) with Gc.minor_heap_size = n; } 
 let () = set_mhs 250_000;;
 
+let pac = if exe = "./bench-bpac" then "bpac" else "upac"
 
 type parser_t = [ `Null | `Sift | `Pac ]
 let p_to_string = function `Null -> "Null" | `Sift -> "Sift" | `Pac -> "Pac "
@@ -14,7 +15,7 @@ let check_mem_per_packet = ref false
 let parse_by_flow = ref false
 let rep_cnt = ref 1
 let fns = ref []
-let extr_ca = ref "extr.ca"
+let extr_ca = ref (if pac="bpac" then "extr-b.ca" else "extr-u.ca")
 let parsers : parser_t list ref = ref [`Sift; `Pac]
 let baseline = ref true
 let mode = ref Pcap
@@ -75,7 +76,7 @@ let null_p = {
 let trace_len = ref (-1)
   
 let sift_p = {
-  id = "sift";
+  id = (if pac = "bpac" then "sift-b" else "sift-u");
   new_parser = Prog_parse.new_parser "spec.ca" !extr_ca;
   delete_parser = Prog_parse.delete_parser;
   add_data = Prog_parse.add_data;
@@ -86,12 +87,13 @@ let () = at_exit (fun () ->
     (*    Printf.printf "#Bytes skip()ed: %d  Times this exceeded the current packet: %d bytes asked to skip trans-packet: %d\n" !Ns_parse.inner_skip !Ns_parse.skip_over !Prog_parse.total_skip; 
 	  Printf.printf "#Packets skipped entirely: %d Packets skipped partially: %d\n" !Prog_parse.pkt_skip !Prog_parse.pkt_partial_skip;
 	  Printf.printf "#Skip missed: %d\n" !Prog_parse.skip_missed; *)
-  Printf.printf "#Trace payload length: %d Bytes parsed: %a Percentage of flow parsed: %2.1f\n" !trace_len Ean_std.print_size_B !Ns_parse.parsed_bytes (100. *. float !Ns_parse.parsed_bytes /. float !trace_len)
+  Ns_parse.parsed_bytes := !Ns_parse.parsed_bytes / !rep_cnt;
+  Printf.printf "#Trace payload length: %d Bytes parsed: %a Percentage of flow parsed: %2.1f\n" !trace_len Ean_std.print_size_B !Ns_parse.parsed_bytes (100. *. float !Ns_parse.parsed_bytes /. float !trace_len )
 )
   
 
 let pac_p = {
-  id = "pac";
+  id = pac;
   new_parser = Anypac.new_parser;
   delete_parser = Anypac.delete_parser;
   add_data = Anypac.add_data;
@@ -127,7 +129,8 @@ let packet_ctr = ref 0
 let mem0 = ref 0
 let mem0gc = ref 0
 
-let mem () = max (get_vmsize () - !mem0) (get_ocaml_mem() - !mem0gc)
+let mem_vm () = (get_vmsize () - !mem0)
+let mem_gc () = (get_ocaml_mem() - !mem0gc)
 
 let run_id = ref ""
 
@@ -135,19 +138,31 @@ let run pr =
 
   let ht = Hashtbl.create 1000 in
   let mem_ctr = ref (Ean_std.make_counter 1) in
+  let null_t = ref 0.0 in
 
-  let post_round round time =
+  let mem = if pr.id <> "pac" then mem_gc else mem_vm in
+
+  let reset_parsers () =
     Hashtbl.iter (fun _ p -> pr.delete_parser p; decr conc_flows) ht;
     Hashtbl.clear ht; assert (!parser_count = 0);
     if (!conc_flows <> 0) then (
       printf "#ERR: conc_flows = %d after cleanup\n" !conc_flows;
       conc_flows := 0
-    ); 
+    )
+  in
+
+  let post_round round time =
     Gc.compact ();
     packet_ctr := 0;
     mem_ctr := Ean_std.make_counter 1;
+    let tsize = float (!trace_len * 8 / 1024 / 1024 / 1024) in
+    let gbps = 
+      if pr.id = "null" then ( null_t := time; tsize /. time )
+      else tsize /. (time -. !null_t)
+    in
     if !check_mem_per_packet then printf "#";
-    printf "%s\t%s\t%d\t%4.3f\t%d\n%!" !run_id pr.id round time !trace_len
+    printf "%s\t%s\t%d\t%4.3f\t%d\t%.2f\n%!" 
+      !run_id pr.id round time !trace_len gbps
   in
 
   let act_packet (flow, data, fin) =
@@ -159,24 +174,25 @@ let run pr =
     in
     incr packet_ctr;
     pr.add_data p data;
-    if !check_mem_per_packet && !packet_ctr land 0xff = 0 then (
-      printf "%s %s %d %d %d\n" !run_id pr.id !packet_ctr !conc_flows (mem ());
+    if !check_mem_per_packet && !packet_ctr land 0xffff = 0 then (
+      printf "%s %s %d %d %d\n" !run_id pr.id !packet_ctr !conc_flows (mem ()/1024/1024);
     );
     if fin then (
       decr conc_flows;
       Hashtbl.remove ht flow; pr.delete_parser p;
     )
   in	
-  post_round, act_packet
+  reset_parsers, post_round, act_packet
 ;;
 
 
 (*** RUN FUNCTION IN A LOOP AND INSTRUMENT ***)
-let main_loop (post_round, f) rep_cnt xs =
+let main_loop (reset_parsers, post_round, f) rep_cnt xs =
   mem0 := get_vmsize (); mem0gc := get_ocaml_mem ();
+  Vect.iter f xs; reset_parsers ();
   let tpre = Sys.time () in
-  for round_num = 0 to rep_cnt do
-    Vect.iter f xs;
+  for round_num = 1 to rep_cnt do
+    Vect.iter f xs; reset_parsers ();
   done;
   let time = (Sys.time () -. tpre) /. float rep_cnt in
   post_round rep_cnt time;
