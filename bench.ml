@@ -7,28 +7,33 @@ let () = set_mhs 250_000;;
 
 type parser_t = [ `Null | `Sift | `Pac ]
 let p_to_string = function `Null -> "Null" | `Sift -> "Sift" | `Pac -> "Pac "
-(*** GLOBAL CONFIGURATION ***)
 
+type mode = Pcap | Mux | Gen
+(*** GLOBAL CONFIGURATION ***)
 let check_mem_per_packet = ref false
 let parse_by_flow = ref false
 let rep_cnt = ref 1
 let fns = ref []
-let mux = ref false
 let extr_ca = ref "extr.ca"
 let parsers : parser_t list ref = ref [`Sift; `Pac]
 let baseline = ref true
-
+let mode = ref Pcap
+let min_lev = ref 0
+let gen_count = ref 0
 (*** ARGUMENT HANDLING ***)
 
 open Arg2
 let set_main x = Unit (fun () -> parsers := [x])
+let set_mode x = Unit (fun () -> mode := x)
 let args = 
   [ (Name "packets", [Clear parse_by_flow], [], 
      "Pass individual packets to the parser");
     (Both ('f', "flows"), [Set parse_by_flow], [], 
      "Assemble the pcap files into flows"); 
-    (Both ('m', "mux"), [Set mux], [], 
+    (Both ('m', "mux"), [set_mode Mux], [], 
      "Mux the given flow files into a simulated pcap");
+    (Both ('g', "gen"), [set_mode Gen; Int_var min_lev; Int_var gen_count], [],
+     "Generate SOAP traffic to parse (need min_lev, count)");
     (Both ('n', "rep-cnt"), [Int_var rep_cnt], [],
      "Set the number of repetitions to do");
     (Both ('b', "no-baseline"), [Clear baseline], [], "Don't use null parser as baseline");
@@ -132,8 +137,6 @@ let run pr =
   let mem_ctr = ref (Ean_std.make_counter 1) in
 
   let post_round round time =
-    let mem_1 = mem () in
-    let parsers = !conc_flows in
     Hashtbl.iter (fun _ p -> pr.delete_parser p; decr conc_flows) ht;
     Hashtbl.clear ht; assert (!parser_count = 0);
     if (!conc_flows <> 0) then (
@@ -141,11 +144,10 @@ let run pr =
       conc_flows := 0
     ); 
     Gc.compact ();
-    let mem_2 = mem () in 
     packet_ctr := 0;
     mem_ctr := Ean_std.make_counter 1;
     if !check_mem_per_packet then printf "#";
-    printf "%s\t%d\t%4.2f\t%d\t%d\t%d\n%!" pr.id round time mem_1 parsers mem_2
+    printf "%s\t%s\t%d\t%4.3f\t%d\n%!" !run_id pr.id round time !trace_len
   in
 
   let act_packet (flow, data, fin) =
@@ -172,12 +174,11 @@ let run pr =
 (*** RUN FUNCTION IN A LOOP AND INSTRUMENT ***)
 let main_loop (post_round, f) rep_cnt xs =
   mem0 := get_vmsize (); mem0gc := get_ocaml_mem ();
-  printf "# Mem0 = %d (gc: %d)\n%!" !mem0 !mem0gc;
   let tpre = Sys.time () in
   for round_num = 0 to rep_cnt do
     Vect.iter f xs;
   done;
-  let time = Sys.time () -. tpre in
+  let time = (Sys.time () -. tpre) /. float rep_cnt in
   post_round rep_cnt time;
   time
 
@@ -201,15 +202,20 @@ let expand_dirs e =
   in
   Enum.map exp e |> Enum.flatten
 
+module P = PathGen.OfString
+let filename pathfile = P.of_string pathfile |> P.name 
+
 (*** MAIN ***) 
 let main () = 
-  if !fns = [] then failwith "Not enough arguments";
-  run_id := String.concat "," !fns;
+  run_id := if !mode = Gen then 
+      sprintf "gen_%d_%d" !min_lev !gen_count 
+    else 
+      String.concat "," (List.map filename !fns);
 (*  let fns = List.enum !fns |> expand_dirs in *)
-  let main_loops (chunks, len) =
+  let main_loops chunks =
+    if Vect.is_empty chunks then failwith "No packets to parse";
     let main_null = get_fs `Null |> main_loop in
     let main_others = List.map (get_fs |- main_loop) !parsers in
-    trace_len := len;
     print_header ();
     let a = 
       if !baseline && not !check_mem_per_packet 
@@ -219,20 +225,29 @@ let main () =
     let b = List.map (fun f -> f !rep_cnt chunks) main_others in
     a,b
   in
-  let pre_process = 
-    match !parse_by_flow, !mux with
-      |	true, false ->  Pcap.assemble     
-      | false, false ->	Pcap.pre_parse    
-      | true, true ->	Pcap.make_flows   
-      | false, true ->  Pcap.make_packets 
+  let gen_pkt () = 
+    let b = Buffer.create 2000 in 
+    Genrec.output_soap !min_lev (Buffer.add_string b); 
+    Buffer.contents b 
   in
-  let tnull,ts = List.enum !fns |> pre_process |> main_loops in
+  let packets = 
+    match !parse_by_flow, !mode with
+      |	true, Pcap ->  List.enum !fns |> Pcap.assemble trace_len
+      | false, Pcap -> List.enum !fns |> Pcap.pre_parse trace_len 
+      | true, Mux -> List.enum !fns |> Pcap.make_flows trace_len
+      | false, Mux ->  List.enum !fns |> Pcap.make_packets_files trace_len
+      | true, Gen -> Enum.from gen_pkt |> Enum.take !gen_count |> Pcap.make_flows trace_len
+      | false, Gen -> Enum.from gen_pkt |> Enum.take !gen_count |> Pcap.make_packets trace_len
+  in
+  let _tnull,_ts = main_loops packets in
+(*
   let rates = List.map (fun t -> float !trace_len /. (t -. tnull) /. 1024. /. 1024. *. 8.) ts in
   List.iter2 (fun p rs -> 
     printf "#%s rates (mbps): %a\n" (p_to_string p) Float.print rs) !parsers rates;
   (match rates with [_] -> () | [fr;pr] -> printf "#speed ratio: %4.2f\n" (fr /. pr) | _ -> printf "#wrong number of rates\n");
   Printf.printf "#completed in %4.2fs, (sift: %d pac: %d ) events\n" 
     (Sys.time ()) (Prog_parse.get_event_count ()) (Anypac.get_event_count ());
+*)
   ()
 
 let () = main ()
