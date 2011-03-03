@@ -38,7 +38,7 @@ Content-Type: application/soap+xml; charset=utf-8
   ()
 
 
-let () = 
+let main () = 
   Random.self_init ();
   let min_rec = int_of_string Sys.argv.(1) in
   let count = int_of_string Sys.argv.(2) in
