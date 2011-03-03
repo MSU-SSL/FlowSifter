@@ -9,9 +9,12 @@ let pkt_skip = ref 0
 let parsers = ref 0
 let fail_drop = ref 0
 
+(*
 let () = at_exit (fun () -> 
   Printf.printf "#Parsers generated: %d  Bytes dropped after desync: %a\n" !parsers Ean_std.print_size_B !fail_drop;
 )
+*)
+
 (* generates an incremental parser for the language defined by a 
    protocol grammar specification and extraction language *)
 let gen_parser p e = 

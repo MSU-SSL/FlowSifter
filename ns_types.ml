@@ -32,7 +32,7 @@ let matches = ref 0
 let saves = Hashtbl.create 100
 
 let zero_size = ref 0
-let () = at_exit (fun () -> Printf.printf "#Zero size matches: %d\n" !zero_size)
+(* let () = at_exit (fun () -> Printf.printf "#Zero size matches: %d\n" !zero_size) *)
 (*
 let () = at_exit (fun () -> Hashtbl.iter (fun k v -> Printf.printf "%d %s\n" !v k) saves)
 *)
