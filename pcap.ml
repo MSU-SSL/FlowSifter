@@ -40,7 +40,7 @@ let rec main () =
   |> BatEnum.filter_map (decode_packet network)
   |> BatEnum.iter print_packet
       
-and print_packet (_,_,p,(_,_,fin)) = printf "%d:%B " (String.length p) fin
+and print_packet (_,_,_,p,(_,_,fin)) = printf "%d:%B " (String.length p) fin
 (* Determine the endianness (at runtime) from the magic number. *)
 and endian_of = function
   | 0xa1b2c3d4_l -> Bitstring.BigEndian
@@ -66,17 +66,17 @@ and libpcap_header bits =
 and libpcap_packet e _file_header bits =
   bitmatch bits with
     | { _ts_sec : 32 : endian (e); (* packet timestamp seconds *)
-	_ts_usec : 32 : endian (e);  (* packet timestamp microseconds *)
+	ts_usec : 32 : endian (e);  (* packet timestamp microseconds *)
 	incl_len : 32 : endian (e); (* packet length saved in this file *)
 	_orig_len : 32 : endian (e); (* packet length originally on wire *)
 	pkt_data : Int32.to_int incl_len*8 : bitstring;
 	rest : -1 : bitstring
       } ->
-      pkt_data, rest
+      (ts_usec, pkt_data), rest
 
     | { _ } -> raise BatEnum.No_more_elements
 
-and decode_eth pkt_data =
+and decode_eth (ts,pkt_data) =
   (*  let (ts_sec, ts_usec, _, orig_len) = pkt_header in *)
   (*  printf "%ld.%ld %ldB " ts_sec ts_usec orig_len; *)
 
@@ -86,7 +86,7 @@ and decode_eth pkt_data =
 	0x0800 : 16;    (*0x0800 = IPv4 *)              (* ethertype *)
 	packet : -1 : bitstring                         (* payload *)
       } -> (
-      try decode_ip packet 
+      try decode_ip (ts,packet)
       with Failure _ -> 
 	printf "%x:%x:%x:%x:%x:%x < %x:%x:%x:%x:%x:%x "
           d0 d1 d2 d3 d4 d5 s0 s1 s2 s3 s4 s5;
@@ -98,7 +98,7 @@ and decode_eth pkt_data =
 	0x86DD : 16;    (*0x86dd = IPv6 *)              (* ethertype *)
 	packet : -1 : bitstring                         (* payload *)
       } -> (
-      try decode_ip packet 
+      try decode_ip (ts,packet)
       with Failure _ -> 
 	printf "%x:%x:%x:%x:%x:%x < %x:%x:%x:%x:%x:%x "
           d0 d1 d2 d3 d4 d5 s0 s1 s2 s3 s4 s5;
@@ -107,7 +107,7 @@ and decode_eth pkt_data =
     )
     | { _ } ->
       incr dropped_packets_non_eth; None
-and decode_ip packet =
+and decode_ip (ts,packet) =
   bitmatch packet with
     | { 4 : 4;                       (* IPv4 *)
 	5 : 4; _tos : 8; length : 16;
@@ -116,7 +116,7 @@ and decode_ip packet =
 	contents : (length * 8 - 160) : bitstring } ->
 (*      printf "IP len: %d " length; *)
       if protocol = 6 then  (* TCP decode *)
-	decode_tcp sip dip contents
+	decode_tcp ts sip dip contents
       else
 	(incr dropped_packets_non_tcp; None)
     | { 6 : 4;                      (* IPv6 *)
@@ -127,7 +127,7 @@ and decode_ip packet =
 	_(*payload*) : -1 : bitstring } ->
       incr dropped_packets_v6; None
     | { _ } -> failwith "Not IPv4 or IPv6"
-and decode_tcp sip dip packet =
+and decode_tcp ts sip dip packet =
   bitmatch packet with
       { s_port:16; d_port: 16; seqno: 32; _ackno: 32; 
 	d_off: 4; _misc: 6; 
@@ -138,7 +138,7 @@ and decode_tcp sip dip packet =
 (*	printf "TCP seqno: %ld\n" seqno; *)
 	incr kept_packets;
 	kept_bytes := !kept_bytes + (Bitstring.bitstring_length payload lsr 3);
-	Some ((sip,dip,s_port,d_port), Int32.to_int seqno, 
+	Some (ts, (sip,dip,s_port,d_port), Int32.to_int seqno, 
 	      Bitstring.string_of_bitstring payload, (syn,ack,fin))
     | { _ } -> incr dropped_packets_bad_tcp; None
 and decode_packet = function
@@ -227,7 +227,7 @@ let read_file_as_str ?(verbose=false) fn =
   ret
 
 (* get a single flow of packets from an enum of filenames *)
-let packets_of_files fns = (fns /@ read_file_as_str /@ to_pkt_stream |> Enum.concat)          
+let packets_of_files fns = (fns /@ read_file_as_str /@ to_pkt_stream |> Enum.reduce (Enum.merge (fun (ts1,_,_,_,_) (ts2,_,_,_,_) -> ts1 < ts2)))
 
 let trace_size v = Vect.fold_left (fun acc (_,x,_) -> acc + String.length x) 0 v 
 
@@ -243,7 +243,7 @@ let done_flow () = decr conc_flows
 let ht2 = Hashtbl.create 50000
 let assemble trace_len fns =
   let flows = ref Vect.empty in
-  let act_pkt ((_sip,_dip,_sp,_dp as flow), offset, data, (_syn,_ack,fin)) = 
+  let act_pkt (_ts,(_sip,_dip,_sp,_dp as flow), offset, data, (_syn,_ack,fin)) = 
     (*    if offset < 0 || offset > 1 lsl 25 then printf "Offset: %d, skipping\n%!" offset 
 	  else *)
     let prev, isn = 
@@ -285,7 +285,7 @@ let assemble trace_len fns =
 (*** FILTER DUPLICATE/OUT-OF-ORDER PACKETS ***)
 let parseable = 
   let ht = Hashtbl.create 1000 in
-  fun (flow, offset, data, (_syn,_ack,fin)) ->
+  fun (_ts, flow, offset, data, (_syn,_ack,fin)) ->
     let exp = 
       try Hashtbl.find ht flow 
       with Not_found -> new_flow(); (ref (offset+1)) |> tap (Hashtbl.add ht flow)
@@ -295,7 +295,7 @@ let parseable =
     if fin then (Hashtbl.remove ht flow; done_flow ());
     if should_parse then (exp := !exp + dlen; true) else false
 
-let to_flow_packet (flow, _offset, data, (_syn, _ack, fin)) = (flow,data,fin)
+let to_flow_packet (_ts, flow, _offset, data, (_syn, _ack, fin)) = (flow,data,fin)
 
 let pre_parse trace_len fns = 
   let packet_stream = 
