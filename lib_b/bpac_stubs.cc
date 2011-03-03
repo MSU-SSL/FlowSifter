@@ -58,6 +58,7 @@ extern "C" value reset_parser (value v_prsr) {
 
 extern "C" value delete_parser (value v_prsr) {
   CAMLparam1 (v_prsr);
-  delete ((binpac::HTTP::HTTP_Conn*) v_prsr);
+  binpac::HTTP::HTTP_Conn *parser = ((binpac::HTTP::HTTP_Conn*) v_prsr);
+  delete parser;
   CAMLreturn (Val_unit);  
 }
