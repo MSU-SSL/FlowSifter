@@ -1,13 +1,17 @@
 SHELL := /bin/bash
-CPPFLAGS =  -O2
-OCAMLFLAGS = -annot -w Z -g
+DEBUG = #-g
+CPPFLAGS =  -O2 $(DEBUG)
+OCAMLFLAGS = -annot -w Z $(DEBUG)
 
 all: bench-all
 
-.PHONY: clean hwrun %.threadlog bench-all runlog.upac runlog.bpac
+.PHONY: clean hwrun %.threadlog bench-all runlog.%
+
+clean:
+	rm -f *.a *.o *.cmi *.cmx *.cmo *.cmxa *.annot lib_b/*.o lib_u/*.o
 
 http-baseconn.o: http-baseconn.cc
-	g++ $(CPPFLAGS) -c -I lib/ $^ -o $@
+	g++ $(CPPFLAGS) -c $^ -o $@
 
 ####
 #### Compile bpac.cmxa
@@ -59,14 +63,13 @@ pcap.cmo: pcap.ml
 %.cmo: %.ml
 	ocamlfind ocamlc -package batteries $(OCAMLFLAGS) -c $^
 
+OLIBS = #libocamlviz.cmxa 
+
 bench-bpac: bpac.cmxa pcap.cmx bench.cmx
-	ocamlfind ocamlopt -annot -package batteries,bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre bpac.cmxa libocamlviz.cmxa $(FLOW) pcap.cmx bench.cmx -o $@
+	ocamlfind ocamlopt -annot -package batteries,bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre bpac.cmxa $(LIBS) $(FLOW) pcap.cmx bench.cmx -o $@
 
 bench-upac: upac.cmxa pcap.cmx bench.cmx
-	ocamlfind ocamlopt -annot -package batteries,bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre upac.cmxa libocamlviz.cmxa $(FLOW) pcap.cmx bench.cmx -o $@
-
-clean:
-	rm -f *.a *.o *.cmi *.cmx *.cmo *.cmxa *.annot
+	ocamlfind ocamlopt -annot -package batteries,bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre upac.cmxa $(LIBS) $(FLOW) pcap.cmx bench.cmx -o $@
 
 pcap.cmx: pcap.ml
 	ocamlfind ocamlopt $(OCAMLFLAGS) -c -syntax camlp4o -package batteries,bitstring.syntax,bitstring pcap.ml -o pcap.cmx
@@ -168,10 +171,10 @@ ns_yac.cmi: ns_types.ml
 ##########################
 RUNS =  98w1-mon 98w1-tue 98w1-wed 98w1-thu 98w1-fri \
 	98w2-monday 98w2-tuesday 98w2-wednesday 98w2-thursday 98w2-friday \
-	98w3-monday 98w3-tuesday 98w3-wednesday 98w3-thursday 98w3-friday \
-	98w4-monday 98w4-tuesday 98w4-wednesday 98w4-thursday 98w4-friday \
-	98w5-monday 98w5-tuesday 98w5-wednesday 98w5-thursday 98w5-friday \
-	98w6-monday 98w6-tuesday 98w6-wednesday 98w6-thursday 98w6-friday \
+	98w3-monday 98w3-tuesday 98w3-wednesday                           \
+	98w4-monday                                                       \
+	                                                      98w5-friday \
+	            98w6-tuesday 98w6-wednesday 98w6-thursday 98w6-friday \
 	98w7-monday 98w7-tuesday 98w7-wednesday 98w7-thursday 98w7-friday \
 	99w1-monday 99w1-tuesday 99w1-wednesday 99w1-thursday 99w1-friday \
 	99w2-monday 99w2-tuesday 99w2-wednesday 99w2-thursday 99w2-friday \
@@ -179,12 +182,8 @@ RUNS =  98w1-mon 98w1-tue 98w1-wed 98w1-thu 98w1-fri \
 	99w4-monday 99w4-tuesday 99w4-wednesday 99w4-thursday 99w4-friday \
 	99w5-monday 99w5-tuesday 99w5-wednesday 99w5-thursday 99w5-friday \
 
-RUNS = 98w1-mon 99w5-monday
+COUNT ?= 100
 
-runlog.upac: 
-	$(RM) $@
-	for a in $(RUNS); do ~/bpac/bench-upac -x extr-u.ca -n 100 ~/traces/http/use/$$a* | tee -a $@; done
-
-runlog.bpac: 
-	$(RM) $@
-	for a in $(RUNS); do ~/bpac/bench-bpac -x extr-b.ca -n 100 ~/traces/http/use/$$a* | tee -a $@; done
+runlog.%: bench-%
+	-mv -b $@ $@.bkp
+	time for a in $(RUNS); do ./$^ -n $(COUNT) ~/traces/http/use/$$a* | tee -a $@; done

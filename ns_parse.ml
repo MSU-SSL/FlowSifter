@@ -4,7 +4,7 @@ open Ns_types
 open Simplify
 open ParsedPCFG
 
-open Ocamlviz
+(*open Ocamlviz *)
 
 let capture_counter = let x = ref 0 in fun () -> incr x; !x
 
@@ -181,7 +181,7 @@ let get_rules_v i rules =
   let pred_satisfied pred = List.for_all var_satisfied pred in
   List.filter_map (fun (p,e) -> if pred_satisfied p then Some e else None) rules
   
-let rules_p = Point.create "rules"
+(*let rules_p = Point.create "rules"*)
 
 let var_max = 255
 
@@ -233,7 +233,7 @@ let run_act get_f vars (var,act) =
   ret
   *)
 
-let upd_p = Point.create "rules_upd"
+(*let upd_p = Point.create "rules_upd" *)
 
 let run_act state vars (var, act) =
   vars.(var) <- eval_a_exp state act vars.(var)
@@ -304,10 +304,10 @@ let fill_cache cache ca =
 
 let print_vars oc m = 
   Array.print Int.print oc m
-
+(*
 let sim_p = Point.create "sim"
 let sim_t = Time.create "sim"
-
+*)
 let parsed_bytes = ref 0
 
 exception Parse_complete
@@ -344,9 +344,9 @@ let init_state dfa pos =
       Some {pri=p; item=i} -> (dfa.Regex_dfa.qs, q0, p, i, pos, "")
     | None -> (dfa.Regex_dfa.qs, q0, max_int, ([], null_state), pos, "")
 
-let ca_trans = ref 0
+(*let ca_trans = ref 0 *)
 
-let () = at_exit (fun () -> printf "#CA Transitions: %d\n" !ca_trans)
+(*let () = at_exit (fun () -> printf "#CA Transitions: %d\n" !ca_trans) *)
 
 let rec simulate_ca_string ~ca ~vars fail_drop skip_left base_pos flow_data (qs, q, pri, item, ri, tail_data) = 
   (*Printf.printf "P:%s\n" flow_data; *)
@@ -367,7 +367,7 @@ let rec simulate_ca_string ~ca ~vars fail_drop skip_left base_pos flow_data (qs,
       match dfa_result with
 	| Dec ((acts,q_next),pos_new) -> 
 (*	  printf "CA: %d @ pos %d(%d)\n" q_next (pos_new + !base_pos) pos_new;  *)
-	  incr ca_trans;
+(*	  incr ca_trans; *)
 	  parsed_bytes := !parsed_bytes + (pos_new - !pos);
 	  pos := pos_new;
 	  if acts <> [] then List.iter (run_act ca_state vars) acts;
