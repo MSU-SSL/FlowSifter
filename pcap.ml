@@ -241,8 +241,7 @@ let done_flow () = decr conc_flows
 
 (*** FLOW REASSEMBLY ***)
 let ht2 = Hashtbl.create 50000
-let assemble fns =
-  let strs = Enum.map read_file_as_str fns in
+let assemble trace_len fns =
   let flows = ref Vect.empty in
   let act_pkt ((_sip,_dip,_sp,_dp as flow), offset, data, (_syn,_ack,fin)) = 
     (*    if offset < 0 || offset > 1 lsl 25 then printf "Offset: %d, skipping\n%!" offset 
@@ -269,18 +268,18 @@ let assemble fns =
     ) else
       Hashtbl.replace ht2 flow (joined, isn)
   in
-  Enum.map to_pkt_stream strs |> Enum.concat |> Enum.iter act_pkt;
+  packets_of_files fns |> Enum.iter act_pkt;
   let stream_len = trace_size !flows in
   printf "# %d streams re-assembled, total_len: %d\n" (Vect.length !flows) stream_len;
   let flows2 = ref Vect.empty in
   Hashtbl.iter (fun (_sip,_dip,_sp,_dp as fid) (j,_) -> let j = PB.get_all j in if String.length j > 0 then ((*Printf.printf "(%lx,%lx,%d,%d): %S\n" sip dip sp dp (j);*) flows2 := Vect.append (fid,j,false) !flows2)) ht2;
   let stream_len2 = trace_size !flows2 in
   printf "# %d streams un-fin'ed, total_len: %d\n" (Vect.length !flows2) stream_len2;
-  let trace_len = stream_len + stream_len2 in
+  trace_len := stream_len + stream_len2;
   let all_flows = Vect.concat !flows !flows2 in
-  printf "# Flows pre-assembled (len: %a max_conc: %d flows: %d)\n" Ean_std.print_size_B trace_len !max_conc !flow_count;
-  printf "# Flows in vect: %d\n" (Vect.length all_flows);
-  (*!flows2, stream_len2*) all_flows, trace_len
+(*  printf "# Flows pre-assembled (len: %a max_conc: %d flows: %d)\n" Ean_std.print_size_B trace_len !max_conc !flow_count;
+  printf "# Flows in vect: %d\n" (Vect.length all_flows); *)
+  (*!flows2, stream_len2*) all_flows
 
 
 (*** FILTER DUPLICATE/OUT-OF-ORDER PACKETS ***)
@@ -298,32 +297,32 @@ let parseable =
 
 let to_flow_packet (flow, _offset, data, (_syn, _ack, fin)) = (flow,data,fin)
 
-let pre_parse fns = 
+let pre_parse trace_len fns = 
   let packet_stream = 
     packets_of_files fns
     // parseable (* very stateful check of whether we should parse that packet *)
     /@ to_flow_packet        (* remove unneeded fields *)
     |> Vect.of_enum
   in
-  let trace_len = trace_size packet_stream in
-  printf "#Flows pre-filtered for parsability (len: %a max_conc: %d flows: %d)\n" Ean_std.print_size_B trace_len !max_conc !flow_count;
-  packet_stream, trace_len
+  trace_len := trace_size packet_stream;
+(*  printf "#Flows pre-filtered for parsability (len: %a max_conc: %d flows: %d)\n" Ean_std.print_size_B trace_len !max_conc !flow_count; *)
+  packet_stream
 
 
 (***  INPUT FROM AN ENUM OF FILES - ONE FLOW PER FILE ***)
 
-let make_flows fns = 
+let make_flows trace_len fns = 
   max_conc := 1; flow_count := Enum.count fns;
   fns |> Enum.map (read_file_as_str ~verbose:false) 
     |> Enum.map (fun s -> ((0l,0l,1,unique()),s,true)) (* add the fin flag *)
     |> Vect.of_enum 
-    |> (fun v -> v, trace_size v)
+    |> tap (fun v -> trace_len := trace_size v)
+(*|> (fun v -> v, trace_size v)
     |> tap (fun (_,l) -> printf "#Flows read from file (len: %a max_conc: %d flows: %d)\n" Ean_std.print_size_B l 1 !flow_count;)
+*)
 
-let make_packets fns =
-  flow_count := Enum.count fns;
-  let flows = fns |> Enum.map (read_file_as_str ~verbose:false) in
-  let flow_ids = (0 --^ !flow_count) /@ (fun i -> (0l,0l,0,i)) in
+let make_packets trace_len flows =
+  let flow_ids = Enum.range 0 /@ (fun i -> (0l,0l,0,i)) in
   let flows = Enum.combine (flow_ids, flows) in
   let ret = Enum.empty () in
   let send_byte_count () = 
@@ -354,12 +353,16 @@ let make_packets fns =
     )
   in
   loop (Enum.empty ());
-  Enum.concat ret |> Vect.of_backwards |> (fun v -> v, trace_size v)
-    |> tap (fun (_v,l) -> 
+  Enum.concat ret |> Vect.of_backwards |> tap (fun v -> trace_len := trace_size v)
+(*    |> tap (fun (_v,l) -> 
       printf "#Flows packetized (len: %a max_conc: %d flows: %d packets:%d)\n" 
 	Ean_std.print_size_B l !max_conc !flow_count (Vect.length _v);
 (*      Vect.print (fun oc (fid,data,fin) -> fprintf oc "%d (%B): %S\n\n" fid fin data) stdout v; *)
-    )
+    )*)
+
+let make_packets_files trace_len fns = 
+  let flows = fns |> Enum.map (read_file_as_str ~verbose:false) in
+  make_packets trace_len flows
 
 (** ENUM OF FILES -> ENUM OF DEST IPs**)
 
