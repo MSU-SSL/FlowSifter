@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 DEBUG = #-g
-CPPFLAGS =  -O2 $(DEBUG)
+CPPFLAGS =  -O2 $(DEBUG) 
 OCAMLFLAGS = -annot -w Z $(DEBUG)
 
 all: bench-all
@@ -171,7 +171,7 @@ ns_yac.cmi: ns_types.ml
 ##########################
 RUNS =  98w1-mon 98w1-tue 98w1-wed 98w1-thu 98w1-fri \
 	98w2-monday 98w2-tuesday 98w2-wednesday 98w2-thursday 98w2-friday \
-	98w3-monday 98w3-tuesday 98w3-wednesday                           \
+	                         98w3-wednesday                           \
 	98w4-monday                                                       \
 	                                                      98w5-friday \
 	            98w6-tuesday 98w6-wednesday 98w6-thursday 98w6-friday \
@@ -182,8 +182,28 @@ RUNS =  98w1-mon 98w1-tue 98w1-wed 98w1-thu 98w1-fri \
 	99w4-monday 99w4-tuesday 99w4-wednesday 99w4-thursday 99w4-friday \
 	99w5-monday 99w5-tuesday 99w5-wednesday 99w5-thursday 99w5-friday \
 
-COUNT ?= 100
+MEM_PRE = LD_PRELOAD="/usr/lib/libtcmalloc.so.0" 
+
+runlog100.%: bench-%
+	-mv -b $@ $@.bkp
+	time for a in $(RUNS); do \
+	    $(MEM_PRE) ./$^ -n 100 ~/traces/http/use/$$a* | tee -a $@; \
+	done
 
 runlog.%: bench-%
 	-mv -b $@ $@.bkp
-	time for a in $(RUNS); do ./$^ -n $(COUNT) ~/traces/http/use/$$a* | tee -a $@; done
+	time for a in $(RUNS); do \
+	    $(MEM_PRE) ./$^ ~/traces/http/use/$$a* | tee -a $@; \
+	done
+
+rundata100: runlog100.bpac runlog100.upac
+	echo -e "runid\tparser\titers\ttime\tgbit\tgbps\tmem\tflows" > $@
+	cat $^ >> $@
+
+rundata1: runlog.bpac runlog.upac
+	echo -e "runid\tparser\titers\ttime\tgbit\tgbps\tmem\tflows" > $@
+	cat $^ >> $@
+
+memory.pdf memory.png memory.eps: 
+	R memory.R
+
