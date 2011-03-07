@@ -21,8 +21,8 @@ extern "C" value new_parser (value v_unit) {
   CAMLparam1 (v_unit);
   // use HTTP_Flow?
   //  cout << "b";
-  binpac::HTTP::HTTP_Conn *parser = new binpac::HTTP::HTTP_Conn(new BaseConn());
-  CAMLreturn ((value) parser);
+  value p = (value) new binpac::HTTP::HTTP_Conn(new BaseConn());
+  CAMLreturn (p);
 }
 
 extern "C" value add_data (value v_prsr, value v_str) {
@@ -50,7 +50,7 @@ extern "C" value get_event_count (value v_unit) {
 extern "C" value reset_parser (value v_prsr) {
   CAMLparam1 (v_prsr);
   binpac::HTTP::HTTP_Conn *parser = (binpac::HTTP::HTTP_Conn*) v_prsr;
-  //  cout << "r";
+  cout << "r";
   //  parser->FlowEOF(true);
   //nothing to do?
   CAMLreturn (Val_unit);  
