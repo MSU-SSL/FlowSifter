@@ -1589,6 +1589,7 @@ HTTP_Conn::~HTTP_Conn()
 	upflow_ = 0;
 	delete downflow_;
 	downflow_ = 0;
+	delete http_conn_;
 	}
 
 void HTTP_Conn::NewData(bool is_orig, const_byteptr begin, const_byteptr end)
