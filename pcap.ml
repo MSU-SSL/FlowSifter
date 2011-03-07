@@ -229,7 +229,10 @@ let read_file_as_str ?(verbose=false) fn =
 (* get a single flow of packets from an enum of filenames *)
 let packets_of_files fns = (fns /@ read_file_as_str /@ to_pkt_stream |> Enum.reduce (Enum.merge (fun (ts1,_,_,_,_) (ts2,_,_,_,_) -> ts1 < ts2)))
 
-let trace_size v = Vect.fold_left (fun acc (_,x,_) -> acc + String.length x) 0 v 
+let trace_size_v v = 
+  Vect.fold_left (fun acc (_,x,_) -> acc + String.length x) 0 v 
+let trace_size a = 
+  Array.fold_left (fun acc (_,x,_) -> acc + String.length x) 0 a
 
 let max_conc = ref 0
 let conc_flows = ref 0
@@ -269,17 +272,17 @@ let assemble trace_len fns =
       Hashtbl.replace ht2 flow (joined, isn)
   in
   packets_of_files fns |> Enum.iter act_pkt;
-  let stream_len = trace_size !flows in
+  let stream_len = trace_size_v !flows in
   printf "# %d streams re-assembled, total_len: %d\n" (Vect.length !flows) stream_len;
   let flows2 = ref Vect.empty in
   Hashtbl.iter (fun (_sip,_dip,_sp,_dp as fid) (j,_) -> let j = PB.get_all j in if String.length j > 0 then ((*Printf.printf "(%lx,%lx,%d,%d): %S\n" sip dip sp dp (j);*) flows2 := Vect.append (fid,j,false) !flows2)) ht2;
-  let stream_len2 = trace_size !flows2 in
+  let stream_len2 = trace_size_v !flows2 in
   printf "# %d streams un-fin'ed, total_len: %d\n" (Vect.length !flows2) stream_len2;
   trace_len := stream_len + stream_len2;
   let all_flows = Vect.concat !flows !flows2 in
 (*  printf "# Flows pre-assembled (len: %a max_conc: %d flows: %d)\n" Ean_std.print_size_B trace_len !max_conc !flow_count;
   printf "# Flows in vect: %d\n" (Vect.length all_flows); *)
-  (*!flows2, stream_len2*) all_flows
+  (*!flows2, stream_len2*) Vect.to_array all_flows
 
 
 (*** FILTER DUPLICATE/OUT-OF-ORDER PACKETS ***)
@@ -302,7 +305,7 @@ let pre_parse trace_len fns =
     packets_of_files fns
     // parseable (* very stateful check of whether we should parse that packet *)
     /@ to_flow_packet        (* remove unneeded fields *)
-    |> Vect.of_enum
+    |> Array.of_enum
   in
   trace_len := trace_size packet_stream;
 (*  printf "#Flows pre-filtered for parsability (len: %a max_conc: %d flows: %d)\n" Ean_std.print_size_B trace_len !max_conc !flow_count; *)
@@ -315,7 +318,7 @@ let make_flows trace_len fns =
   max_conc := 1; flow_count := Enum.count fns;
   fns |> Enum.map (read_file_as_str ~verbose:false) 
     |> Enum.map (fun s -> ((0l,0l,1,unique()),s,true)) (* add the fin flag *)
-    |> Vect.of_enum 
+    |> Array.of_enum 
     |> tap (fun v -> trace_len := trace_size v)
 (*|> (fun v -> v, trace_size v)
     |> tap (fun (_,l) -> printf "#Flows read from file (len: %a max_conc: %d flows: %d)\n" Ean_std.print_size_B l 1 !flow_count;)
@@ -353,7 +356,7 @@ let make_packets trace_len flows =
     )
   in
   loop (Enum.empty ());
-  Enum.concat ret |> Vect.of_backwards |> tap (fun v -> trace_len := trace_size v)
+  Enum.concat ret |> Array.of_backwards |> tap (fun v -> trace_len := trace_size v)
 (*    |> tap (fun (_v,l) -> 
       printf "#Flows packetized (len: %a max_conc: %d flows: %d packets:%d)\n" 
 	Ean_std.print_size_B l !max_conc !flow_count (Vect.length _v);

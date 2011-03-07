@@ -56,6 +56,7 @@ let () = Arg2.parse args (fun x -> fns := x :: !fns) usage_info descr notes
 (*** PARSER MODULES ***)
 
 type 'a parser_f = {
+  p_type : parser_t;
   id : string;
   new_parser : unit -> 'a;
   delete_parser : 'a -> unit;
@@ -63,12 +64,11 @@ type 'a parser_f = {
 (*  get_event_count : unit -> int; *)
 }
 
-let parser_count = ref 0
-
 let null_p = {
+  p_type = `Null;
   id = "null";
-  new_parser = (fun () -> incr parser_count);
-  delete_parser = (fun () -> decr parser_count);
+  new_parser = (fun () -> ());
+  delete_parser = (fun () -> ());
   add_data = (fun () _ -> ());
 (*  get_event_count = (fun () -> 0); *)
 }
@@ -76,13 +76,14 @@ let null_p = {
 let trace_len = ref (-1)
   
 let sift_p = {
+  p_type = `Sift;
   id = (if pac = "bpac" then "sift-b" else "sift-u");
   new_parser = Prog_parse.new_parser "spec.ca" !extr_ca;
   delete_parser = Prog_parse.delete_parser;
   add_data = Prog_parse.add_data;
 (*  get_event_count = Prog_parse.get_event_count; *)
 }
-    
+(*    
 let () = at_exit (fun () -> 
     (*    Printf.printf "#Bytes skip()ed: %d  Times this exceeded the current packet: %d bytes asked to skip trans-packet: %d\n" !Ns_parse.inner_skip !Ns_parse.skip_over !Prog_parse.total_skip; 
 	  Printf.printf "#Packets skipped entirely: %d Packets skipped partially: %d\n" !Prog_parse.pkt_skip !Prog_parse.pkt_partial_skip;
@@ -90,9 +91,10 @@ let () = at_exit (fun () ->
   Ns_parse.parsed_bytes := !Ns_parse.parsed_bytes / !rep_cnt;
   Printf.printf "#Trace payload length: %d Bytes parsed: %a Percentage of flow parsed: %2.1f\n" !trace_len Ean_std.print_size_B !Ns_parse.parsed_bytes (100. *. float !Ns_parse.parsed_bytes /. float !trace_len )
 )
-  
+ *)
 
 let pac_p = {
+  p_type = `Pac;
   id = pac;
   new_parser = Anypac.new_parser;
   delete_parser = Anypac.delete_parser;
@@ -140,11 +142,11 @@ let run pr =
   let mem_ctr = ref (Ean_std.make_counter 1) in
   let null_t = ref 0.0 in
 
-  let mem = if pr.id <> "pac" then mem_gc else mem_vm in
+  let mem = match pr.p_type with `Sift | `Null -> mem_gc | `Pac -> mem_vm in
 
   let reset_parsers () =
     Hashtbl.iter (fun _ p -> pr.delete_parser p; decr conc_flows) ht;
-    Hashtbl.clear ht; assert (!parser_count = 0);
+    Hashtbl.clear ht;
     if (!conc_flows <> 0) then (
       printf "#ERR: conc_flows = %d after cleanup\n" !conc_flows;
       conc_flows := 0
@@ -152,17 +154,17 @@ let run pr =
   in
 
   let post_round round time =
-    Gc.compact ();
     packet_ctr := 0;
     mem_ctr := Ean_std.make_counter 1;
-    let tsize = float (!trace_len * 8 / 1024 / 1024 / 1024) in
+    let tsize = float (!trace_len * 8) /. 1024. /. 1024. /. 1024. in
     let gbps = 
-      if pr.id = "null" then ( null_t := time; tsize /. time )
+      if pr.id = "null" 
+      then ( null_t := time; tsize /. time )
       else tsize /. (time -. !null_t)
     in
     if !check_mem_per_packet then printf "#";
-    printf "%s\t%s\t%d\t%4.3f\t%d\t%.2f\n%!" 
-      !run_id pr.id round time !trace_len gbps
+    printf "%s\t%s\t%d\t%4.3f\t%.3f\t%.2f\t%d\t%d\n%!" 
+      !run_id pr.id round time tsize gbps (mem()) !conc_flows
   in
 
   let act_packet (flow, data, fin) =
@@ -175,7 +177,7 @@ let run pr =
     incr packet_ctr;
     pr.add_data p data;
     if !check_mem_per_packet && !packet_ctr land 0xffff = 0 then (
-      printf "%s %s %d %d %d\n" !run_id pr.id !packet_ctr !conc_flows (mem ()/1024/1024);
+      printf "%s %s %d %d %d\n" !run_id pr.id !packet_ctr !conc_flows (mem ());
     );
     if fin then (
       decr conc_flows;
@@ -188,17 +190,24 @@ let run pr =
 
 (*** RUN FUNCTION IN A LOOP AND INSTRUMENT ***)
 let main_loop (reset_parsers, post_round, f) rep_cnt xs =
-  mem0 := get_vmsize (); mem0gc := get_ocaml_mem ();
-  Vect.iter f xs; reset_parsers ();
+(*  Gc.compact(); *)
+  mem0gc := get_ocaml_mem (); mem0 := get_vmsize (); 
+  Array.iter f xs; 
+  reset_parsers ();
   let tpre = Sys.time () in
   for round_num = 1 to rep_cnt do
-    Vect.iter f xs; reset_parsers ();
+    Array.iter f xs; 
+    reset_parsers ();
   done;
   let time = (Sys.time () -. tpre) /. float rep_cnt in
+(*  Gc.compact(); *)
+  Array.iter f xs;
   post_round rep_cnt time;
+  reset_parsers ();
   time
 
-let print_header () = Gc.compact()
+let print_header () = 
+  Gc.compact()
 (*  let t0 = Sys.time () in*)
  (* printf "# Init time: %4.2f\n" t0; *)
 (*  printf "parser\tround\ttime\tmem\tparsers\tleak\n%!" *)
@@ -229,7 +238,7 @@ let main () =
       String.concat "," (List.map filename !fns);
 (*  let fns = List.enum !fns |> expand_dirs in *)
   let main_loops chunks =
-    if Vect.is_empty chunks then failwith "No packets to parse";
+    if chunks = [| |] then failwith "No packets to parse";
     let main_null = get_fs `Null |> main_loop in
     let main_others = List.map (get_fs |- main_loop) !parsers in
     print_header ();
