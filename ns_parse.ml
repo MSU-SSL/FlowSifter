@@ -6,6 +6,8 @@ open ParsedPCFG
 
 (*open Ocamlviz *)
 
+let debug_ca = false
+
 let capture_counter = let x = ref 0 in fun () -> incr x; !x
 
 let parse_preds s = 
@@ -134,9 +136,10 @@ let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) =
     let var_count = v_counter () in
     let ret = Array.create nt_count (Obj.magic 0) in
     Enum.iter (fun (ca, pro) -> ret.(ca) <- pro) pmap;
-(*    printf "varmap: %a\nca_statemap: %a\n ca: %a\n"
-      (Hashtbl.print String.print Int.print) var_ht
-      (Hashtbl.print String.print Int.print) ca_ht
+    if debug_ca then print_reg_ds_ca stdout ret;
+(*    printf (* "varmap: %a\nca_statemap: %a\n "*)"ca: %a\n"
+(*      (Hashtbl.print String.print Int.print) var_ht
+      (Hashtbl.print String.print Int.print) ca_ht*)
       print_reg_ds_ca ret; *)
     ret, var_count
   
@@ -169,7 +172,7 @@ let var_max = 255
 
 (** Removes predicate checks at runtime for non-terminals with no predicates *)
 let optimize ca compile_ca =
-    let opt_prod rules =
+    let opt_prod i rules =
       if List.for_all (fun (p,_) -> List.length p = 0) rules then
 	let dfa = List.map snd rules |> compile_ca in
 	(fun _ _ -> dfa)
@@ -184,7 +187,7 @@ let optimize ca compile_ca =
 	  (fun vars parse_state ->
 	    cas.(get_rules parse_state rules vars) )
     in
-    Array.map opt_prod ca
+    Array.mapi opt_prod ca
 
 
 

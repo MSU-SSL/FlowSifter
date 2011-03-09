@@ -1,31 +1,22 @@
-HTTP1 -> HTTP_START [cn := pos()] HEADERS1 HTTP1 ;
+HTTP1 -> HTTP_START [xml := 0] HEADERS1 HTTP1 ;
 HTTP1 -> ;
 
-#HTTP_START1 99 -> NONWS [cn := bounds (0, pos())] LWS [cn := pos()] URL [cn := bounds(cn, pos() - 1)] LWS VERSION CRLF;
+HEADERS1 -> HEADER1 CRLF HEADERS1 ;
+HEADERS1 -> CRLF BODY ;
 
-HEADERS1 -> HEADER1 CRLF [cn := pos()] HEADERS1 ;
-HEADERS1 -> CRLF [bodyend := bodyend + pos()] XML1 ;
+HEADER1 99 -> /[^:\n]*:/ TEXT DEFAULTVALUE1 ;
+HEADER1 1 -> /(?i:Content-length):/ GETSIZE1 ;
 
-HEADER1 -> /(?i:content-length:)/ [cn := bounds (cn, pos() ); cv := pos()] GETSIZE1 ;
-HEADER1 -> NAME /:/  [cn := bounds (cn, pos() ); cv := pos()] DV_CAP ;
-NAME -> TOKEN;
-NAME -> /(?i:user-agent)/ ;
-NAME -> /(?i:host)/ ;
-NAME -> /(?i:accept)/ ;
-NAME -> /(?i:content-type)/ ;
-NAME -> /(?i:server)/ ;
-NAME -> /(?i:date)/ ;
-NAME -> /(?i:content-length)/ ;
-NAME -> /(?i:referer)/ ;
-NAME -> /(?i:last-modified)/ ;
-NAME -> /(?i:accept-ranges)/ ;
+DEFAULTVALUE1 -> ;
+DEFAULTVALUE1 -> LWS TEXT DEFAULTVALUE1 ;
 
-DV_CAP -> TEXT [cv := bounds(cv, pos() - 1)];
-DV_CAP -> TEXT LWS DV_CAP ;
+GETSIZE1 -> LWS [clen := getnum()];
 
-GETSIZE1 -> LWS [bodyend := getnum(); cv := bounds(cv, pos() - 1)];
+TESTXML -> /\s*(?i:application\/soap\+xml)/ TEXT [xml := 1];
+TEXTXML -> DV_CAP ;
 
-BODY_XML -> CRLF [bodyend := bodyend + pos()] XML1;
+BODY -> XML1;
+#BODY [xml == 0] -> /./ [clen := skip( clen - 1 )];
 
 ###
 
@@ -38,5 +29,5 @@ XBDY0 -> /\s*<soap:Body>\s*/ ARRAY1 /\s*<\/soap:Body>\s*/;
 ARRAY1 -> /<array>\s*/ ARRAY2  /<\/array>\s*/ ARRAY ;
 ARRAY1 -> ;
 
-ARRAY2 -> /<array>\s*/ bounds( ARRAY ) /<\/array>\s*/ ARRAY ;
+ARRAY2 -> /<array>\s*/ token( ARRAY ) /<\/array>\s*/ ARRAY ;
 ARRAY2 -> ;

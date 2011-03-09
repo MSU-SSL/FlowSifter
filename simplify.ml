@@ -1,7 +1,6 @@
 open Batteries_uni
 open Ns_types
 open ParsedPCFG
-let (|>) x f = f x (** sort of like unix pipe *)
 
 (************************************************************************)
 (** Grammar Simplification                                              *)

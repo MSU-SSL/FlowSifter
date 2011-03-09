@@ -401,6 +401,26 @@ let print_trace oc dfa trace =
     (List.print Int.print) (qopt_to_dec_l last);
   ()
 
+let to_array dfa = 
+  let to_arr m = 
+    Array.init 256 (fun i -> try IMap.find i m with Not_found -> -1) in
+  map_qs (fun q -> {q with map = to_arr q.map}) dfa
+
+let print_array_dfa oc dfa =
+  let aprint ~first ~last oc a = 
+    String.print oc first;
+    for i = 0 to Array.length a - 1 do
+      if a.(i) <> -1 then fprintf oc "%C:%d " (Char.chr i) a.(i);
+    done;
+    String.print oc last;
+  in
+  let print_q oc q = 
+    if q.dec = None then aprint ~first:"[" ~last:"]" oc q.map 
+    else aprint ~first:"<" ~last:">" oc q.map 
+  in
+  print_fa print_q oc dfa
+
+
 module RS = Ruleset
 open RS.Rule
 
@@ -434,7 +454,3 @@ let tcam_size dfa =
   let get_map x = x.map in
   Array.enum dfa.qs |> map (get_map |- Optimizers.raz_dec |- Vect.length) |> Enum.reduce (+)
 
-let to_array dfa = 
-  let to_arr m = 
-    Array.init 256 (fun i -> try IMap.find i m with Not_found -> -1) in
-  map_qs (fun q -> {q with map = to_arr q.map}) dfa

@@ -80,23 +80,26 @@ let parsed_bytes = ref 0
 
 exception Parse_complete
 
+let debug_ca = false
+
 type ('a, 'b) resume_ret = 
   | End_of_input of 'a * int * 'b * int
   | Dec of 'b * int
 
 let rec resume_arr qs input pri decision dec_pos q pos =
   if pos >= String.length input then (
-(*    printf "EOI: q:%d pri:%d ri:%d\n" q.Regex_dfa.id pri ri;*)
+    if debug_ca then printf "EOI: q:%d pri:%d dec_pos:%d\n" q.Regex_dfa.id pri dec_pos;
     End_of_input (q,pri,decision,dec_pos)
   ) else
     let q_next_id = Array.unsafe_get q.Regex_dfa.map (Char.code (String.unsafe_get input pos)) in
-(*  printf "DFA %C->%d " input.[i] q_next_id; *)
+    if debug_ca then printf "DFA %C->%d " input.[pos] q_next_id;
     if q_next_id = -1 then Dec (decision, dec_pos)
     else
       let q = Array.unsafe_get qs q_next_id in
       let pos = pos+1 in 
       match q.Regex_dfa.dec with
 	| Some d when d.pri <= pri -> 
+	  if debug_ca then printf "NP: %d " d.pri;
 	  resume_arr qs input d.pri d.item pos q pos
 	| _ -> 
 	  resume_arr qs input pri decision dec_pos q pos
@@ -123,7 +126,7 @@ let ca_trans = ref 0
 (* let () = at_exit (fun () -> printf "#CA Transitions: %d\n" !ca_trans)  *)
 
 let rec simulate_ca_string ~ca ~vars fail_drop skip_left base_pos flow_data (qs, q, pri, item, ri, tail_data) = 
-(*  Printf.printf "P:%s\n" flow_data; *)
+  if debug_ca then Printf.printf "P:%s\n" flow_data;
   let flow_len = String.length flow_data in
   let pos = ref 0 in
   let rec run_d2fa qs q pri item ri tail_data =
@@ -139,7 +142,7 @@ let rec simulate_ca_string ~ca ~vars fail_drop skip_left base_pos flow_data (qs,
       let dfa_result = resume_arr qs flow_data pri item ri q !pos in
       match dfa_result with
 	| Dec ((acts,q_next),pos_new) -> 
-(*	  printf "CA: %d @ pos %d(%d)\n" q_next (pos_new + !base_pos) pos_new;   *)
+	  if debug_ca then printf "CA: %d @ pos %d(%d)\n" q_next (pos_new + !base_pos) pos_new;
 	  incr ca_trans; 
 	  parsed_bytes := !parsed_bytes + (pos_new - !pos);
 	  pos := pos_new;
