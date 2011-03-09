@@ -6,7 +6,7 @@ PACKAGES = batteries
 
 all: bench-all
 
-.PHONY: clean hwrun %.threadlog bench-all runlog.% outliers
+.PHONY: clean hwrun %.threadlog bench-all runlog.% outliers rectest
 
 clean:
 	rm -f *.a *.o *.cmi *.cmx *.cmo *.cmxa *.annot lib_b/*.o lib_u/*.o
@@ -158,20 +158,21 @@ rundata1: bench-bpac bench-upac
 	    $(MEM_PRE) ./bench-upac ~/traces/http/use/$$a* | tee -a $@; \
 	done
 
+FLOWS = 10000
 rectest: bench-bpac
 	-mv -b $@ $@.bkp
 	echo -e $(HEADER) > $@
 	time for a in 3 4 5; do \
-	    ./bench-upac --seed 230 -x e-soap.ca -s -g $$a 100000 | tee -a $@; \
-	    ./bench-upac --seed 231 -x e-soap.ca -s -g $$a 100000 | tee -a $@; \
-	    ./bench-upac --seed 232 -x e-soap.ca -s -g $$a 100000 | tee -a $@; \
-	    ./bench-upac --seed 233 -x e-soap.ca -s -g $$a 100000 | tee -a $@; \
-	    ./bench-upac --seed 234 -x e-soap.ca -s -g $$a 100000 | tee -a $@; \
-	    ./bench-upac --seed 235 -x e-soap.ca -s -g $$a 100000 | tee -a $@; \
-	    ./bench-upac --seed 236 -x e-soap.ca -s -g $$a 100000 | tee -a $@; \
-	    ./bench-upac --seed 237 -x e-soap.ca -s -g $$a 100000 | tee -a $@; \
-	    ./bench-upac --seed 238 -x e-soap.ca -s -g $$a 100000 | tee -a $@; \
-	    ./bench-upac --seed 239 -x e-soap.ca -s -g $$a 100000 | tee -a $@; \
+	    ./bench-upac --seed 230 -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-upac --seed 231 -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-upac --seed 232 -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-upac --seed 233 -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-upac --seed 234 -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-upac --seed 235 -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-upac --seed 236 -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-upac --seed 237 -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-upac --seed 238 -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-upac --seed 239 -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
 	done
 
 figures: rundata1 memory.R
