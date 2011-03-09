@@ -55,34 +55,31 @@ let () = at_exit (fun () -> Hashtbl.iter (fun k v -> Printf.printf "%d %s\n" !v 
 *)
 
 let ca_functions = ref 
-  [ "pos", (fun (base_pos, sim_pos, _flow_data) -> function [] -> base_pos + !sim_pos | _ -> wrong_args "pos");
+  [ "pos", (fun (base_pos, sim_pos, _flow_data) -> function 
+    | [] -> base_pos + !sim_pos 
+    | _ -> wrong_args "pos");
     "token", 
     (fun (_base_pos, _sim_pos, _flow_data) -> function 
       | [_start_pos] -> (* end_pos = pos() - 1 *)
 	incr matches; 0
-      | _ -> wrong_args "token"
-    );
+      | _ -> wrong_args "token" );
     "bounds" ,
     (fun (_base_pos, _sim_pos, _flow_data) -> function 
-      | [_start_pos; _end_pos] -> 
+      | [_start_pos; _end_pos] -> incr matches; 0
 	(* BROKEN BY SPLICING CODE -- check bounds on start/end pos and current flow_data *)
 	(*	let str = String.sub start_pos end_pos flow_data in *)
 	(*	Printf.eprintf "***Match found in range %d, %d***\n" 
 		start_pos end_pos;  *)
-	incr matches; 0
 (*      | [_s1;_e] -> 
 	incr zero_size; 
 (*	let s = s1 - base_pos in let e = e - 1 in
 	Printf.printf "base_pos %d s1 %d e %d sim_pos %d\n%!" base_pos s1 e !sim_pos;
 	Printf.printf "zero-size match: %d to %d at %S\n\n%S\n\n" s1 e (String.head flow_data s) (String.tail flow_data s); *)
 	0 *)
-      | _ -> wrong_args "bounds"
-    );
+      | _ -> wrong_args "bounds" );
     "skip",
     (fun (_base_pos, sim_pos, _flow_data) ->  function 
-      | [len] ->
-	if len > 0 then	sim_pos := !sim_pos + len;
-	0
+      | [len] when len >= 0 -> sim_pos := !sim_pos + len; 0
       | _ -> wrong_args "skip" );
     "skip_to",
     (fun (_base_pos, sim_pos, _flow_data) -> function
