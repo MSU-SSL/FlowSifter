@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 DEBUG = #-g
-CPPFLAGS =  -O2 $(DEBUG) 
+CPPFLAGS =  -O2 $(DEBUG) -I .
 OCAMLFLAGS = -annot -w Z $(DEBUG)
 
 all: bench-all
@@ -115,50 +115,6 @@ perf-all: $(patsubst %, %.perf, $(MODES))
 perf2-all: $(patsubst %, %.perf2, $(MODES))
 
 
-
-
-####
-#### Junkyard of old code
-####
-
-#bpac: http-main.cc
-#	g++ -DPARSER=0 -I lib/ http-baseconn.cc lib/http_pac.cc http-main.cc lib/libbinpac.a  -lpcre -g -o bpac
-
-#upac: http-main.cc
-#	g++ -DPARSER=1 -I ulib/ http-baseconn.cc ulib/binpac.cc ulib/http_pac_fast.cc ulib/http_matcher.cc http-main.cc ulib/libbinpac.a -lpcre -g -o upac
-
-#flow: flib/flow.o http-main.cc
-#	g++ -DPARSER=2 -I flib/ -g -o flow http-baseconn.cc http-main.cc flib/flow.o \
-#	flib/PCFG.o flib/ns_types.o flib/simplify.o flib/ns_parse.o flib/prog_parse.o \
-#	-L/usr/lib/ocaml -lasmrun -lm -ldl 
-
-
-#-L/usr/local/lib/ocaml/3.11.2/batteries/ -lbatteries_uni -lbatteries \
-
-define timelog
-	set -m; ./$^ $1 $(TRACE) & for((i=0;;++i)) { echo $$i `grep VmRSS /proc/\`pidof $^\`/status | grep -o '[0-9]*'`; sleep 1 || break; } | tee $@ & sleep 20; kill %1; kill %2
-endef
-
-%.20-timelog: bench-%
-	$(call timelog, 20)
-
-%.50-timelog: bench-%
-	$(call timelog, 50)
-
-%.100-timelog: bench-%
-	$(call timelog, 100)
-
-%.150-timelog: bench-%
-	$(call timelog, 150)
-
-%.250-timelog: bench-%
-	$(call timelog, 250)
-
-timelog-all: $(patsubst %, %.20-timelog, $(MODES)) $(patsubst %, %.50-timelog, $(MODES)) $(patsubst %, %.100-timelog, $(MODES)) $(patsubst %, %.150-timelog, $(MODES)) $(patsubst %, %.250-timelog, $(MODES))
-
-flib/flow.o: flib/flow.c
-	gcc -static -o flib/flow.o -c flib/flow.c 
-
 mldeps: 
 	ocamlfind ocamldep -package bitstring.syntax -syntax camlp4o *.ml *.mll *.mly > mldeps
 
@@ -166,14 +122,14 @@ include mldeps
 
 ns_yac.cmi: ns_types.ml
 
-
-
+##########################
+# CREATE BENCHMARK FILES #
 ##########################
 RUNS =  98w1-mon 98w1-tue 98w1-wed 98w1-thu 98w1-fri \
 	98w2-monday 98w2-tuesday 98w2-wednesday 98w2-thursday 98w2-friday \
 	                         98w3-wednesday                           \
-	98w4-monday                                                       \
-	                                                      98w5-friday \
+	                                                                  \
+	                                                                  \
 	            98w6-tuesday 98w6-wednesday 98w6-thursday 98w6-friday \
 	98w7-monday 98w7-tuesday 98w7-wednesday 98w7-thursday 98w7-friday \
 	99w1-monday 99w1-tuesday 99w1-wednesday 99w1-thursday 99w1-friday \
@@ -196,14 +152,23 @@ runlog.%: bench-%
 	    $(MEM_PRE) ./$^ ~/traces/http/use/$$a* | tee -a $@; \
 	done
 
+HEADER = "runid\tparser\titers\ttime\tgbit\tgbps\tmem\tflows\tevents\tpct_parsed"
+
 rundata100: runlog100.bpac runlog100.upac
-	echo -e "runid\tparser\titers\ttime\tgbit\tgbps\tmem\tflows" > $@
-	cat $^ >> $@
+	-mv -b $@ $@.bkp
+	echo -e $(HEADER) > $@
+	time for a in $(RUNS); do \
+	    $(MEM_PRE) ./bench-bpac -n 100 ~/traces/http/use/$$a* | tee -a $@; \
+	    $(MEM_PRE) ./bench-upac -n 100 ~/traces/http/use/$$a* | tee -a $@; \
+	done
 
-rundata1: runlog.bpac runlog.upac
-	echo -e "runid\tparser\titers\ttime\tgbit\tgbps\tmem\tflows" > $@
-	cat $^ >> $@
+rundata1: bench-bpac bench-upac
+	-mv -b $@ $@.bkp
+	echo -e $(HEADER) > $@
+	time for a in $(RUNS); do \
+	    $(MEM_PRE) ./bench-bpac ~/traces/http/use/$$a* | tee -a $@; \
+	    $(MEM_PRE) ./bench-upac ~/traces/http/use/$$a* | tee -a $@; \
+	done
 
-memory.pdf memory.png memory.eps: 
-	R memory.R
-
+memper.pdf memper.png memper.eps: rundata1 memory.R
+	R --save < memory.R
