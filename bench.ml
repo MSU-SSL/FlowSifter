@@ -205,7 +205,7 @@ let main_loop (reset_parsers, post_round, f) rep_cnt xs =
   Array.iter f xs;
   post_round rep_cnt time;
   reset_parsers ();
-  time
+  ()
 
 let print_header () = 
   Gc.compact()
@@ -243,13 +243,8 @@ let main () =
     let main_null = get_fs `Null |> main_loop in
     let main_others = List.map (get_fs |- main_loop) !parsers in
     print_header ();
-    let a = 
-      if !baseline && not !check_mem_per_packet 
-      then main_null !rep_cnt chunks 
-      else 0.
-    in
-    let b = List.map (fun f -> f !rep_cnt chunks) main_others in
-    a,b
+    main_null !rep_cnt chunks;
+    List.iter (fun f -> f !rep_cnt chunks) main_others;
   in
   let gen_pkt () = 
     let b = Buffer.create 2000 in 
@@ -265,15 +260,7 @@ let main () =
       | true, Gen -> Enum.from gen_pkt |> Enum.take !gen_count |> Pcap.make_flows trace_len
       | false, Gen -> Enum.from gen_pkt |> Enum.take !gen_count |> Pcap.make_packets trace_len
   in
-  let _tnull,_ts = main_loops packets in
-(*
-  let rates = List.map (fun t -> float !trace_len /. (t -. tnull) /. 1024. /. 1024. *. 8.) ts in
-  List.iter2 (fun p rs -> 
-    printf "#%s rates (mbps): %a\n" (p_to_string p) Float.print rs) !parsers rates;
-  (match rates with [_] -> () | [fr;pr] -> printf "#speed ratio: %4.2f\n" (fr /. pr) | _ -> printf "#wrong number of rates\n");
-  Printf.printf "#completed in %4.2fs, (sift: %d pac: %d ) events\n" 
-    (Sys.time ()) (Prog_parse.get_event_count ()) (Anypac.get_event_count ());
-*)
+  main_loops packets;
   ()
 
 let () = main ()
