@@ -140,7 +140,7 @@ RUNS =  98w1-mon 98w1-tue 98w1-wed 98w1-thu 98w1-fri \
 	99w5-monday 99w5-tuesday 99w5-wednesday 99w5-thursday 99w5-friday \
 
 MEM_PRE = LD_PRELOAD="/usr/lib/libtcmalloc.so.0" 
-HEADER = "runid\tparser\titers\ttime\tgbit\tgbps\tmem\tflows\tevents\tpct_parsed"
+HEADER = "runid\tparser\titers\ttime\tgbit\tgbps\tmem\tflows\tevents\tpct_parsed\tdropped"
 
 rundata100: bench-bpac bench-upac
 	-mv -b $@ $@.bkp
@@ -159,7 +159,7 @@ rundata1: bench-bpac bench-upac
 	done
 
 FLOWS = 10000
-rectest: bench-bpac
+rectest: bench-upac
 	-mv -b $@ $@.bkp
 	echo -e $(HEADER) > $@
 	time for a in 3 4 5; do \

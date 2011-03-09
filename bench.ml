@@ -165,9 +165,11 @@ let run pr =
     in
     let pct_parsed = match pr.p_type with `Null -> 0. | `Pac -> 100. 
       | `Sift -> (!Ns_run.parsed_bytes / (!rep_cnt + 2) * 100) /! !trace_len in
-      if !check_mem_per_packet then printf "#";
-    printf "%s\t%s\t%d\t%4.3f\t%.3f\t%.2f\t%d\t%d\t%d\t%.1f\n%!" 
-      !run_id pr.id round time tsize gbps (mem()) !conc_flows (pr.get_event_count()) pct_parsed
+    let dropped = match pr.p_type with `Null -> 100. | `Pac -> 0. 
+      | `Sift -> (!Prog_parse.fail_drop / (!rep_cnt + 2) * 100) /! !trace_len in
+    if !check_mem_per_packet then printf "#";
+    printf "%s\t%s\t%d\t%4.3f\t%.3f\t%.2f\t%d\t%d\t%d\t%.1f\t%.1f\n%!" 
+      !run_id pr.id round time tsize gbps (mem()) !conc_flows (pr.get_event_count()) pct_parsed dropped
   in
 
   let act_packet (flow, data, fin) =
