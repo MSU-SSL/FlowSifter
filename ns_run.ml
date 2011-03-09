@@ -80,29 +80,35 @@ let parsed_bytes = ref 0
 
 exception Parse_complete
 
-type 'a resume_ret = 
-  | End_of_input of 
-      ('a, int array, ca_data pri_dec option) Regex_dfa.state * int 
-    * ca_data * int
-  | Dec of ca_data * int
+type ('a, 'b) resume_ret = 
+  | End_of_input of 'a * int * 'b * int
+  | Dec of 'b * int
 
-let rec resume_arr qs input pri item ri q i =
-  if i >= String.length input then (
+let rec resume_arr qs input pri decision dec_pos q pos =
+  if pos >= String.length input then (
 (*    printf "EOI: q:%d pri:%d ri:%d\n" q.Regex_dfa.id pri ri;*)
-    End_of_input (q,pri,item,ri)
+    End_of_input (q,pri,decision,dec_pos)
   ) else
-    let q_next_id = q.Regex_dfa.map.(Char.code input.[i]) in
+    let q_next_id = Array.unsafe_get q.Regex_dfa.map (Char.code (String.unsafe_get input pos)) in
 (*  printf "DFA %C->%d " input.[i] q_next_id; *)
-    if q_next_id = -1 then 
-      Dec (item,ri)
+    if q_next_id = -1 then Dec (decision, dec_pos)
     else
-      let q = qs.(q_next_id) in
-      let next_i = i+1 in
+      let q = Array.unsafe_get qs q_next_id in
+      let pos = pos+1 in 
       match q.Regex_dfa.dec with
-	| Some d when d.pri <= pri ->
-	  resume_arr qs input d.pri d.item next_i q next_i
+	| Some d when d.pri <= pri -> 
+	  resume_arr qs input d.pri d.item pos q pos
 	| _ -> 
-	  resume_arr qs input pri item ri q next_i
+	  resume_arr qs input pri decision dec_pos q pos
+
+(*
+let test_dfa = [{pri=1; item=0}, "[abcxyz].*[bahd].*\n", []] |> List.enum |> Pcregex.rx_of_dec_strings |> Minreg.of_reg |> Regex_dfa.build_dfa ~labels:false (dec_rules comp_dec) |> Regex_dfa.minimize ~dec_comp:(=) |> Regex_dfa.to_array
+
+open Benchmark
+
+let () = 
+  throughput1 3 (resume_arr test_dfa.Regex_dfa.qs (String.create (1024*1024/8)) 99 2 0 test_dfa.Regex_dfa.q0) 0 |> tabulate
+*)
 
 let null_state = -1
 
@@ -112,21 +118,20 @@ let init_state dfa pos =
       Some {pri=p; item=i} -> (dfa.Regex_dfa.qs, q0, p, i, pos, "")
     | None -> (dfa.Regex_dfa.qs, q0, max_int, ([], null_state), pos, "")
 
-(*let ca_trans = ref 0 *)
+let ca_trans = ref 0 
 
-(*let () = at_exit (fun () -> printf "#CA Transitions: %d\n" !ca_trans) *)
+(* let () = at_exit (fun () -> printf "#CA Transitions: %d\n" !ca_trans)  *)
 
 let rec simulate_ca_string ~ca ~vars fail_drop skip_left base_pos flow_data (qs, q, pri, item, ri, tail_data) = 
-  (*Printf.printf "P:%s\n" flow_data; *)
+(*  Printf.printf "P:%s\n" flow_data; *)
   let flow_len = String.length flow_data in
   let pos = ref 0 in
-  let ca_state = (!base_pos, pos, flow_data) in
   let rec run_d2fa qs q pri item ri tail_data =
     if !pos >= flow_len then ( (* skipped past end of current packet *)
       skip_left := !pos - flow_len; 
       Some (qs, q, pri, item, !base_pos + ri, "")
     ) else if !pos < 0 then ( (* handle DFA backtrack into previous packet *)
-      (* TODO: optimize? *)
+      (* TODO: optimize backtracking? *)
       let new_ri = ri + !base_pos in
       base_pos := !base_pos + !pos;
       simulate_ca_string ~ca ~vars fail_drop skip_left base_pos (tail_data ^ flow_data) (qs, q, pri, item, new_ri, "")
@@ -134,10 +139,11 @@ let rec simulate_ca_string ~ca ~vars fail_drop skip_left base_pos flow_data (qs,
       let dfa_result = resume_arr qs flow_data pri item ri q !pos in
       match dfa_result with
 	| Dec ((acts,q_next),pos_new) -> 
-(*	  printf "CA: %d @ pos %d(%d)\n" q_next (pos_new + !base_pos) pos_new;  *)
-(*	  incr ca_trans; *)
+(*	  printf "CA: %d @ pos %d(%d)\n" q_next (pos_new + !base_pos) pos_new;   *)
+	  incr ca_trans; 
 	  parsed_bytes := !parsed_bytes + (pos_new - !pos);
 	  pos := pos_new;
+	  let ca_state = (!base_pos, pos, flow_data) in
 	  if acts <> [] then List.iter (run_act ca_state vars) acts;
 	  if q_next = null_state then (
 	    fail_drop := !fail_drop + (flow_len - pos_new);
@@ -152,10 +158,12 @@ let rec simulate_ca_string ~ca ~vars fail_drop skip_left base_pos flow_data (qs,
 	    )
 	| End_of_input (q_final, pri, item, ri) -> 
 	  parsed_bytes := !parsed_bytes + (String.length flow_data - !pos);
-(*	  printf "ri_out: %d, last_pos: %d\n" (!base_pos + ri) (!base_pos + flow_len);*)
-	  let tail_out = if ri < 0 then tail_data ^ flow_data else String.tail flow_data ri in
+	  let tail_out = 
+	    if ri < 0 then tail_data ^ flow_data 
+	    else String.tail flow_data ri 
+	  in
 	  Some (qs,q_final,pri,item, !base_pos + ri,tail_out)
 		
   in
-(*  printf "ri_in: %d " ri;*)
   run_d2fa qs q pri item (ri - !base_pos) tail_data
+

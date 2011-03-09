@@ -33,7 +33,7 @@ let full_parse (nt,predopt,priopt,rules) =
 	let cap_id = "capture(" ^ (capture_counter () |> string_of_int) ^")" in
 	let get_pos = Function ("pos", get_f "pos", []) in
 	let start_cap = VarMap.add cap_id get_pos VarMap.empty in
-	let end_exp = Function (func, get_f func, [Variable; Sub (get_pos, Constant 1)]) in
+	let end_exp = Function (func, get_f func, [Variable]) in
 	let end_cap = VarMap.add cap_id end_exp VarMap.empty in
 	List.fold_left expand_term_act (hook_act start_cap acc) rules
           |> hook_act end_cap
@@ -118,32 +118,27 @@ let regularize : grammar -> regular_grammar = fun grammar ->
 
 let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) = 
   fun start ca ->
-    let next_avail_var = ref 0 in
-    let var_ht = Hashtbl.create 10 in
-    let to_int_v var = try Hashtbl.find var_ht var with Not_found -> Ref.post_incr next_avail_var |> tap (fun i -> Hashtbl.add var_ht var i) in
-    let next_avail_ca = ref 0 in
-    let ca_ht = Hashtbl.create 10 in
-    let to_int_c ca_label = 
-      try Hashtbl.find ca_ht ca_label
-      with Not_found -> Ref.post_incr next_avail_ca
-        |> tap (fun i -> Hashtbl.add ca_ht ca_label i) 
-    (*	|> tap (fun i -> printf "CA %d from %s\n" i ca_label) *)
-    in
-    to_int_c start |> ignore; (* make sure start state is #0 *)
-    let fix_pair (v,a) = (to_int_v v, a) in
-    let fix_rule (r: (string, string) regular_rule) = {r with act = List.map fix_pair r.act; nt = Option.map to_int_c r.nt} in
+    let v_counter = Ean_std.make_counter 0 in
+    let {Std.get=int_of_v} = Std.cache_ht (fun _ -> v_counter ()) 10 in
+    let nt_counter = Ean_std.make_counter 0 in
+    let {Std.get=int_of_nt} = Std.cache_ht (fun _ -> nt_counter ()) 10 in
+    int_of_nt start |> ignore; (* make sure start state is #0 *)
+    let fix_pair (v,a) = (int_of_v v, a) in
+    let fix_rule (r: (string, string) regular_rule) = {r with act = List.map fix_pair r.act; nt = Option.map int_of_nt r.nt} in
     let fix_pred (p:pred) = VarMap.enum p |> Enum.map fix_pair |> List.of_enum in
     let pmap = Map.enum ca |> 
-	Enum.map (fun (ca, pro) -> to_int_c ca, (List.map (fun (p,r) -> fix_pred p, fix_rule r) pro)) in
+	Enum.map (fun (ca, pro) -> int_of_nt ca, (List.map (fun (p,r) -> fix_pred p, fix_rule r) pro)) in
     Enum.force pmap;
 
-    let ret = Array.create !next_avail_ca (Obj.magic 0) in
+    let nt_count = nt_counter () in
+    let var_count = v_counter () in
+    let ret = Array.create nt_count (Obj.magic 0) in
     Enum.iter (fun (ca, pro) -> ret.(ca) <- pro) pmap;
 (*    printf "varmap: %a\nca_statemap: %a\n ca: %a\n"
       (Hashtbl.print String.print Int.print) var_ht
       (Hashtbl.print String.print Int.print) ca_ht
       print_reg_ds_ca ret; *)
-    ret, !next_avail_var
+    ret, var_count
   
 
 

@@ -1,5 +1,4 @@
 open Batteries_uni
-
 open Ns_types
 open Simplify
 open ParsedPCFG
@@ -7,11 +6,11 @@ open ParsedPCFG
 let pkt_skip = ref 0
 let fail_drop = ref 0
 
-
+(*
 let () = at_exit (fun () -> 
-  Printf.printf "#Bytes dropped after desync: %a\n" Ean_std.print_size_B !fail_drop;
+  Printf.printf "#Bytes dropped after desync: %a, total packet data: %d\n" Ean_std.print_size_B !fail_drop !pkt_data
 )
-
+  *)
 
 (* generates an incremental parser for the language defined by a 
    protocol grammar specification and extraction language *)
@@ -22,9 +21,9 @@ let gen_parser p e =
   let ca,var_count = Ns_parse.destring extr.start ca0 in
   let {Std.get=compile_ca} = Std.cache_map Ns_run.compile_ca in
   let ca = Ns_parse.optimize ca compile_ca in
-  let dfa0 = ca.(0) (Array.make var_count 0) (0, ref 0, "") in
   fun () -> (* allow creating many parsers *)
     let vars = Array.make var_count 0 in    
+    let dfa0 = ca.(0) vars (0, ref 0, "") in
     let q = ref (Some (Ns_run.init_state dfa0 0))
     and skip_left = ref 0
     and base_pos = ref 0 in
@@ -33,7 +32,8 @@ let gen_parser p e =
 	match !q with
 	  | None -> fail_drop := !fail_drop + String.length str
 	  | Some q_in ->
-	    q := Ns_run.simulate_ca_string ~ca ~vars fail_drop skip_left base_pos str q_in;
+	    q := Ns_run.simulate_ca_string 
+	      ~ca ~vars fail_drop skip_left base_pos str q_in;
 	    base_pos := !base_pos + String.length str;
       else (* skip_left > 0 *)
 	let len = String.length str in

@@ -56,6 +56,12 @@ let () = at_exit (fun () -> Hashtbl.iter (fun k v -> Printf.printf "%d %s\n" !v 
 
 let ca_functions = ref 
   [ "pos", (fun (base_pos, sim_pos, _flow_data) -> function [] -> base_pos + !sim_pos | _ -> wrong_args "pos");
+    "token", 
+    (fun (_base_pos, _sim_pos, _flow_data) -> function 
+      | [_start_pos] -> (* end_pos = pos() - 1 *)
+	incr matches; 0
+      | _ -> wrong_args "token"
+    );
     "bounds" ,
     (fun (_base_pos, _sim_pos, _flow_data) -> function 
       | [_start_pos; _end_pos] -> 
@@ -63,8 +69,7 @@ let ca_functions = ref
 	(*	let str = String.sub start_pos end_pos flow_data in *)
 	(*	Printf.eprintf "***Match found in range %d, %d***\n" 
 		start_pos end_pos;  *)
-	incr matches;
-	0
+	incr matches; 0
 (*      | [_s1;_e] -> 
 	incr zero_size; 
 (*	let s = s1 - base_pos in let e = e - 1 in
