@@ -4,12 +4,6 @@
 
 namespace binpac {
 
-std::string std_string(const_bytestring const & s)
-	{
-	return std::string((const char *) s.begin(), (const char *) s.end());
-	}
-
-
 int bytestring_casecmp(const_bytestring const & s1, const_charptr const & s2)
 	{
 
@@ -182,7 +176,7 @@ bool HTTP_Request::ParseBuffer(flow_buffer_t t_flow_buffer, ContextHTTP * t_cont
 			{
 			const_byteptr t_begin_of_data = t_flow_buffer->begin();
 			const_byteptr t_end_of_data = t_flow_buffer->end();
-			t_request_parsing_complete = request_->ParseBuffer(t_flow_buffer, t_context);
+			t_request_parsing_complete = request_->ParseBuffer(t_flow_buffer);
 			if ( t_request_parsing_complete )
 				{
 				// Evaluate 'let' and 'withinput' fields
@@ -338,7 +332,7 @@ HTTP_RequestLine::~HTTP_RequestLine()
 	version_ = 0;
 	}
 
-bool HTTP_RequestLine::ParseBuffer(flow_buffer_t t_flow_buffer, ContextHTTP * t_context)
+bool HTTP_RequestLine::ParseBuffer(flow_buffer_t t_flow_buffer)
 	{
 	bool t_val_parsing_complete;
 	t_val_parsing_complete = false;
@@ -430,7 +424,7 @@ bool HTTP_RequestLine::ParseBuffer(flow_buffer_t t_flow_buffer, ContextHTTP * t_
 	if ( t_val_parsing_complete )
 		{
 		// Evaluate 'let' and 'withinput' fields
-		process_request_ = scb_store_method_uri_version(t_context->connection()->http_conn(), t_context->flow()->is_orig(), method(), uri(), version()->vers_str());
+		process_request_ = scb_store_method_uri(method(), uri());
 		}
 	buffering_state_ = 0;
 	return t_val_parsing_complete;
@@ -898,6 +892,8 @@ bool HTTP_Header::ParseBuffer(flow_buffer_t t_flow_buffer)
 	if ( t_val_parsing_complete )
 		{
 		// Evaluate 'let' and 'withinput' fields
+		ignore1_ = scb_header_name(name_);
+		ignore2_ = scb_header_value(value_);
 		}
 	buffering_state_ = 0;
 	return t_val_parsing_complete;
@@ -1589,7 +1585,7 @@ HTTP_Conn::~HTTP_Conn()
 	upflow_ = 0;
 	delete downflow_;
 	downflow_ = 0;
-	delete http_conn_;
+	delete http_conn_; // fix memory leak
 	}
 
 void HTTP_Conn::NewData(bool is_orig, const_byteptr begin, const_byteptr end)
@@ -1748,18 +1744,36 @@ bool HTTP_Flow::is_end_of_multipart(const_bytestring const & line)
 
   int events = 0;
 
-bool scb_store_method_uri_version(BaseConn * conn, bool is_orig, const_bytestring const & method, const_bytestring const & uri, const_bytestring const & version)
+bool scb_store_method_uri(const_bytestring const & method, const_bytestring const & uri)
 	{
 
   
   //
   // Store the parsed fields
   //  
-	  //	  strcpy(conn->method, std_string(method).c_str());
-	  //	  strcpy(conn->uri, std_string(uri).c_str());
-	  //	  strcpy(conn->version, std_string(version).c_str());
-	  events += 3;
+//  bytestring_to_string(method, conn->method);
+//  bytestring_to_string(uri, conn->uri);
+//  bytestring_to_string(version, conn->version);
+  
+//Count these extractions
+
+	events += 2;
+
   return true;
+
+	}
+
+void * scb_header_name(const_bytestring const & name)
+	{
+
+	events += 1;
+
+	}
+
+void * scb_header_value(const_bytestring const & value)
+	{
+
+	events += 1;
 
 	}
 

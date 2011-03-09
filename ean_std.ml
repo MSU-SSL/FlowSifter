@@ -1,6 +1,8 @@
 open Batteries_uni
 open Printf
 
+let (/!) a b = float a /. float b
+
 let print_size_B oc x =
   if x < 1024 then
     fprintf oc "%d B" x

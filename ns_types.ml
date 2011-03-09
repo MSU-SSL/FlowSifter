@@ -32,36 +32,28 @@ let matches = ref 0
 let saves = Hashtbl.create 100
 
 let zero_size = ref 0
-(* let () = at_exit (fun () -> Printf.printf "#Zero size matches: %d\n" !zero_size) *)
+let () = at_exit (fun () -> if !zero_size > 0 then Printf.eprintf "#Zero size matches: %d\n" !zero_size)
 (*
 let () = at_exit (fun () -> Hashtbl.iter (fun k v -> Printf.printf "%d %s\n" !v k) saves)
 *)
 
 let ca_functions = ref 
   [ "pos", (fun (base_pos, sim_pos, _flow_data) -> function [] -> base_pos + !sim_pos | _ -> wrong_args "pos");
-    "save", (fun (base_pos, _sim_pos, flow_data) -> function | [start_pos; end_pos] -> 
-      let start_pos = start_pos - base_pos and end_pos = end_pos - base_pos in
-      let str = try String.sub flow_data (start_pos+1) (end_pos - start_pos) |> String.trim |> String.lowercase with _ -> "??" in
-      (try Hashtbl.find saves str |> incr with Not_found -> Hashtbl.add saves str (ref 1));
-      incr matches;
-      0
-      | _ -> wrong_args "save"
-    );
     "bounds" ,
     (fun (_base_pos, _sim_pos, _flow_data) -> function 
-      | [start_pos; end_pos] when start_pos < end_pos -> 
+      | [_start_pos; _end_pos] -> 
 	(* BROKEN BY SPLICING CODE -- check bounds on start/end pos and current flow_data *)
 	(*	let str = String.sub start_pos end_pos flow_data in *)
 	(*	Printf.eprintf "***Match found in range %d, %d***\n" 
 		start_pos end_pos;  *)
 	incr matches;
 	0
-      | [_s1;_e] -> 
-	incr zero_size;
+(*      | [_s1;_e] -> 
+	incr zero_size; 
 (*	let s = s1 - base_pos in let e = e - 1 in
 	Printf.printf "base_pos %d s1 %d e %d sim_pos %d\n%!" base_pos s1 e !sim_pos;
 	Printf.printf "zero-size match: %d to %d at %S\n\n%S\n\n" s1 e (String.head flow_data s) (String.tail flow_data s); *)
-	0
+	0 *)
       | _ -> wrong_args "bounds"
     );
     "skip",
@@ -94,6 +86,14 @@ let ca_functions = ref
 	done;
 	!ret
       | _ -> wrong_args "getnum");
+    "save", (fun (base_pos, _sim_pos, flow_data) -> function | [start_pos; end_pos] -> 
+      let start_pos = start_pos - base_pos and end_pos = end_pos - base_pos in
+      let str = try String.sub flow_data (start_pos+1) (end_pos - start_pos) |> String.trim |> String.lowercase with _ -> "??" in
+      (try Hashtbl.find saves str |> incr with Not_found -> Hashtbl.add saves str (ref 1));
+      incr matches;
+      0
+      | _ -> wrong_args "save"
+    );
   ]
 
  let get_f str = 

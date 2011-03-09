@@ -6,6 +6,7 @@
 // Used by unescape_URI().
 extern int is_reserved_URI_char(unsigned char ch);
 extern int is_unreserved_URI_char(unsigned char ch);
+int events = 0;
 %}
 
 # Remember to call bytestring::free() on the result.

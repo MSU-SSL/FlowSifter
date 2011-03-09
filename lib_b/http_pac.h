@@ -13,7 +13,7 @@
 #include "binpac_bytestring.h"
 
 
-#include "../http-baseconn.h"
+#include "http-baseconn.h"
 
 namespace binpac {
 
@@ -177,7 +177,7 @@ class HTTP_RequestLine
 public:
 	HTTP_RequestLine();
 	~HTTP_RequestLine();
-	bool ParseBuffer(flow_buffer_t t_flow_buffer, ContextHTTP * t_context);
+	bool ParseBuffer(flow_buffer_t t_flow_buffer);
 	
 	// Member access functions
 	bytestring const & method() const { return method_; }
@@ -313,11 +313,15 @@ public:
 	
 	// Member access functions
 	bytestring const & anonymous_field_012() const { return anonymous_field_012_; }
+	void * ignore1() const { return ignore1_; }
+	void * ignore2() const { return ignore2_; }
 	
 protected:
 	const_bytestring name_;
 	bytestring anonymous_field_012_;
 	const_bytestring value_;
+	void * ignore1_;
+	void * ignore2_;
 	int buffering_state_;
 };
 
@@ -538,7 +542,9 @@ protected:
 	bool is_orig_;
 };
 
-bool scb_store_method_uri_version(BaseConn * conn, bool is_orig, const_bytestring const & method, const_bytestring const & uri, const_bytestring const & version);
+bool scb_store_method_uri(const_bytestring const & method, const_bytestring const & uri);
+void * scb_header_name(const_bytestring const & name);
+void * scb_header_value(const_bytestring const & value);
 } // namespace HTTP
 }  // namespace binpac
 #endif /* http_pac_h */

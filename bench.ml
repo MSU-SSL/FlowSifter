@@ -1,5 +1,6 @@
 open Batteries_uni
 open Printf
+open Ean_std
 
 let set_mhs n = Gc.set { (Gc.get()) with Gc.minor_heap_size = n; } 
 let () = set_mhs 250_000;;
@@ -15,7 +16,7 @@ let check_mem_per_packet = ref false
 let parse_by_flow = ref false
 let rep_cnt = ref 1
 let fns = ref []
-let extr_ca = ref (if pac="bpac" then "extr-b.ca" else "extr-u.ca")
+let extr_ca = ref "extr.ca" (*(if pac="bpac" then "extr-b.ca" else "extr-u.ca")*)
 let parsers : parser_t list ref = ref [`Sift; `Pac]
 let baseline = ref true
 let mode = ref Pcap
@@ -61,7 +62,7 @@ type 'a parser_f = {
   new_parser : unit -> 'a;
   delete_parser : 'a -> unit;
   add_data : 'a -> string -> unit;
-(*  get_event_count : unit -> int; *)
+  get_event_count : unit -> int; 
 }
 
 let null_p = {
@@ -70,18 +71,18 @@ let null_p = {
   new_parser = (fun () -> ());
   delete_parser = (fun () -> ());
   add_data = (fun () _ -> ());
-(*  get_event_count = (fun () -> 0); *)
+  get_event_count = (fun () -> 0); 
 }
   
 let trace_len = ref (-1)
   
 let sift_p = {
   p_type = `Sift;
-  id = (if pac = "bpac" then "sift-b" else "sift-u");
+  id = "sift"; (*(if pac = "bpac" then "sift-b" else "sift-u");*)
   new_parser = Prog_parse.new_parser "spec.ca" !extr_ca;
   delete_parser = Prog_parse.delete_parser;
   add_data = Prog_parse.add_data;
-(*  get_event_count = Prog_parse.get_event_count; *)
+  get_event_count = Prog_parse.get_event_count; 
 }
 (*    
 let () = at_exit (fun () -> 
@@ -99,7 +100,7 @@ let pac_p = {
   new_parser = Anypac.new_parser;
   delete_parser = Anypac.delete_parser;
   add_data = Anypac.add_data;
-(*  get_event_count = Anypac.get_event_count; *)
+  get_event_count = Anypac.get_event_count; 
 }
 
 (* let is_http ((_sip, _dip, sp, dp),_,_) = sp = 80 || dp = 80 *)
@@ -139,7 +140,7 @@ let run_id = ref ""
 let run pr = 
 
   let ht = Hashtbl.create 1000 in
-  let mem_ctr = ref (Ean_std.make_counter 1) in
+  let mem_ctr = ref (make_counter 1) in
   let null_t = ref 0.0 in
 
   let mem = match pr.p_type with `Sift | `Null -> mem_gc | `Pac -> mem_vm in
@@ -155,16 +156,19 @@ let run pr =
 
   let post_round round time =
     packet_ctr := 0;
-    mem_ctr := Ean_std.make_counter 1;
+    mem_ctr := make_counter 1;
     let tsize = float (!trace_len * 8) /. 1024. /. 1024. /. 1024. in
     let gbps = 
       if pr.id = "null" 
       then ( null_t := time; tsize /. time )
       else tsize /. (time -. !null_t)
     in
-    if !check_mem_per_packet then printf "#";
-    printf "%s\t%s\t%d\t%4.3f\t%.3f\t%.2f\t%d\t%d\n%!" 
-      !run_id pr.id round time tsize gbps (mem()) !conc_flows
+    let pct_parsed = match pr.p_type with `Null -> 0. | `Pac -> 100. 
+      | `Sift -> (!Ns_parse.parsed_bytes / !rep_cnt * 100) /! !trace_len in
+
+      if !check_mem_per_packet then printf "#";
+    printf "%s\t%s\t%d\t%4.3f\t%.3f\t%.2f\t%d\t%d\t%d\t%.1f\n%!" 
+      !run_id pr.id round time tsize gbps (mem()) !conc_flows (pr.get_event_count()) pct_parsed
   in
 
   let act_packet (flow, data, fin) =
@@ -176,7 +180,7 @@ let run pr =
     in
     incr packet_ctr;
     pr.add_data p data;
-    if !check_mem_per_packet && !packet_ctr land 0xffff = 0 then (
+    if !check_mem_per_packet && !packet_ctr land 0x0 = 0 then (
       printf "%s %s %d %d %d\n" !run_id pr.id !packet_ctr !conc_flows (mem ());
     );
     if fin then (
@@ -190,8 +194,6 @@ let run pr =
 
 (*** RUN FUNCTION IN A LOOP AND INSTRUMENT ***)
 let main_loop (reset_parsers, post_round, f) rep_cnt xs =
-(*  Gc.compact(); *)
-  mem0gc := get_ocaml_mem (); mem0 := get_vmsize (); 
   Array.iter f xs; 
   reset_parsers ();
   let tpre = Sys.time () in
@@ -200,7 +202,7 @@ let main_loop (reset_parsers, post_round, f) rep_cnt xs =
     reset_parsers ();
   done;
   let time = (Sys.time () -. tpre) /. float rep_cnt in
-(*  Gc.compact(); *)
+  mem0gc := get_ocaml_mem (); mem0 := get_vmsize (); 
   Array.iter f xs;
   post_round rep_cnt time;
   reset_parsers ();

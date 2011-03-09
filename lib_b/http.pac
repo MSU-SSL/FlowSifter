@@ -233,27 +233,38 @@ flow HTTP_Flow(is_orig: bool) {
 ## Sample event
 ##
 
-function scb_store_method_uri_version(conn: BaseConn, 
-                                      is_orig: bool,
-                                      method: const_bytestring, 
-                                      uri: const_bytestring,
-                                      version: const_bytestring): bool
-%{
+function scb_store_method_uri( method: const_bytestring, 
+	                       uri: const_bytestring): bool %{
   
   //
   // Store the parsed fields
   //  
-  bytestring_to_string(method, conn->method);
-  bytestring_to_string(uri, conn->uri);
-  bytestring_to_string(version, conn->version);
+//  bytestring_to_string(method, conn->method);
+//  bytestring_to_string(uri, conn->uri);
+//  bytestring_to_string(version, conn->version);
   
+//Count these extractions
+
+	events += 2;
+
   return true;
 %}
 
+function scb_header_name(name: const_bytestring) : voidptr
+%{
+	events += 1;
+%}
+
+function scb_header_value(value: const_bytestring) : voidptr
+%{
+	events += 1;
+%}
+
 refine typeattr HTTP_RequestLine += &let {
-        process_request: bool = scb_store_method_uri_version($context.connection.http_conn,
-                                                             $context.flow.is_orig,
-                                                             method, 
-                                                             uri, 
-                                                             version.vers_str);
+        process_request: bool = scb_store_method_uri(method, uri);
+};
+
+refine typeattr HTTP_Header += &let {
+       ignore1: voidptr = scb_header_name(name);
+       ignore2: voidptr = scb_header_value(value);
 };
