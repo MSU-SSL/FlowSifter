@@ -2,6 +2,7 @@ SHELL := /bin/bash
 DEBUG = #-g
 CPPFLAGS =  -O2 $(DEBUG) -I .
 OCAMLFLAGS = -annot -w Z $(DEBUG)
+PACKAGES = batteries
 
 all: bench-all
 
@@ -49,30 +50,30 @@ ns_yac.cmi: ns_yac.ml
 	ocamlc -annot -g -c ns_yac.mli
 
 ns_yac.cmx: ns_yac.cmi ns_yac.ml
-	ocamlfind ocamlopt -package batteries $(OCAMLFLAGS) -c ns_yac.ml
+	ocamlfind ocamlopt -package $(PACKAGES) $(OCAMLFLAGS) -c ns_yac.ml
 
 ns_yac.cmo: ns_yac.cmi ns_yac.ml
-	ocamlfind ocamlc -package batteries $(OCAMLFLAGS) -c ns_yac.ml
+	ocamlfind ocamlc -package $(PACKAGES) $(OCAMLFLAGS) -c ns_yac.ml
 
 pcap.cmo: pcap.ml
-	ocamlfind ocamlc $(OCAMLFLAGS) -c -syntax camlp4o -package batteries,bitstring.syntax,bitstring pcap.ml -o pcap.cmo
+	ocamlfind ocamlc $(OCAMLFLAGS) -c -syntax camlp4o -package $(PACKAGES),bitstring.syntax,bitstring pcap.ml -o pcap.cmo
 
 %.cmx: %.ml
-	ocamlfind ocamlopt -package batteries $(OCAMLFLAGS) -c $^
+	ocamlfind ocamlopt -package $(PACKAGES) $(OCAMLFLAGS) -c $^
 
 %.cmo: %.ml
-	ocamlfind ocamlc -package batteries $(OCAMLFLAGS) -c $^
+	ocamlfind ocamlc -package $(PACKAGES) $(OCAMLFLAGS) -c $^
 
 OLIBS = #libocamlviz.cmxa 
 
 bench-bpac: bpac.cmxa pcap.cmx bench.cmx
-	ocamlfind ocamlopt -annot -package batteries,bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre bpac.cmxa $(LIBS) $(FLOW) pcap.cmx bench.cmx -o $@
+	ocamlfind ocamlopt -annot -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre bpac.cmxa $(LIBS) $(FLOW) pcap.cmx bench.cmx -o $@
 
 bench-upac: upac.cmxa pcap.cmx bench.cmx
-	ocamlfind ocamlopt -annot -package batteries,bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre upac.cmxa $(LIBS) $(FLOW) pcap.cmx bench.cmx -o $@
+	ocamlfind ocamlopt -annot -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre upac.cmxa $(LIBS) $(FLOW) pcap.cmx bench.cmx -o $@
 
 pcap.cmx: pcap.ml
-	ocamlfind ocamlopt $(OCAMLFLAGS) -c -syntax camlp4o -package batteries,bitstring.syntax,bitstring pcap.ml -o pcap.cmx
+	ocamlfind ocamlopt $(OCAMLFLAGS) -c -syntax camlp4o -package $(PACKAGES),bitstring.syntax,bitstring pcap.ml -o pcap.cmx
 
 pcap: pcap.ml
 	ocamlbuild -no-hygiene pcap.native
@@ -157,7 +158,23 @@ rundata1: bench-bpac bench-upac
 	    $(MEM_PRE) ./bench-upac ~/traces/http/use/$$a* | tee -a $@; \
 	done
 
-memper.pdf memper.png memper.eps: rundata1 memory.R
+rectest: bench-bpac
+	-mv -b $@ $@.bkp
+	echo -e $(HEADER) > $@
+	time for a in 3 4 5; do \
+	    ./bench-upac --seed 230 -x e-soap.ca -s -g $$a 100000 | tee -a $@; \
+	    ./bench-upac --seed 231 -x e-soap.ca -s -g $$a 100000 | tee -a $@; \
+	    ./bench-upac --seed 232 -x e-soap.ca -s -g $$a 100000 | tee -a $@; \
+	    ./bench-upac --seed 233 -x e-soap.ca -s -g $$a 100000 | tee -a $@; \
+	    ./bench-upac --seed 234 -x e-soap.ca -s -g $$a 100000 | tee -a $@; \
+	    ./bench-upac --seed 235 -x e-soap.ca -s -g $$a 100000 | tee -a $@; \
+	    ./bench-upac --seed 236 -x e-soap.ca -s -g $$a 100000 | tee -a $@; \
+	    ./bench-upac --seed 237 -x e-soap.ca -s -g $$a 100000 | tee -a $@; \
+	    ./bench-upac --seed 238 -x e-soap.ca -s -g $$a 100000 | tee -a $@; \
+	    ./bench-upac --seed 239 -x e-soap.ca -s -g $$a 100000 | tee -a $@; \
+	done
+
+figures: rundata1 memory.R
 	R --save < memory.R
 
 outliers: bench-upac
