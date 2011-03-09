@@ -34,10 +34,10 @@ myocamlbuild.cmo: myocamlbuild_config.cmo
 myocamlbuild.cmx: myocamlbuild_config.cmx 
 ns_lex.cmo: ns_yac.cmi 
 ns_lex.cmx: ns_yac.cmx 
-ns_parse.cmo: simplify.cmo regex_dfa.cmo pcregex.cmo ns_yac.cmi ns_types.cmo \
-    ns_lex.cmo minreg.cmo 
-ns_parse.cmx: simplify.cmx regex_dfa.cmx pcregex.cmx ns_yac.cmx ns_types.cmx \
-    ns_lex.cmx minreg.cmx 
+ns_parse.cmo: simplify.cmo regex_dfa.cmo ns_yac.cmi ns_types.cmo ns_lex.cmo 
+ns_parse.cmx: simplify.cmx regex_dfa.cmx ns_yac.cmx ns_types.cmx ns_lex.cmx 
+ns_run.cmo: regex_dfa.cmo pcregex.cmo ns_types.cmo minreg.cmo 
+ns_run.cmx: regex_dfa.cmx pcregex.cmx ns_types.cmx minreg.cmx 
 ns_types.cmo: PCFG.cmo 
 ns_types.cmx: PCFG.cmx 
 ns_yac.cmo: ns_types.cmo ns_yac.cmi 
@@ -50,8 +50,8 @@ PCFG.cmo:
 PCFG.cmx: 
 pcregex.cmo: 
 pcregex.cmx: 
-prog_parse.cmo: simplify.cmo ns_types.cmo ns_parse.cmo ean_std.cmo 
-prog_parse.cmx: simplify.cmx ns_types.cmx ns_parse.cmx ean_std.cmx 
+prog_parse.cmo: simplify.cmo ns_types.cmo ns_run.cmo ns_parse.cmo ean_std.cmo 
+prog_parse.cmx: simplify.cmx ns_types.cmx ns_run.cmx ns_parse.cmx ean_std.cmx 
 prog_parse_vs.cmo: vsdfa.cmo simplify.cmo regex_dfa.cmo ns_types.cmo \
     ns_parse.cmo 
 prog_parse_vs.cmx: vsdfa.cmx simplify.cmx regex_dfa.cmx ns_types.cmx \

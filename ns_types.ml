@@ -25,6 +25,23 @@ and term = term_tok * action option
 type str_rule = non_terminal * predicate option * priority option * term list
 type str_spec_t = str_rule list
 
+open ParsedPCFG
+
+type ('a, 'b) regular_rule = {prio : int; rx : string option;
+		     act: ('a * a_exp) list; nt : 'b option}
+type pred = p_exp VarMap.t
+type regular_grammar = (string, (pred * (string, string) regular_rule) list) Map.t
+
+
+type pred_arr = (int * p_exp) list
+type regular_grammar_arr = (pred_arr * (int, int) regular_rule) list array
+
+type compiled_rules = int
+type regular_grammar_opt = (int array -> (string -> int list -> int) -> compiled_rules) array
+
+
+(****** Parsing functions ******)
+
 exception Invalid_arg_count of string
 let wrong_args name = raise (Invalid_arg_count name)
 

@@ -5,7 +5,7 @@ OCAMLFLAGS = -annot -w Z $(DEBUG)
 
 all: bench-all
 
-.PHONY: clean hwrun %.threadlog bench-all runlog.%
+.PHONY: clean hwrun %.threadlog bench-all runlog.% outliers
 
 clean:
 	rm -f *.a *.o *.cmi *.cmx *.cmo *.cmxa *.annot lib_b/*.o lib_u/*.o
@@ -37,7 +37,7 @@ upac.cmxa: lib_u/binpac.o lib_u/http_pac_fast.o lib_u/http_matcher.o lib_u/libub
 #### Compile flow.cmxa
 ####
 
-FLOW=hashtbl_param.cmx ean_std.cmx pcregex.cmx minreg.cmx PCFG.cmx ns_types.cmx simplify.cmx ns_yac.cmx ns_lex.cmx ruleset.cmx tcam.cmx decider.cmx fdd.cmx bdd.cmx optimizers.cmx regex_dfa.cmx ns_parse.cmx prog_parse.cmx arg2.cmx genrec.cmx
+FLOW=hashtbl_param.cmx ean_std.cmx pcregex.cmx minreg.cmx PCFG.cmx ns_types.cmx simplify.cmx ns_yac.cmx ns_lex.cmx ruleset.cmx tcam.cmx decider.cmx fdd.cmx bdd.cmx optimizers.cmx regex_dfa.cmx ns_parse.cmx ns_run.cmx prog_parse.cmx arg2.cmx genrec.cmx
 
 ns_yac.ml: ns_yac.mly
 	menhir ns_yac.mly
@@ -139,22 +139,9 @@ RUNS =  98w1-mon 98w1-tue 98w1-wed 98w1-thu 98w1-fri \
 	99w5-monday 99w5-tuesday 99w5-wednesday 99w5-thursday 99w5-friday \
 
 MEM_PRE = LD_PRELOAD="/usr/lib/libtcmalloc.so.0" 
-
-runlog100.%: bench-%
-	-mv -b $@ $@.bkp
-	time for a in $(RUNS); do \
-	    $(MEM_PRE) ./$^ -n 100 ~/traces/http/use/$$a* | tee -a $@; \
-	done
-
-runlog.%: bench-%
-	-mv -b $@ $@.bkp
-	time for a in $(RUNS); do \
-	    $(MEM_PRE) ./$^ ~/traces/http/use/$$a* | tee -a $@; \
-	done
-
 HEADER = "runid\tparser\titers\ttime\tgbit\tgbps\tmem\tflows\tevents\tpct_parsed"
 
-rundata100: runlog100.bpac runlog100.upac
+rundata100: bench-bpac bench-upac
 	-mv -b $@ $@.bkp
 	echo -e $(HEADER) > $@
 	time for a in $(RUNS); do \
@@ -172,3 +159,6 @@ rundata1: bench-bpac bench-upac
 
 memper.pdf memper.png memper.eps: rundata1 memory.R
 	R --save < memory.R
+
+outliers: bench-upac
+	./bench-upac ~/traces/http/use/98w3-wednesday.pcap 
