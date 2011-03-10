@@ -17,10 +17,11 @@ let () = at_exit (fun () ->
 let gen_parser p e = 
   let proto = Ns_parse.parse_file_as_spec p 
   and extr = Ns_parse.parse_file_as_extraction e in
-  let ca0 = Ns_parse.merge_cas ~proto ~extr |> Ns_parse.regularize in
+  let ca0 = Ns_parse.merge_cas ~proto ~extr |> Ns_parse.regularize 
+    |> Ns_parse.prune_unreachable extr.start in
   let ca,var_count = Ns_parse.destring extr.start ca0 in
   let {Std.get=compile_ca} = Std.cache_map Ns_run.compile_ca in
-  let ca = Ns_parse.optimize ca compile_ca in
+  let ca = Ns_parse.optimize_preds compile_ca ca in
   fun () -> (* allow creating many parsers *)
     let vars = Array.make var_count 0 in    
     let dfa0 = ca.(0) vars (0, ref 0, "") in

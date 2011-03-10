@@ -1,5 +1,4 @@
-HTTP1 -> HTTP_START1 CRLF [cn := pos()] HEADERS1 HTTP1 ;
-HTTP1 -> ;
+HTTP1 -> HTTP_START1 [cn := pos()] HEADERS1 ;
 
 # HTTP REPLY
 HTTP_START1 -> /HTTP/ TEXT CRLF ;
@@ -7,18 +6,21 @@ HTTP_START1 -> /HTTP/ TEXT CRLF ;
 HTTP_START1 99 -> NONWS [x := token(0)] LWS token( URL ) LWS VERSION CRLF ;
 
 HEADERS1 -> HEADER1 CRLF [cn := pos()] HEADERS1 ;
-HEADERS1 -> CRLF [bodylength := skip(bodylength)] ;
+HEADERS1 -> CRLF [bodylength := skip(bodylength)] BODY_DONE ;
 
 HEADER1 99 -> 
 	/[^:\n]*:/ 
 	[cn := token(cn); cv := pos()] 
-	DEFAULTVALUE1 ;
+	TEXT DEFAULTVALUE1 [cv := token(cv) ];
 HEADER1 1 -> 
 	/(?i:Content-length):/ 
 	[cn := token(cn ); cv := pos()]
-	GETSIZE1 ;
+	GETSIZE1 [ cv := token(cv) ] ;
 
-DEFAULTVALUE1 -> TEXT [cv := token(cv) ];
-DEFAULTVALUE1 -> TEXT LWS DEFAULTVALUE1 ;
+DEFAULTVALUE1 -> ;
+DEFAULTVALUE1 -> LWS TEXT DEFAULTVALUE1 ;
 
-GETSIZE1 -> LWS [bodylength := getnum(); cv := token(cv)];
+GETSIZE1 -> LWS [bodylength := getnum()];
+
+BODY_DONE [bodylength > 0] -> HTTP1;
+BODY_DONE [bodylength == 0] -> /./ [bodylength := skip(9999999)];

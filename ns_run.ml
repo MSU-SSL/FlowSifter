@@ -80,8 +80,6 @@ let parsed_bytes = ref 0
 
 exception Parse_complete
 
-let debug_ca = false
-
 type ('a, 'b) resume_ret = 
   | End_of_input of 'a * int * 'b * int
   | Dec of 'b * int
@@ -99,11 +97,10 @@ let rec resume_arr qs input pri decision dec_pos q pos =
       let pos = pos+1 in 
       match q.Regex_dfa.dec with
 	| Some d when d.pri <= pri -> 
-	  if debug_ca then printf "NP: %d " d.pri;
+	  if debug_ca then printf "M%d " d.pri;
 	  resume_arr qs input d.pri d.item pos q pos
 	| _ -> 
 	  resume_arr qs input pri decision dec_pos q pos
-
 (*
 let test_dfa = [{pri=1; item=0}, "[abcxyz].*[bahd].*\n", []] |> List.enum |> Pcregex.rx_of_dec_strings |> Minreg.of_reg |> Regex_dfa.build_dfa ~labels:false (dec_rules comp_dec) |> Regex_dfa.minimize ~dec_comp:(=) |> Regex_dfa.to_array
 
@@ -112,7 +109,6 @@ open Benchmark
 let () = 
   throughput1 3 (resume_arr test_dfa.Regex_dfa.qs (String.create (1024*1024/8)) 99 2 0 test_dfa.Regex_dfa.q0) 0 |> tabulate
 *)
-
 let null_state = -1
 
 let init_state dfa pos =
@@ -125,8 +121,11 @@ let ca_trans = ref 0
 
 (* let () = at_exit (fun () -> printf "#CA Transitions: %d\n" !ca_trans)  *)
 
+let is_printable c = c = '\n' || (Char.code c >= 32 && Char.code c <= 126)
+let clean_unprintable s = String.map (fun x -> if is_printable x then x else '.') s
+
 let rec simulate_ca_string ~ca ~vars fail_drop skip_left base_pos flow_data (qs, q, pri, item, ri, tail_data) = 
-  if debug_ca then Printf.printf "P:%s\n" flow_data;
+  if debug_ca then Printf.printf "P:%s\n" (clean_unprintable flow_data);
   let flow_len = String.length flow_data in
   let pos = ref 0 in
   let rec run_d2fa qs q pri item ri tail_data =

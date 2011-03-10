@@ -2,7 +2,7 @@ SHELL := /bin/bash
 DEBUG = #-g
 CPPFLAGS =  -O2 $(DEBUG) -I .
 OCAMLFLAGS = -annot -w Z $(DEBUG)
-PACKAGES = batteries
+PACKAGES = batteries,benchmark
 
 all: bench-all
 

@@ -6,8 +6,6 @@ open ParsedPCFG
 
 (*open Ocamlviz *)
 
-let debug_ca = false
-
 let capture_counter = let x = ref 0 in fun () -> incr x; !x
 
 let parse_preds s = 
@@ -85,7 +83,27 @@ exception Non_regular_rule of production
 
 let merge_rx r s = 
   (r |> String.rchop) ^ (s |> String.lchop) 
-  |> tap (eprintf "MERGE_RX: %s + %s -> %s\n" r s )
+(*  |> tap (eprintf "MERGE_RX: %s + %s -> %s\n" r s )*)
+
+let dechain rg =
+  let is_chain_state r = match r with [_,{rx=Some _; act=[]; nt=Some _}] -> true | _ -> false in
+  let merge (p,rx) (p1, rr) = 
+    pred_pred_compose p p1, {rr with rx=Some (Option.map_default (merge_rx rx) rx rr.rx)} in 
+  let elim_chain_state rg nt = 
+    match Map.find nt rg with 
+      | [p,{rx=Some rx; nt=Some next}] ->
+	let next_rs = Map.find next rg |> List.map (merge (p, rx)) in
+	Map.add nt next_rs rg
+      | _ -> assert false (* not a chain state *)
+  in
+  let rg = ref rg in
+  let chain_states = ref (Map.filter is_chain_state !rg) in
+  while not (Map.is_empty !chain_states) do
+    let nt,_ = Map.choose !chain_states in
+    rg := elim_chain_state !rg nt;
+    chain_states := Map.filter is_chain_state !rg;
+  done;
+  !rg
 
 let regularize : grammar -> regular_grammar = fun grammar ->
   let make_r r =  
@@ -101,7 +119,8 @@ let regularize : grammar -> regular_grammar = fun grammar ->
 	   rx   = Some a;
 	   act  = VarMap.enum head_act |> List.of_enum;
 	   nt   = None}
-      | (Term a, head_act) :: (Term b, bhead_act) :: t -> head_tail ((Term (merge_rx a b), (act_act_compose head_act bhead_act)) :: t)
+      | (Term a, head_act) :: (Term b, bhead_act) :: t -> 
+	head_tail ((Term (merge_rx a b), (act_act_compose head_act bhead_act)) :: t)
       | [] ->
 	  {prio = r.priority;
 	   rx   = None;
@@ -115,8 +134,20 @@ let regularize : grammar -> regular_grammar = fun grammar ->
   let make_regular_g g = 
     NTMap.enum g.rules |> map (second (List.map make_r)) |> Map.of_enum
   in 
-  grammar |> normalize_grammar |> idle_elimination |> make_regular_g ;; 
+  grammar |> normalize_grammar |> idle_elimination |> make_regular_g |> dechain;; 
 
+let prune_unreachable start rg =
+  let reachable = ref (Set.singleton start) in
+  let c = ref !reachable in
+  let close s = Set.iter (fun nt -> List.iter (fun (_,{nt=next}) -> Option.may (fun x -> c := Set.add x !c) next) (Map.find nt rg)) s in
+  close !reachable;
+  while Set.is_empty !c |> not do
+    let new_rs = Set.diff !c !reachable in
+    reachable := Set.union !reachable !c; 
+    c := Set.empty; 
+    close new_rs; 
+  done;
+  Map.partition (fun k _ -> Set.mem k !reachable) rg |> fst
 
 let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) = 
   fun start ca ->
@@ -171,8 +202,8 @@ let get_rules_v i rules =
 let var_max = 255
 
 (** Removes predicate checks at runtime for non-terminals with no predicates *)
-let optimize ca compile_ca =
-    let opt_prod i rules =
+let optimize_preds compile_ca ca =
+    let opt_prod _i rules =
       if List.for_all (fun (p,_) -> List.length p = 0) rules then
 	let dfa = List.map snd rules |> compile_ca in
 	(fun _ _ -> dfa)
@@ -188,8 +219,6 @@ let optimize ca compile_ca =
 	    cas.(get_rules parse_state rules vars) )
     in
     Array.mapi opt_prod ca
-
-
 
 (* sets [var] to the result of [act] in the state in [acc] *)
 

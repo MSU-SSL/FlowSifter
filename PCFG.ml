@@ -481,10 +481,7 @@ module Make (Name : Names_t) = struct
     NTMap.enum grammar.rules 
     |> Enum.exists (fun (_k,v) -> List.exists is_rule_idle v);;
 
-  
-
   (** new idle_elimination series **)
-
 
   (** returns a list of rules and the updated memory **)
   let hoist_rule rules rul memory =
