@@ -18,16 +18,16 @@ let get_all_rule_groups (ca:regular_grammar_arr) =
   Array.enum ca |> map groups_of_rlist |> Enum.flatten
 
 let run_act state vars (var, act) =
-  vars.(var) <- eval_a_exp state act vars.(var)
+  vars.(var) <- val_a_exp state vars.(var) act
 
-type 'a opt_rules = ('a option * ('a -> 'a option) * ('a option -> 'a option -> 'a option))
+type 'a opt_rules = ('a option * ('a -> 'a option) * ('a option -> 'a option -> 'a option) * ('a -> 'a -> int))
 (* rules for handling decisions when creating the DFA *)
 let dec_rules comp =
   let lowest_precedence a b = match a,b with
     | None, None -> None
     | Some r, None | None, Some r -> Some r
     | Some r1, Some r2 -> if comp r1 r2 = -1 then Some r1 else Some r2 in
-  (None, (fun i -> Some i),lowest_precedence: 'a opt_rules)
+  (None, (fun i -> Some i),lowest_precedence, comp: 'a opt_rules)
 
 type ca_data = (int * a_exp) list * int
 type 'a pri_dec = {pri: int; item: 'a} 
@@ -35,9 +35,10 @@ type 'a pri_dec = {pri: int; item: 'a}
 let comp_dec d1 d2 = Int.compare d1.pri d2.pri
 
 let dec_eq a b = match a,b with
-    Some {pri=p1; item=(ps1,n1)}, Some {pri=p2; item=(ps2,n2)} ->
-      p1 = p2 && n1 = n2 && List.length ps1 = List.length ps2 && List.for_all2 (fun (v1,e1) (v2,e2) -> v1 = v2 && aeq e1 e2) ps1 ps2
-| _ -> false
+  | Some {pri=p1; item=(ps1,n1)}, Some {pri=p2; item=(ps2,n2)} ->
+      p1 = p2 && n1 = n2 && List.length ps1 = List.length ps2 && 
+        List.for_all2 (fun (v1,e1) (v2,e2) -> v1 = v2 && aeq e1 e2) ps1 ps2
+  | _ -> false
 
 let print_dfa_dec oc d =
   let so = Option.print Int.print in
@@ -59,16 +60,75 @@ let make_rx_pair r =
 (* Compiles a list of rules into an automaton with decisions of
    (priority, action, nt) *)
 let compile_ca rules =
-      List.enum rules
-      |> Enum.filter_map make_rx_pair
-      |> Pcregex.rx_of_dec_strings ~anchor:true
-      |> Minreg.of_reg
-      |> Regex_dfa.build_dfa ~labels:false (dec_rules comp_dec)
-      |> Regex_dfa.minimize ~dec_comp:dec_eq
-      |> Regex_dfa.to_array
+  List.enum rules
+  |> Enum.filter_map make_rx_pair
+  |> Pcregex.rx_of_dec_strings ~anchor:true
+  |> Minreg.of_reg
+  |> Regex_dfa.build_dfa ~labels:false (dec_rules comp_dec) 
+  |> Regex_dfa.minimize ~dec_comp:dec_eq
+  |> Regex_dfa.to_array
 
 let fill_cache cached_compile ca = 
   Enum.iter (cached_compile |- ignore) (get_all_rule_groups ca)
+
+let null_env = (0,ref 0, "")
+
+(* get the decisions from a CA for the given NT(q) and with predicates
+   satisfying vars *)
+let get_rules_bits state pr_list vars =
+  let var_satisfied (v,p) = val_p_exp state vars.(v) p in
+  let pred_satisfied pred = List.for_all var_satisfied pred in
+  List.fold_left (fun acc (p,_) -> let a = acc lsl 1 in if pred_satisfied p then a + 1 else a ) 0 pr_list
+
+let get_rules_bits_uni state pr_list i =
+  let var_satisfied (_v,p) = val_p_exp state i p in
+  let pred_satisfied pred = List.for_all var_satisfied pred in
+  List.fold_left (fun acc (p,_) -> let a = acc lsl 1 in if pred_satisfied p then a + 1 else a ) 0 pr_list
+
+let is_univariate_predicate rs =
+  let v = ref None in
+  let is_v x = match !v with None -> v := Some x; true | Some v -> v = x in
+  let test (p,_) = List.for_all (fun (v,pexp) -> is_v v && is_clean_p pexp) p in
+  if List.for_all test rs then 
+    !v
+  else
+    None
+
+let get_rules_v i rules =
+  let var_satisfied (_,p) = val_p_exp null_env i p in
+  let pred_satisfied pred = List.for_all var_satisfied pred in
+  List.filter_map (fun (p,e) -> if pred_satisfied p then Some e else None) rules
+  
+let rec get_comb_aux i = function
+  | [] -> []
+  | (_p,rs)::t when i land 1 = 1 -> rs :: get_comb_aux (i lsr 1) t
+  | _::t (* i land 1 = 0 *) -> get_comb_aux (i lsr 1) t
+
+let get_comb i rs = get_comb_aux i (List.rev rs)
+
+(*let rules_p = Point.create "rules"*)
+
+let var_max = 255
+
+(** Removes predicate checks at runtime for non-terminals with no predicates *)
+let optimize_preds ca =
+  let opt_prod _i rules =
+    if List.for_all (fun (p,_) -> List.length p = 0) rules then
+      let dfa = List.map snd rules |> compile_ca in
+      (fun _ _ -> dfa)
+    else match is_univariate_predicate rules with
+	Some v -> 
+	  let cas = Array.init (1 lsl (List.length rules)) (fun i -> get_comb i rules |> compile_ca) in
+	  let rule_map = 
+	    Array.init (var_max+1) (fun i -> cas.(get_rules_bits_uni null_env rules i))
+	  in
+	  (fun vars _ -> rule_map.(vars.(v) land var_max))
+      | None ->  
+	let cas = Array.init (1 lsl (List.length rules)) (fun _ -> assert false) in
+	(fun vars parse_state ->
+	  cas.(get_rules_bits parse_state rules vars) )
+  in
+  Array.mapi opt_prod ca
 
 let print_vars oc m = 
   Array.print Int.print oc m
@@ -141,7 +201,7 @@ let rec simulate_ca_string ~ca ~vars fail_drop skip_left base_pos flow_data (qs,
       let dfa_result = resume_arr qs flow_data pri item ri q !pos in
       match dfa_result with
 	| Dec ((acts,q_next),pos_new) -> 
-	  if debug_ca then printf "CA: %d @ pos %d(%d)\n" q_next (pos_new + !base_pos) pos_new;
+	  if debug_ca then printf "\nCA: %d @ pos %d(%d)" q_next (pos_new + !base_pos) pos_new;
 	  incr ca_trans; 
 	  parsed_bytes := !parsed_bytes + (pos_new - !pos);
 	  pos := pos_new;

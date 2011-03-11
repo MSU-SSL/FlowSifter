@@ -100,6 +100,8 @@ let dechain rg =
   let chain_states = ref (Map.filter is_chain_state !rg) in
   while not (Map.is_empty !chain_states) do
     let nt,_ = Map.choose !chain_states in
+    print_reg_ca stdout !rg;
+    printf "Eliminating state %s\n" nt;
     rg := elim_chain_state !rg nt;
     chain_states := Map.filter is_chain_state !rg;
   done;
@@ -156,9 +158,10 @@ let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) =
     let nt_counter = Ean_std.make_counter 0 in
     let {Std.get=int_of_nt} = Std.cache_ht (fun _ -> nt_counter ()) 10 in
     int_of_nt start |> ignore; (* make sure start state is #0 *)
-    let fix_pair (v,a) = (int_of_v v, a) in
-    let fix_rule (r: (string, string) regular_rule) = {r with act = List.map fix_pair r.act; nt = Option.map int_of_nt r.nt} in
-    let fix_pred (p:pred) = VarMap.enum p |> Enum.map fix_pair |> List.of_enum in
+    let fix_pair_a (v,a) = (int_of_v v, (*freeze_a*) a) in
+    let fix_pair_p (v,p) = (int_of_v v, (*freeze_p*) p) in
+    let fix_rule (r: (string, string) regular_rule) = {r with act = List.map fix_pair_a r.act; nt = Option.map int_of_nt r.nt} in
+    let fix_pred (p:pred) = VarMap.enum p |> Enum.map fix_pair_p |> List.of_enum in
     let pmap = Map.enum ca |> 
 	Enum.map (fun (ca, pro) -> int_of_nt ca, (List.map (fun (p,r) -> fix_pred p, fix_rule r) pro)) in
     Enum.force pmap;
@@ -173,52 +176,7 @@ let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) =
       (Hashtbl.print String.print Int.print) ca_ht*)
       print_reg_ds_ca ret; *)
     ret, var_count
-  
 
-
-(* get the decisions from a CA for the given NT(q) and with predicates
-   satisfying vars *)
-let get_rules state pr_list vars =
-  let var_satisfied (v,p) = eval_p_exp state p vars.(v) in
-  let pred_satisfied pred = List.for_all var_satisfied pred in
-  List.fold_left (fun acc (p,_) -> let a = acc lsl 1 in if pred_satisfied p then a + 1 else a ) 0 pr_list
-
-let is_univariate_predicate rs =
-  let v = ref None in
-  let is_v x = match !v with None -> v := Some x; true | Some v -> v = x in
-  let test (p,_) = List.for_all (fun (v,pexp) -> is_v v && is_clean_p pexp) p in
-  if List.for_all test rs then 
-    !v
-  else
-    None
-
-let get_rules_v i rules =
-  let var_satisfied (_,p) = eval_p_exp (0,ref 0, "") p i in
-  let pred_satisfied pred = List.for_all var_satisfied pred in
-  List.filter_map (fun (p,e) -> if pred_satisfied p then Some e else None) rules
-  
-(*let rules_p = Point.create "rules"*)
-
-let var_max = 255
-
-(** Removes predicate checks at runtime for non-terminals with no predicates *)
-let optimize_preds compile_ca ca =
-    let opt_prod _i rules =
-      if List.for_all (fun (p,_) -> List.length p = 0) rules then
-	let dfa = List.map snd rules |> compile_ca in
-	(fun _ _ -> dfa)
-      else match is_univariate_predicate rules with
-	  Some v -> 
-	    let rule_map = 
-	      Array.init (var_max+1) (fun i -> get_rules_v i rules |> compile_ca)
-	    in
-	    (fun vars _ -> rule_map.(vars.(v) land var_max))
-	| None ->  
-	  let cas = Array.init (1 lsl (List.length rules)) (fun _ -> assert false) in
-	  (fun vars parse_state ->
-	    cas.(get_rules parse_state rules vars) )
-    in
-    Array.mapi opt_prod ca
 
 (* sets [var] to the result of [act] in the state in [acc] *)
 

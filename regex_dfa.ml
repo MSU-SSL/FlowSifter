@@ -14,12 +14,12 @@ let map_of_val s v = IMap.set_to_map s v
 type 'a norm_regex = int list * 'a Minreg.t IMap.t
 
 (* takes norm_regex enum and returns a single norm_regex *)
-let merge2 e1 e2 = 
+let merge2 ~dec_comp e1 e2 = 
 (*  eprintf "Merging %a with %a\n%!" (Option.print Minreg.printp) e1 (Option.print Minreg.printp) e2; *)
   match (e1,e2) with
   | None, None -> assert false
   | None, Some x | Some x, None -> Some x
-  | Some e1, Some e2 when Minreg.compare e1 e2 = 0 -> Some e1
+  | Some e1, Some e2 when Minreg.compare ~dec_comp e1 e2 = 0 -> Some e1
   | Some e1, Some e2 -> 
       Some (reduce_union e1 e2)
 
@@ -33,21 +33,21 @@ let merging_dec_sets = ([], ISet.singleton, ISet.union)
 let last_depth = Value.observe_int_ref "cur-depth canonized" (ref 0) 
 and last_width = Value.observe_int_ref "cur-width canonized" (ref 0) 
 *)
-let reduce_pair merge_d (d1, m1) (d2,m2) = 
+let reduce_pair ~dec_comp merge_d (d1, m1) (d2,m2) = 
   if IMap.is_empty m1 && IMap.is_empty m2 then
     (merge_d d1 d2), m1
   else
-    (merge_d d1 d2), (IMap.union merge2 m1 m2) 
+    (merge_d d1 d2), (IMap.union (merge2 ~dec_comp) m1 m2) 
 
 (*
 let can_found = Value.observe_int_ref "can_found" (ref 0) 
 and can_calc = Value.observe_int_ref "can_calc" (ref 0) 
  *)
 
-let canonize (nul_d, inj_d, merge_d) rx =
-  let merge norms = Enum.reduce (reduce_pair merge_d) norms in
+let canonize (nul_d, inj_d, merge_d, dec_comp) rx =
+  let merge norms = Enum.reduce (reduce_pair ~dec_comp merge_d) norms in
 
-  let canonized = ref (Map.create Minreg.compare) in
+  let canonized = ref (Map.create (Minreg.compare ~dec_comp)) in
 
   let rec canon rx =
     try Map.find rx !canonized (*|> tap (fun _ -> incr can_found)*)
@@ -170,13 +170,13 @@ List.print ~last:"]\n" (List.print Int.print) oc finals;
 
 (*let max_depth = Value.observe_int_ref "Depth (Max)" (ref 0) *)
 
-let build_dfa ?(labels=false) dec_rules reg =
+let build_dfa ?(labels=false) (_,_,_,dec_comp as dec_rules) reg =
   let new_id = ref (fun _ _ -> assert false) in (* hole for recursion *)
-  let id_map = map_id_set ~comp:Minreg.compare ~min_id:0 (fun x id -> !new_id x id) in
+  let id_map = map_id_set ~comp:(Minreg.compare ~dec_comp) ~min_id:0 (fun x id -> !new_id x id) in
   let states = ref Vect.empty in
 (*  let depth = Value.observe_int_ref "Depth" (ref 0) in *)
   let make_node get_id r id =
-(*    Printf.eprintf "#Node making from regex: '%a'\n(%s)\n%!" (Minreg.printp ~dec:false) r (dump r); *)
+(*    Printf.eprintf "#Node making from regex: '%a'\n(%s)\n%!" (Minreg.printp ~dec:false) r (dump r);  *)
     let (dec, dt_reg) = canonize dec_rules r in
 (*    Printf.eprintf "#Node %d made from %a%!\n" id (Minreg.printp ~dec:false) r; *)
 (*    if id mod 100 = 1 then eprintf "N %d @ %.2f\n%!" id (Sys.time ()); *)

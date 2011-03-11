@@ -15,9 +15,11 @@ type 'a t =
 
 let epsilon = Concat ([],true)
 
-let rec compare ?(dec_comp=Pervasives.compare) x y = match (x,y) with 
-    Union a, Union b -> Enum.compare compare (Set.enum a) (Set.enum b)
+let rec compare ~dec_comp x y = match (x,y) with 
+    Union a, Union b -> Enum.compare (compare ~dec_comp) (Set.enum a) (Set.enum b)
   | Accept a, Accept b -> dec_comp a b
+  | Concat (a,_), Concat (b,_) -> List.make_compare (compare ~dec_comp) a b
+  | Kleene a, Kleene b -> compare ~dec_comp a b
   | a,b -> Pervasives.compare a b
 
 let rec concat_elim acc = function
