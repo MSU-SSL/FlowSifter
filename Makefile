@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-DEBUG = #-g
+DEBUG = -g
 CPPFLAGS =  -O2 $(DEBUG) -I .
 OCAMLFLAGS = -annot -w Z $(DEBUG)
 PACKAGES = batteries,benchmark
@@ -141,21 +141,14 @@ RUNS =  98w1-mon 98w1-tue 98w1-wed 98w1-thu 98w1-fri \
 
 MEM_PRE = LD_PRELOAD="/usr/lib/libtcmalloc.so.0" 
 HEADER = "runid\tparser\titers\ttime\tgbit\tgbps\tmem\tflows\tevents\tpct_parsed\tdropped"
+COUNT ?= 1
 
-rundata100: bench-bpac bench-upac
+rundata: bench-bpac bench-upac
 	-mv -b $@ $@.bkp
 	echo -e $(HEADER) > $@
 	time for a in $(RUNS); do \
-	    $(MEM_PRE) ./bench-bpac -n 100 ~/traces/http/use/$$a* | tee -a $@; \
-	    $(MEM_PRE) ./bench-upac -n 100 ~/traces/http/use/$$a* | tee -a $@; \
-	done
-
-rundata1: bench-bpac bench-upac
-	-mv -b $@ $@.bkp
-	echo -e $(HEADER) > $@
-	time for a in $(RUNS); do \
-	    $(MEM_PRE) ./bench-bpac ~/traces/http/use/$$a* | tee -a $@; \
-	    $(MEM_PRE) ./bench-upac ~/traces/http/use/$$a* | tee -a $@; \
+	    $(MEM_PRE) ./bench-bpac -n $(COUNT) ~/traces/http/use/$$a* | tee -a $@; \
+	    $(MEM_PRE) ./bench-upac -n $(COUNT) ~/traces/http/use/$$a* | tee -a $@; \
 	done
 
 FLOWS = 10000
@@ -175,7 +168,7 @@ rectest: bench-upac
 	    ./bench-upac --seed 239 -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
 	done
 
-figures: rundata1 memory.R
+figures: rundata memory.R
 	R --save < memory.R
 
 outliers: bench-upac
