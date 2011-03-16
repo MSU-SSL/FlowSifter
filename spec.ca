@@ -46,5 +46,5 @@ XHDR -> /\s*<soap:Header>\s*<\/soap:Header>\s*/ ;
 
 XBDY -> /\s*<soap:Body>\s*/ ARRAY /\s*<\/soap:Body>\s*/;
 
-ARRAY -> /<array>\s*/ ARRAY /<\/array>\s*/ ARRAY ;
+ARRAY -> /<array>/ ARRAY /<\/array>/ ARRAY ;
 ARRAY -> ;

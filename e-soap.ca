@@ -26,8 +26,8 @@ XENV1 -> /<soap:Envelope[^>]*>/ XHDR XBDY0 /<\/soap:Envelope>/ ;
 
 XBDY0 -> /\s*<soap:Body>\s*/ ARRAY1 /\s*<\/soap:Body>\s*/;
 
-ARRAY1 -> /<array>\s*/ ARRAY2  /<\/array>\s*/ ARRAY ;
+ARRAY1 -> /<array>/ ARRAY2  /<\/array>/ ARRAY ;
 ARRAY1 -> ;
 
-ARRAY2 -> /<array>\s*/ token( ARRAY ) /<\/array>\s*/ ARRAY ;
+ARRAY2 -> /<array>/ token( ARRAY ) /<\/array>/ ARRAY ;
 ARRAY2 -> ;
