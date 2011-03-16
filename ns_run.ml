@@ -150,7 +150,7 @@ let rec resume_arr qs input pri decision dec_pos q pos =
     End_of_input (q,pri,decision,dec_pos)
   ) else
     let q_next_id = Array.unsafe_get q.Regex_dfa.map (Char.code (String.unsafe_get input pos)) in
-    if debug_ca then printf "DFA %C->%d " input.[pos] q_next_id;
+    if debug_ca then printf "%C->%d " input.[pos] q_next_id;
     if q_next_id = -1 then Dec (decision, dec_pos)
     else
       let q = Array.unsafe_get qs q_next_id in

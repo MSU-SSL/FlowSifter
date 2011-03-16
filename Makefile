@@ -38,6 +38,9 @@ upac.cmxa: lib_u/binpac.o lib_u/http_pac_fast.o lib_u/http_matcher.o lib_u/libub
 #### Compile flow.cmxa
 ####
 
+tcmalloc_stubs.o: tcmalloc_stubs.c
+	ocamlc -c $^ -o $@
+
 FLOW=hashtbl_param.cmx ean_std.cmx pcregex.cmx minreg.cmx PCFG.cmx ns_types.cmx simplify.cmx ns_yac.cmx ns_lex.cmx ruleset.cmx tcam.cmx decider.cmx fdd.cmx bdd.cmx optimizers.cmx regex_dfa.cmx ns_parse.cmx ns_run.cmx prog_parse.cmx arg2.cmx genrec.cmx
 
 ns_yac.ml: ns_yac.mly
@@ -66,11 +69,11 @@ pcap.cmo: pcap.ml
 
 OLIBS = #libocamlviz.cmxa 
 
-bench-bpac: bpac.cmxa pcap.cmx bench.cmx
-	ocamlfind ocamlopt -annot -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre bpac.cmxa $(LIBS) $(FLOW) pcap.cmx bench.cmx -o $@
+bench-bpac: bpac.cmxa pcap.cmx bench.cmx tcmalloc_stubs.o
+	ocamlfind ocamlopt -annot -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc bpac.cmxa tcmalloc_stubs.o $(LIBS) $(FLOW) pcap.cmx bench.cmx -o $@
 
-bench-upac: upac.cmxa pcap.cmx bench.cmx
-	ocamlfind ocamlopt -annot -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre upac.cmxa $(LIBS) $(FLOW) pcap.cmx bench.cmx -o $@
+bench-upac: upac.cmxa pcap.cmx bench.cmx tcmalloc_stubs.o
+	ocamlfind ocamlopt -annot -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc upac.cmxa tcmalloc_stubs.o $(LIBS) $(FLOW) pcap.cmx bench.cmx -o $@
 
 pcap.cmx: pcap.ml
 	ocamlfind ocamlopt $(OCAMLFLAGS) -c -syntax camlp4o -package $(PACKAGES),bitstring.syntax,bitstring pcap.ml -o pcap.cmx
@@ -139,7 +142,7 @@ RUNS =  98w1-mon 98w1-tue 98w1-wed 98w1-thu 98w1-fri \
 	99w4-monday 99w4-tuesday 99w4-wednesday 99w4-thursday 99w4-friday \
 	99w5-monday 99w5-tuesday 99w5-wednesday 99w5-thursday 99w5-friday \
 
-MEM_PRE = LD_PRELOAD="/usr/lib/libtcmalloc.so.0" 
+
 HEADER = "runid\tparser\titers\ttime\tgbit\tgbps\tmem\tflows\tevents\tpct_parsed\tdropped"
 COUNT ?= 1
 
@@ -147,28 +150,34 @@ rundata: bench-bpac bench-upac
 	-mv -b $@ $@.bkp
 	echo -e $(HEADER) > $@
 	time for a in $(RUNS); do \
-	    $(MEM_PRE) ./bench-bpac -n $(COUNT) ~/traces/http/use/$$a* | tee -a $@; \
-	    $(MEM_PRE) ./bench-upac -n $(COUNT) ~/traces/http/use/$$a* | tee -a $@; \
+	    ./bench-bpac -n $(COUNT) ~/traces/http/use/$$a* | tee -a $@; \
+	    ./bench-upac -n $(COUNT) ~/traces/http/use/$$a* | tee -a $@; \
 	done
 
-FLOWS = 10000
+FLOWS ?= 10000
 rectest: bench-upac
 	-mv -b $@ $@.bkp
 	echo -e $(HEADER) > $@
-	time for a in 3 4 5; do \
-	    ./bench-upac --seed 230 -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-upac --seed 231 -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-upac --seed 232 -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-upac --seed 233 -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-upac --seed 234 -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-upac --seed 235 -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-upac --seed 236 -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-upac --seed 237 -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-upac --seed 238 -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-upac --seed 239 -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
+	time for a in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do \
+	    ./bench-upac --seed 230 -n $(COUNT) -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-upac --seed 231 -n $(COUNT) -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-upac --seed 232 -n $(COUNT) -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-upac --seed 233 -n $(COUNT) -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-upac --seed 234 -n $(COUNT) -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-upac --seed 235 -n $(COUNT) -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-upac --seed 236 -n $(COUNT) -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-upac --seed 237 -n $(COUNT) -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-upac --seed 238 -n $(COUNT) -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-upac --seed 239 -n $(COUNT) -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
 	done
 
-figures: rundata memory.R
+harvdata: bench-bpac bench-upac
+	-mv -b $@ $@.bkp
+	echo -e $(HEADER) > $@
+	./bench-bpac -n $(COUNT) ~/traces/http/use/h*.pcap | tee -a $@
+	./bench-upac -n $(COUNT) ~/traces/http/use/h*.pcap | tee -a $@ 
+
+figures: rundata rectest memory.R
 	R --save < memory.R
 
 outliers: bench-upac
