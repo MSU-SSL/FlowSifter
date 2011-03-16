@@ -85,7 +85,20 @@ let merge_rx r s =
   (r |> String.rchop) ^ (s |> String.lchop) 
 (*  |> tap (eprintf "MERGE_RX: %s + %s -> %s\n" r s )*)
 
-let dechain rg =
+let prune_unreachable start rg =
+  let reachable = ref (Set.singleton start) in
+  let c = ref !reachable in
+  let close s = Set.iter (fun nt -> List.iter (fun (_,{nt=next}) -> Option.may (fun x -> c := Set.add x !c) next) (Map.find nt rg)) s in
+  close !reachable;
+  while Set.is_empty !c |> not do
+    let new_rs = Set.diff !c !reachable in
+    reachable := Set.union !reachable !c; 
+    c := Set.empty; 
+    close new_rs; 
+  done;
+  Map.partition (fun k _ -> Set.mem k !reachable) rg |> fst
+
+let dechain start rg =
   let is_chain_state r = match r with [_,{rx=Some _; act=[]; nt=Some _}] -> true | _ -> false in
   let merge (p,rx) (p1, rr) = 
     pred_pred_compose p p1, {rr with rx=Some (Option.map_default (merge_rx rx) rx rr.rx)} in 
@@ -100,9 +113,9 @@ let dechain rg =
   let chain_states = ref (Map.filter is_chain_state !rg) in
   while not (Map.is_empty !chain_states) do
     let nt,_ = Map.choose !chain_states in
-    print_reg_ca stdout !rg;
-    printf "Eliminating state %s\n" nt;
-    rg := elim_chain_state !rg nt;
+(*    print_reg_ca stdout !rg;
+    printf "Merging forward state %s\n" nt; *)
+    rg := elim_chain_state !rg nt |> prune_unreachable start;
     chain_states := Map.filter is_chain_state !rg;
   done;
   !rg
@@ -136,20 +149,7 @@ let regularize : grammar -> regular_grammar = fun grammar ->
   let make_regular_g g = 
     NTMap.enum g.rules |> map (second (List.map make_r)) |> Map.of_enum
   in 
-  grammar |> normalize_grammar |> idle_elimination |> make_regular_g |> dechain;; 
-
-let prune_unreachable start rg =
-  let reachable = ref (Set.singleton start) in
-  let c = ref !reachable in
-  let close s = Set.iter (fun nt -> List.iter (fun (_,{nt=next}) -> Option.may (fun x -> c := Set.add x !c) next) (Map.find nt rg)) s in
-  close !reachable;
-  while Set.is_empty !c |> not do
-    let new_rs = Set.diff !c !reachable in
-    reachable := Set.union !reachable !c; 
-    c := Set.empty; 
-    close new_rs; 
-  done;
-  Map.partition (fun k _ -> Set.mem k !reachable) rg |> fst
+  grammar |> normalize_grammar |> idle_elimination |> make_regular_g ;; 
 
 let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) = 
   fun start ca ->
@@ -158,8 +158,8 @@ let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) =
     let nt_counter = Ean_std.make_counter 0 in
     let {Std.get=int_of_nt} = Std.cache_ht (fun _ -> nt_counter ()) 10 in
     int_of_nt start |> ignore; (* make sure start state is #0 *)
-    let fix_pair_a (v,a) = (int_of_v v, (*freeze_a*) a) in
-    let fix_pair_p (v,p) = (int_of_v v, (*freeze_p*) p) in
+    let fix_pair_a (v,a) = (int_of_v v, freeze_a a) in
+    let fix_pair_p (v,p) = (int_of_v v, freeze_p p) in
     let fix_rule (r: (string, string) regular_rule) = {r with act = List.map fix_pair_a r.act; nt = Option.map int_of_nt r.nt} in
     let fix_pred (p:pred) = VarMap.enum p |> Enum.map fix_pair_p |> List.of_enum in
     let pmap = Map.enum ca |> 
