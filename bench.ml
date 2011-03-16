@@ -23,6 +23,7 @@ let baseline = ref true
 let mode = ref Pcap
 let min_lev = ref 0
 let gen_count = ref 0
+let packet_limit = ref (-1)
 let main = ref Parse
 (*** ARGUMENT HANDLING ***)
 
@@ -32,6 +33,7 @@ let set_mode x = Unit (fun () -> mode := x)
 let args = 
   [ (Name "packets", [Clear parse_by_flow], [], 
      "Pass individual packets to the parser");
+    (Both ('l', "limit"), [Int_var packet_limit], [], "Limit to first n packets");
     (Both ('f', "flows"), [Set parse_by_flow], [], 
      "Assemble the pcap files into flows"); 
     (Both ('m', "mux"), [set_mode Mux], [], 
@@ -252,6 +254,9 @@ let gen_pkt () =
 let trace_size a = 
   Array.fold_left (fun acc (_,x,_) -> acc + String.length x) 0 a
 
+let limiter packets =
+  if !packet_limit > 0 then Enum.take !packet_limit packets else packets
+
 (*** MAIN ***) 
 let main () = 
   run_id := if !mode = Gen then 
@@ -278,7 +283,7 @@ let main () =
       | true, Gen -> Enum.from gen_pkt |> Enum.take !gen_count |> Pcap.make_flows
       | false, Gen -> Enum.from gen_pkt |> Enum.take !gen_count |> Pcap.make_packets
   in
-  let packets = Array.of_enum packet_enum in
+  let packets = packet_enum |> limiter |> Array.of_enum  in
   trace_len := trace_size packets;
   match !main with 
     | Parse -> main_loops packets 
