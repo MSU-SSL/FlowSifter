@@ -82,11 +82,11 @@ let ca_functions = ref
       | _ -> wrong_args "bounds" );
     "skip",
     (fun (_base_pos, sim_pos, _flow_data) ->  function 
-      | [len] when len >= 0 -> sim_pos := !sim_pos + len; 0
+      | [len] when len >= 0 -> sim_pos := !sim_pos + len; len
       | _ -> wrong_args "skip" );
     "skip_to",
     (fun (_base_pos, sim_pos, _flow_data) -> function
-      | [pos] -> if !sim_pos < pos then sim_pos := pos; 0
+      | [pos] -> if !sim_pos < pos then sim_pos := pos; pos
       | _ -> wrong_args "skip_to" );
     "notify" ,
     (fun (_base_pos, _sim_pos, _flow_data) ->  function [n] -> 
