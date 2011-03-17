@@ -182,34 +182,37 @@ module EBuf = struct
 end
 
 module SList = struct
-  type t = {queue: (int * string) list}
+  type t = (int * string) list
   let rec add_pkt_aux offset data = function 
     | (off,_)::_ as l when offset < off -> (offset,data) :: l
     | e::t (* offset >= off *) -> e :: add_pkt_aux offset data t
     | [] -> [(offset,data)]
-  let add_pkt t data offset = {queue = add_pkt_aux offset data t.queue}
+  let add_pkt t data offset = add_pkt_aux offset data t
   let rec get_data_aux str = function
     | [] -> ()
     | (o,d)::t -> String.blit d 0 str o (String.length d); get_data_aux str t
+  let end_pos (on, pn) = on + String.length pn
   let get_all t = 
-    if t.queue = [] then "" else
-      let len = List.map (fun (on,pn) -> on + String.length pn) t.queue |> List.max in
+    if t = [] then "" else
+      let len = List.map end_pos t |> List.max in
       let str = (String.create len) in
-      get_data_aux str t.queue;
-      str
+(*      printf "Flow len computed: %d, Packet (offset,len)s: %a\n" len (Int.print |> Pair.print2 |> List.print) (List.map (second String.length) t); *)
+      get_data_aux str t;
+      let min_offset = List.map fst t |> List.min in
+      String.tail str min_offset
   let get_exp = function
-    | {queue=[]} -> 1
-    | {queue=(on,pn)::_} -> on + String.length pn
+    | [] -> 1
+    | (on,pn)::_ -> on + String.length pn
   let rec count_ready_aux acc = function
     | [_] -> acc + 1
     | (o,p)::((a,_)::_ as tl) when a = o + String.length p -> count_ready_aux (acc+1) tl
     | _ -> acc
-  let count_ready {queue=q} = count_ready_aux 0 q
+  let count_ready t = count_ready_aux 0 t
   let get_one = function
-    | {queue=[]} -> raise Not_found
-    | {queue=h::t} -> h, {queue=t}
-  let singleton d = {queue=[(0,d)]}
-  let empty = {queue=[]}
+    | [] -> raise Not_found
+    | h::t -> h, t
+  let singleton d = [(0,d)]
+  let empty = []
 end
 module PB = SList
 
@@ -227,7 +230,9 @@ let read_file_as_str ?(verbose=false) fn =
   ret
 
 (* get a single flow of packets from an enum of filenames *)
-let packets_of_files fns = (fns /@ read_file_as_str /@ to_pkt_stream |> Enum.reduce (Enum.merge (fun (ts1,_,_,_,_) (ts2,_,_,_,_) -> ts1 < ts2)))
+let packets_of_files fns = 
+  fns /@ read_file_as_str /@ to_pkt_stream 
+  |> Enum.reduce (Enum.merge (fun (ts1,_,_,_,_) (ts2,_,_,_,_) -> ts1 < ts2))
 
 let trace_size_v v = 
   Vect.fold_left (fun acc (_,x,_) -> acc + String.length x) 0 v 
@@ -241,13 +246,16 @@ let flow_count = ref 0
 let new_flow () = incr flow_count; incr conc_flows; max_conc := max !max_conc !conc_flows
 let done_flow () = decr conc_flows 
 
+let is_empty (_,p,_) = String.is_empty p
 let push_v vr x = vr := Vect.append x !vr
 
 (*** FLOW REASSEMBLY ***)
 let ht2 = Hashtbl.create 50000
-let assemble fns =
+let assemble count fns =
   let flows = ref Vect.empty in
+  let push_v v x = if is_empty x then () else push_v v x in
   let act_pkt (_ts,(_sip,_dip,_sp,_dp as flow), offset, data, (_syn,_ack,fin)) = 
+    if Vect.length !flows < count then 
     (*    if offset < 0 || offset > 1 lsl 25 then printf "Offset: %d, skipping\n%!" offset 
 	  else *)
     let prev, isn = 
@@ -273,16 +281,16 @@ let assemble fns =
       Hashtbl.replace ht2 flow (joined, isn)
   in
   packets_of_files fns |> Enum.iter act_pkt;
-(*  let stream_len = trace_size_v !flows in
-  printf "# %d streams re-assembled, total_len: %d\n" (Vect.length !flows) stream_len; *)
+  let stream_len = trace_size_v !flows in
+  printf "# %d streams re-assembled, total_len: %d\n" (Vect.length !flows) stream_len;
   let flows2 = ref Vect.empty in
   Hashtbl.iter (fun (_sip,_dip,_sp,_dp as fid) (j,_) -> let j = PB.get_all j in if String.length j > 0 then ((*Printf.printf "(%lx,%lx,%d,%d): %S\n" sip dip sp dp (j);*) push_v flows2 (fid,j,false))) ht2;
-(*  let stream_len2 = trace_size_v !flows2 in
-  printf "# %d streams un-fin'ed, total_len: %d\n" (Vect.length !flows2) stream_len2; *)
+  let stream_len2 = trace_size_v !flows2 in
+  printf "# %d streams un-fin'ed, total_len: %d\n" (Vect.length !flows2) stream_len2; 
   let all_flows = Vect.concat !flows !flows2 in
-(*  printf "# Flows pre-assembled (len: %a max_conc: %d flows: %d)\n" Ean_std.print_size_B trace_len !max_conc !flow_count;
-  printf "# Flows in vect: %d\n" (Vect.length all_flows); *)
-  (*!flows2, stream_len2*) Vect.enum all_flows
+  printf "# Flows pre-assembled (len: %a max_conc: %d flows: %d)\n" Ean_std.print_size_B (stream_len + stream_len2) !max_conc !flow_count;
+  printf "# Flows in vect: %d\n" (Vect.length all_flows); 
+  Vect.enum all_flows
 
 
 (*** FILTER DUPLICATE/OUT-OF-ORDER PACKETS ***)
