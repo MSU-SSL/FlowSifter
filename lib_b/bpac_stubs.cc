@@ -25,13 +25,13 @@ extern "C" value new_parser (value v_unit) {
   CAMLreturn (p);
 }
 
-extern "C" value add_data (value v_prsr, value v_str) {
-  CAMLparam2 (v_prsr, v_str);
+extern "C" value add_data (value v_prsr, value v_dir, value v_str) {
+  CAMLparam3 (v_prsr, v_dir, v_str);
   binpac::HTTP::HTTP_Conn *parser = (binpac::HTTP::HTTP_Conn*) v_prsr;
   const char* str = String_val(v_str);
   const char* end = str + caml_string_length(v_str) + 1;
   try {
-    parser->NewData(1, (binpac::uint8*) str, (binpac::uint8*) end);
+    parser->NewData(Bool_val(v_dir), (binpac::uint8*) str, (binpac::uint8*) end);
     //    printf("*** bp: %d\n%s\n", Int_val(v_len), str);
   } catch ( binpac::Exception const &e ) {
     //    printf("Binpac raised: %s\n", e.c_msg());

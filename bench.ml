@@ -23,7 +23,7 @@ let baseline = ref true
 let mode = ref Pcap
 let min_lev = ref 0
 let gen_count = ref 0
-let packet_limit = ref (-1)
+let packet_limit = ref max_int
 let main = ref Parse
 (*** ARGUMENT HANDLING ***)
 
@@ -62,12 +62,14 @@ let () = Arg2.parse args (fun x -> fns := x :: !fns) usage_info descr notes
 
 (*** PARSER MODULES ***)
 
+open Anypac
+
 type 'a parser_f = {
   p_type : parser_t;
   id : string;
   new_parser : unit -> 'a;
   delete_parser : 'a -> unit;
-  add_data : 'a -> string -> unit;
+  add_data : 'a -> direction -> string -> unit;
   get_event_count : unit -> int; 
 }
 
@@ -76,7 +78,7 @@ let null_p = {
   id = "null";
   new_parser = (fun () -> ());
   delete_parser = (fun () -> ());
-  add_data = (fun () _ -> ());
+  add_data = (fun () _ _ -> ());
   get_event_count = (fun () -> 0); 
 }
   
@@ -176,9 +178,14 @@ let run pr =
     let dropped = match pr.p_type with `Null -> 100. | `Pac -> 0. 
       | `Sift -> (!Prog_parse.fail_drop / (!rep_cnt + 2) * 100) /! !trace_len in
     if !check_mem_per_packet then printf "#";
-    printf "%s\t%s\t%d\t%4.3f\t%.3f\t%.2f\t%d\t%d\t%d\t%.1f\t%.1f\n%!" 
-      !run_id pr.id round time tsize gbps (mem()) !conc_flows (pr.get_event_count()) pct_parsed dropped
+    printf "%s\t%s\t%d\t%4.3f\t" !run_id pr.id round time;
+    if Ns_types.debug_ca then
+      printf "%d\n%!" (pr.get_event_count()) 
+    else
+      printf "\t%d\t%.2f\t%d\t%d\t%d\t%.1f\t%.1f\n%!" !trace_len gbps (mem()) !conc_flows (pr.get_event_count()) pct_parsed dropped
   in
+
+  let get_dir (_,_,sp,_dp) = if sp = 80 then Downflow else Upflow in
 
   let act_packet (flow, data, fin) =
     let p = 
@@ -188,7 +195,7 @@ let run pr =
 	pr.new_parser () |> tap (Hashtbl.add ht flow) 
     in
     incr packet_ctr;
-    pr.add_data p data;
+    pr.add_data p (get_dir flow) data;
     if !check_mem_per_packet && !mem0 > 0 then (
       printf "%s %s %d %d %d\n" !run_id pr.id !packet_ctr !conc_flows (mem ());
     );
@@ -203,7 +210,15 @@ let run pr =
 
 (*** RUN FUNCTION IN A LOOP AND INSTRUMENT ***)
 let main_loop (reset_parsers, post_round, f) rep_cnt xs =
-  if not !check_mem_per_packet then begin
+  if !check_mem_per_packet then begin
+    mem0gc := get_ocaml_mem (); mem0 := get_vmsize (); 
+    Array.iter f xs;
+  end else if Ns_types.debug_ca then begin
+    Array.iter f xs;
+    printf "\n";
+    post_round rep_cnt 0.;
+    reset_parsers ();
+  end else begin
     Array.iter f xs; 
     reset_parsers ();
     let tpre = Sys.time () in
@@ -216,11 +231,8 @@ let main_loop (reset_parsers, post_round, f) rep_cnt xs =
     Array.iter f xs;
     post_round rep_cnt time;
     reset_parsers ();
-    ()
-  end else begin
-    mem0gc := get_ocaml_mem (); mem0 := get_vmsize (); 
-    Array.iter f xs;
-  end
+  end; ()
+
 
 let print_header () = 
   Gc.compact()
@@ -254,9 +266,6 @@ let gen_pkt () =
 let trace_size a = 
   Array.fold_left (fun acc (_,x,_) -> acc + String.length x) 0 a
 
-let limiter packets =
-  if !packet_limit > 0 then Enum.take !packet_limit packets else packets
-
 (*** MAIN ***) 
 let main () = 
   run_id := if !mode = Gen then 
@@ -276,14 +285,14 @@ let main () =
   in
   let packet_enum = 
     match !parse_by_flow, !mode with
-      |	true, Pcap ->  List.enum !fns |> Pcap.assemble
+      |	true, Pcap ->  List.enum !fns |> Pcap.assemble !packet_limit
       | false, Pcap -> List.enum !fns |> Pcap.pre_parse
       | true, Mux -> List.enum !fns |> Pcap.make_flows
       | false, Mux ->  List.enum !fns |> Pcap.make_packets_files
       | true, Gen -> Enum.from gen_pkt |> Enum.take !gen_count |> Pcap.make_flows
       | false, Gen -> Enum.from gen_pkt |> Enum.take !gen_count |> Pcap.make_packets
   in
-  let packets = packet_enum |> limiter |> Array.of_enum  in
+  let packets = packet_enum |> Enum.take !packet_limit |> Array.of_enum  in
   trace_len := trace_size packets;
   match !main with 
     | Parse -> main_loops packets 

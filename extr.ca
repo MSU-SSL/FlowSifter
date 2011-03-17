@@ -1,9 +1,9 @@
 HTTP1 -> HTTP_START1 [cn := pos()] HEADERS1 ;
 
-# HTTP REPLY
-HTTP_START1 -> /HTTP/ TEXT CRLF ;
 # HTTP REQUEST
 HTTP_START1 99 -> NONWS [x := token(0)] LWS token( URL ) LWS VERSION CRLF ;
+# HTTP REPLY
+HTTP_START1 -> /HTTP/ TEXT CRLF ;
 
 HEADERS1 -> HEADER1 CRLF [cn := pos()] HEADERS1 ;
 HEADERS1 -> CRLF [bodylength := skip(bodylength)] BODY_DONE ;

@@ -50,7 +50,7 @@ let gen_parser p e =
     parse
 
 let new_parser s e = gen_parser s e
-let add_data p d = p d
+let add_data p _ d = p d
 let get_event_count _p = !Ns_types.matches
 let reset_parser _p = assert false
 let delete_parser _p = ()

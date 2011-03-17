@@ -55,3 +55,5 @@ let main () =
     close_out oc;
   done;
   ()
+
+let () = if Sys.argv.(0) = "genrec" then main ()

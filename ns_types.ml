@@ -1,4 +1,5 @@
 open Batteries_uni
+open Printf
 
 type action = string
 type non_terminal = string
@@ -42,7 +43,7 @@ type regular_grammar_opt = (int array -> (string -> int list -> int) -> compiled
 
 (****** Parsing functions ******)
 
-let debug_ca = false
+let debug_ca = true
 
 exception Invalid_arg_count of string
 let wrong_args name = raise (Invalid_arg_count name)
@@ -63,11 +64,11 @@ let ca_functions = ref
     "token", 
     (fun (_base_pos, _sim_pos, _flow_data) -> function 
       | [_start_pos] -> (* end_pos = pos() - 1 *)
-	incr matches; 0
+	if debug_ca then printf "T"; incr matches; 0
       | _ -> wrong_args "token" );
     "bounds" ,
     (fun (_base_pos, _sim_pos, _flow_data) -> function 
-      | [_start_pos; _end_pos] -> incr matches; 0
+      | [_start_pos; _end_pos] -> if debug_ca then printf "B"; incr matches; 0
 	(* BROKEN BY SPLICING CODE -- check bounds on start/end pos and current flow_data *)
 	(*	let str = String.sub start_pos end_pos flow_data in *)
 	(*	Printf.eprintf "***Match found in range %d, %d***\n" 
@@ -90,7 +91,7 @@ let ca_functions = ref
     "notify" ,
     (fun (_base_pos, _sim_pos, _flow_data) ->  function [n] -> 
       (*      Printf.eprintf "*** Match found: %d ***\n" n;  *)
-      incr matches; n 
+      if debug_ca then printf "N"; incr matches; n 
       | _ -> wrong_args "skip" );
     "cur_byte",
     (fun (_base_pos, sim_pos, flow_data) ->  function 
@@ -111,8 +112,8 @@ let ca_functions = ref
       let start_pos = start_pos - base_pos and end_pos = end_pos - base_pos in
       let str = try String.sub flow_data (start_pos+1) (end_pos - start_pos) |> String.trim |> String.lowercase with _ -> "??" in
       (try Hashtbl.find saves str |> incr with Not_found -> Hashtbl.add saves str (ref 1));
-      incr matches;
-      0
+      if debug_ca then printf "S"; 
+      incr matches; 0
       | _ -> wrong_args "save"
     );
   ]
