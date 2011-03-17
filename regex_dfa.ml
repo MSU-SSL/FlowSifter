@@ -406,17 +406,25 @@ let to_array dfa =
     Array.init 256 (fun i -> try IMap.find i m with Not_found -> -1) in
   map_qs (fun q -> {q with map = to_arr q.map}) dfa
 
-let print_array_dfa oc dfa =
+let print_array_dfa print_dec oc dfa =
   let aprint ~first ~last oc a = 
     String.print oc first;
-    for i = 0 to Array.length a - 1 do
-      if a.(i) <> -1 then fprintf oc "%C:%d " (Char.chr i) a.(i);
+    let last_c = ref a.(0) in
+    let last_pos = ref 0 in
+    for i = 1 to Array.length a - 1 do
+      if a.(i) <> -1 && a.(i) <> !last_c then begin
+	fprintf oc "%C-%C:%d " (Char.chr !last_pos) (Char.chr (i-1)) !last_c;
+	last_c := a.(i);
+	last_pos := i;
+      end
     done;
+    fprintf oc "%C-%C:%d" (Char.chr !last_pos) (Char.chr (Array.length a - 1)) !last_c;
     String.print oc last;
   in
   let print_q oc q = 
-    if q.dec = None then aprint ~first:"[" ~last:"]" oc q.map 
-    else aprint ~first:"<" ~last:">" oc q.map 
+    match q.dec with
+      | None -> aprint ~first:"[" ~last:"]" oc q.map 
+      | Some d -> aprint ~first:"<" ~last:">" oc q.map; print_dec oc d;
   in
   print_fa print_q oc dfa
 
