@@ -281,15 +281,15 @@ let assemble count fns =
       Hashtbl.replace ht2 flow (joined, isn)
   in
   packets_of_files fns |> Enum.iter act_pkt;
-  let stream_len = trace_size_v !flows in
-  printf "# %d streams re-assembled, total_len: %d\n" (Vect.length !flows) stream_len;
+(*  let stream_len = trace_size_v !flows in
+  printf "# %d streams re-assembled, total_len: %d\n" (Vect.length !flows) stream_len; *)
   let flows2 = ref Vect.empty in
   Hashtbl.iter (fun (_sip,_dip,_sp,_dp as fid) (j,_) -> let j = PB.get_all j in if String.length j > 0 then ((*Printf.printf "(%lx,%lx,%d,%d): %S\n" sip dip sp dp (j);*) push_v flows2 (fid,j,false))) ht2;
-  let stream_len2 = trace_size_v !flows2 in
-  printf "# %d streams un-fin'ed, total_len: %d\n" (Vect.length !flows2) stream_len2; 
+(*  let stream_len2 = trace_size_v !flows2 in
+  printf "# %d streams un-fin'ed, total_len: %d\n" (Vect.length !flows2) stream_len2; *)
   let all_flows = Vect.concat !flows !flows2 in
-  printf "# Flows pre-assembled (len: %a max_conc: %d flows: %d)\n" Ean_std.print_size_B (stream_len + stream_len2) !max_conc !flow_count;
-  printf "# Flows in vect: %d\n" (Vect.length all_flows); 
+(*  printf "# Flows pre-assembled (len: %a max_conc: %d flows: %d)\n" Ean_std.print_size_B (stream_len + stream_len2) !max_conc !flow_count;
+  printf "# Flows in vect: %d\n" (Vect.length all_flows);  *)
   Vect.enum all_flows
 
 
