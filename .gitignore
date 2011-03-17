@@ -6,3 +6,6 @@
 *.cmxa
 bench-bpac
 bench-null
+*.pdf
+*.png
+*.eps
