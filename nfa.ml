@@ -198,7 +198,7 @@ let close_transitions nfa =
 let build_dfa ~labels (dec0, _of_dec, dec_merge, _dec_comp as dec_rules) reg =
   ignore labels;
   let nfa = build_nfa dec_rules reg |> simplify_nfa |> close_transitions in
-  printf "NFA built %.3f (%d states)\n%!" (Sys.time()) (Array.length nfa.qs);
+(*  printf "NFA built %.3f (%d states)\n%!" (Sys.time()) (Array.length nfa.qs); *)
   (* let print_nfa_label oc l = () in
      let print_nfa_dec oc d = () in
      printf "NFA: \n%a" (print_nfa print_nfa_label print_nfa_dec) nfa;
@@ -207,7 +207,7 @@ let build_dfa ~labels (dec0, _of_dec, dec_merge, _dec_comp as dec_rules) reg =
   let make_node get_id ns id =
 (*    eprintf "Making state %d for %a\n%!" id  ns; *)
     (* get the transitions for that character from the nfa *)
-    if id mod 100 = 1 then eprintf "N %d @ %.2f\n%!" id (Sys.time ());
+(*    if id mod 100 = 1 then eprintf "N %d @ %.2f\n%!" id (Sys.time ()); *)
     let map =
       Set.fold (fun n acc -> merge_nfa_maps acc nfa.qs.(n).map) ns IMap.empty
       |> IMap.map (get_id |- Id.to_int)
