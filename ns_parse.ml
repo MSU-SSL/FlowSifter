@@ -99,24 +99,28 @@ let prune_unreachable start rg =
   Map.partition (fun k _ -> Set.mem k !reachable) rg |> fst
 
 let dechain start rg =
-  let is_chain_state r = match r with [_,{rx=Some _; act=[]; nt=Some _}] -> true | _ -> false in
+  let is_chain_rule rg = function (_,{rx=Some _; act=[]; nt=Some nt}) -> Map.find nt rg |> List.length = 1 | _ -> false in
   let merge (p,rx) (p1, rr) = 
     pred_pred_compose p p1, {rr with rx=Some (Option.map_default (merge_rx rx) rx rr.rx)} in 
-  let elim_chain_state rg nt = 
-    match Map.find nt rg with 
-      | [p,{rx=Some rx; nt=Some next}] ->
-	let next_rs = Map.find next rg |> List.map (merge (p, rx)) in
-	Map.add nt next_rs rg
+  let elim_chain_rules rg nt = 
+    let rs = Map.find nt rg in
+    let chain_rules, non_chain_rules = List.partition (is_chain_rule rg) rs in
+    let dechained r = match r with 
+      | (p,{rx=Some rx; nt=Some next}) -> Map.find next rg |> List.map (merge (p, rx))
       | _ -> assert false (* not a chain state *)
+    in
+    let next_rs = List.map dechained chain_rules |> List.flatten in
+    Map.add nt (non_chain_rules @ next_rs) rg
   in
+  let find_fixable reg_rs = Map.filter (List.exists (is_chain_rule reg_rs)) reg_rs in
   let rg = ref rg in
-  let chain_states = ref (Map.filter is_chain_state !rg) in
+  let chain_states = ref (find_fixable !rg) in
   while not (Map.is_empty !chain_states) do
     let nt,_ = Map.choose !chain_states in
-(*    print_reg_ca stdout !rg;
-    printf "Merging forward state %s\n" nt; *)
-    rg := elim_chain_state !rg nt |> prune_unreachable start;
-    chain_states := Map.filter is_chain_state !rg;
+      (*    print_reg_ca stdout !rg;
+	    printf "Merging forward state %s\n" nt; *)
+    rg := elim_chain_rules !rg nt |> prune_unreachable start;
+    chain_states := find_fixable !rg;
   done;
   !rg
 
@@ -154,9 +158,9 @@ let regularize : grammar -> regular_grammar = fun grammar ->
 let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) = 
   fun start ca ->
     let v_counter = Ean_std.make_counter 0 in
-    let {Std.get=int_of_v} = Std.cache_ht (fun _ -> v_counter ()) 10 in
+    let {Cache.get=int_of_v} = Cache.make_ht (fun _ -> v_counter ()) 10 in
     let nt_counter = Ean_std.make_counter 0 in
-    let {Std.get=int_of_nt} = Std.cache_ht (fun _ -> nt_counter ()) 10 in
+    let {Cache.get=int_of_nt} = Cache.make_ht (fun _ -> nt_counter ()) 10 in
     int_of_nt start |> ignore; (* make sure start state is #0 *)
     let fix_pair_a (v,a) = (int_of_v v, freeze_a a) in
     let fix_pair_p (v,p) = (int_of_v v, freeze_p p) in
