@@ -4,10 +4,10 @@ arg2.cmo:
 arg2.cmx: 
 bdd.cmo: tcam.cmo ruleset.cmo ean_std.cmo 
 bdd.cmx: tcam.cmx ruleset.cmx ean_std.cmx 
-bench.cmo: prog_parse.cmo pcap.cmo ns_parse.cmo genrec.cmo ean_std.cmo \
-    arg2.cmo anypac.cmo 
-bench.cmx: prog_parse.cmx pcap.cmx ns_parse.cmx genrec.cmx ean_std.cmx \
-    arg2.cmx anypac.cmx 
+bench.cmo: prog_parse.cmo pcap.cmo ns_types.cmo ns_run.cmo genrec.cmo \
+    ean_std.cmo arg2.cmo anypac.cmo 
+bench.cmx: prog_parse.cmx pcap.cmx ns_types.cmx ns_run.cmx genrec.cmx \
+    ean_std.cmx arg2.cmx anypac.cmx 
 bpac.cmo: 
 bpac.cmx: 
 d2fa.cmo: regex_dfa.cmo ean_std.cmo disj_set.cmo 
@@ -32,12 +32,16 @@ myocamlbuild_config.cmo:
 myocamlbuild_config.cmx: 
 myocamlbuild.cmo: myocamlbuild_config.cmo 
 myocamlbuild.cmx: myocamlbuild_config.cmx 
+nfa.cmo: regex_dfa.cmo minreg.cmo ean_std.cmo 
+nfa.cmx: regex_dfa.cmx minreg.cmx ean_std.cmx 
 ns_lex.cmo: ns_yac.cmi 
 ns_lex.cmx: ns_yac.cmx 
-ns_parse.cmo: simplify.cmo regex_dfa.cmo ns_yac.cmi ns_types.cmo ns_lex.cmo 
-ns_parse.cmx: simplify.cmx regex_dfa.cmx ns_yac.cmx ns_types.cmx ns_lex.cmx 
-ns_run.cmo: regex_dfa.cmo pcregex.cmo ns_types.cmo minreg.cmo 
-ns_run.cmx: regex_dfa.cmx pcregex.cmx ns_types.cmx minreg.cmx 
+ns_parse.cmo: simplify.cmo regex_dfa.cmo ns_yac.cmi ns_types.cmo ns_lex.cmo \
+    ean_std.cmo 
+ns_parse.cmx: simplify.cmx regex_dfa.cmx ns_yac.cmx ns_types.cmx ns_lex.cmx \
+    ean_std.cmx 
+ns_run.cmo: regex_dfa.cmo pcregex.cmo ns_types.cmo nfa.cmo minreg.cmo 
+ns_run.cmx: regex_dfa.cmx pcregex.cmx ns_types.cmx nfa.cmx minreg.cmx 
 ns_types.cmo: PCFG.cmo 
 ns_types.cmx: PCFG.cmx 
 ns_yac.cmo: ns_types.cmo ns_yac.cmi 
@@ -50,8 +54,8 @@ PCFG.cmo:
 PCFG.cmx: 
 pcregex.cmo: 
 pcregex.cmx: 
-prog_parse.cmo: simplify.cmo ns_types.cmo ns_run.cmo ns_parse.cmo ean_std.cmo 
-prog_parse.cmx: simplify.cmx ns_types.cmx ns_run.cmx ns_parse.cmx ean_std.cmx 
+prog_parse.cmo: simplify.cmo ns_types.cmo ns_run.cmo ns_parse.cmo 
+prog_parse.cmx: simplify.cmx ns_types.cmx ns_run.cmx ns_parse.cmx 
 prog_parse_vs.cmo: vsdfa.cmo simplify.cmo regex_dfa.cmo ns_types.cmo \
     ns_parse.cmo 
 prog_parse_vs.cmx: vsdfa.cmx simplify.cmx regex_dfa.cmx ns_types.cmx \

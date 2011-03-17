@@ -64,9 +64,10 @@ let compile_ca rules =
   |> Enum.filter_map make_rx_pair
   |> Pcregex.rx_of_dec_strings ~anchor:true
   |> Minreg.of_reg
-  |> Regex_dfa.build_dfa ~labels:false (dec_rules comp_dec) 
+  |> Nfa.build_dfa ~labels:false (dec_rules comp_dec) 
   |> Regex_dfa.minimize ~dec_comp:dec_eq
   |> Regex_dfa.to_array
+
 
 let fill_cache cached_compile ca = 
   Enum.iter (cached_compile |- ignore) (get_all_rule_groups ca)
@@ -115,6 +116,7 @@ let optimize_preds ca =
   let opt_prod _i rules =
     if List.for_all (fun (p,_) -> List.length p = 0) rules then
       let dfa = List.map snd rules |> compile_ca in
+      printf "DFA: %d\n%a\n" _i (Regex_dfa.print_array_dfa (fun oc {item=(_,q)} -> Int.print oc q)) dfa;
       (fun _ _ -> dfa)
     else match is_univariate_predicate rules with
 	Some v -> 
@@ -157,7 +159,7 @@ let rec resume_arr qs input pri decision dec_pos q pos =
       let pos = pos+1 in 
       match q.Regex_dfa.dec with
 	| Some d when d.pri <= pri -> 
-	  if debug_ca then printf "M%d " d.pri;
+	  if debug_ca then printf "M%d " (snd d.item);
 	  resume_arr qs input d.pri d.item pos q pos
 	| _ -> 
 	  resume_arr qs input pri decision dec_pos q pos

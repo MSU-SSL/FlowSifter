@@ -41,7 +41,7 @@ upac.cmxa: lib_u/binpac.o lib_u/http_pac_fast.o lib_u/http_matcher.o lib_u/libub
 tcmalloc_stubs.o: tcmalloc_stubs.c
 	ocamlc -c $^ -o $@
 
-FLOW=hashtbl_param.cmx ean_std.cmx pcregex.cmx minreg.cmx PCFG.cmx ns_types.cmx simplify.cmx ns_yac.cmx ns_lex.cmx ruleset.cmx tcam.cmx decider.cmx fdd.cmx bdd.cmx optimizers.cmx regex_dfa.cmx ns_parse.cmx ns_run.cmx prog_parse.cmx arg2.cmx genrec.cmx
+FLOW=hashtbl_param.cmx ean_std.cmx pcregex.cmx minreg.cmx PCFG.cmx ns_types.cmx simplify.cmx ns_yac.cmx ns_lex.cmx ruleset.cmx tcam.cmx decider.cmx fdd.cmx bdd.cmx optimizers.cmx regex_dfa.cmx nfa.cmx ns_parse.cmx ns_run.cmx prog_parse.cmx arg2.cmx genrec.cmx
 
 ns_yac.ml: ns_yac.mly
 	menhir ns_yac.mly
@@ -147,7 +147,7 @@ HEADER = "runid\tparser\titers\ttime\tgbit\tgbps\tmem\tflows\tevents\tpct_parsed
 COUNT ?= 1
 
 rundata: bench-bpac bench-upac
-	-mv -b $@ $@.bkp
+	-mv -b $@ old/$@.bkp
 	echo -e $(HEADER) > $@
 	time for a in $(RUNS); do \
 	    ./bench-bpac -n $(COUNT) ~/traces/http/use/$$a* | tee -a $@; \
@@ -156,7 +156,7 @@ rundata: bench-bpac bench-upac
 
 FLOWS ?= 10000
 rectest: bench-upac
-	-mv -b $@ $@.bkp
+	-mv -b $@ old/$@.bkp
 	echo -e $(HEADER) > $@
 	time for a in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do \
 	    ./bench-upac --seed 230 -n $(COUNT) -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
