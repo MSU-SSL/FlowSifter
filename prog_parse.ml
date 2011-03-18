@@ -18,9 +18,9 @@ let gen_parser p e =
   let proto = Ns_parse.parse_file_as_spec p 
   and extr = Ns_parse.parse_file_as_extraction e in
   let ca,var_count = Ns_parse.merge_cas ~proto ~extr |> Ns_parse.regularize 
-(*    |> Ns_parse.dechain extr.start*)
+    |> Ns_parse.dechain extr.start
     |> Ns_parse.destring extr.start 
-    |> first Ns_run.optimize_preds
+    |> first (Ns_parse.flatten_priorities |- Ns_run.optimize_preds)
   in
   fun () -> (* allow creating many parsers *)
     let vars = Array.make var_count 0 in    
