@@ -116,7 +116,7 @@ let optimize_preds ca =
   let opt_prod _i rules =
     if List.for_all (fun (p,_) -> List.length p = 0) rules then
       let dfa = List.map snd rules |> compile_ca in
-      printf "DFA: %d\n%a\n" _i (Regex_dfa.print_array_dfa (fun oc {item=(_,q)} -> Int.print oc q)) dfa;
+      printf "#DFA: %d\n%a\n" _i (Regex_dfa.print_array_dfa (fun oc {item=(_,q)} -> Int.print oc q)) dfa;
       (fun _ _ -> dfa)
     else match is_univariate_predicate rules with
 	Some v -> 
