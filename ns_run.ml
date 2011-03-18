@@ -116,7 +116,8 @@ let optimize_preds ca =
   let opt_prod _i rules =
     if List.for_all (fun (p,_) -> List.length p = 0) rules then
       let dfa = List.map snd rules |> compile_ca in
-      printf "#DFA: %d\n%a\n" _i (Regex_dfa.print_array_dfa (fun oc {item=(_,q)} -> Int.print oc q)) dfa;
+      if Ns_types.debug_ca then 
+	printf "#DFA: %d\n%a\n" _i (Regex_dfa.print_array_dfa (fun oc {item=(_,q)} -> Int.print oc q)) dfa;
       (fun _ _ -> dfa)
     else match is_univariate_predicate rules with
 	Some v -> 
@@ -183,11 +184,7 @@ let ca_trans = ref 0
 
 (* let () = at_exit (fun () -> printf "#CA Transitions: %d\n" !ca_trans)  *)
 
-let is_printable c = c = '\n' || (Char.code c >= 32 && Char.code c <= 126)
-let clean_unprintable s = String.map (fun x -> if is_printable x then x else '.') s
-
 let rec simulate_ca_string ~ca ~vars fail_drop skip_left base_pos flow_data (qs, q, pri, item, ri, tail_data) = 
-  if debug_ca then Printf.printf "P:%s\n" (clean_unprintable flow_data);
   let flow_len = String.length flow_data in
   let pos = ref 0 in
   let rec run_d2fa qs q pri item ri tail_data =
