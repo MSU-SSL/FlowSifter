@@ -52,11 +52,15 @@ let merge_cas : proto:grammar -> extr:grammar -> grammar =
 
 let print_reg_rule oc rr = 
   let so = Option.print String.print in
-  Printf.fprintf oc "{p:%d; rx:%a acts:%a nt: %a}%!" 
-    rr.prio so rr.rx (List.print print_action) rr.act so rr.nt
+  Printf.fprintf oc "{p:%a; rx:%a acts:%a nt: %a}%!" 
+    (List.print Int.print) rr.prio so rr.rx (List.print print_action) rr.act so rr.nt
+
+let print_reg_rules oc = function
+  | [r] -> Pair.print (print_varmap print_pred) print_reg_rule oc r
+  | l -> List.print ~first:"\n#  " ~sep:"\n#  " ~last:"\n" (Pair.print (print_varmap print_pred) print_reg_rule) oc l
 
 let print_reg_ca oc (ca: regular_grammar) = 
-  Map.print String.print (Pair.print (print_varmap print_pred) print_reg_rule |> List.print ~first:"\n  " ~sep:"\n  " ~last:"\n") oc ca;
+  Map.print String.print print_reg_rules oc ca;
   fprintf oc "Total: %d states\n" (Map.fold (fun _ x -> x+1) ca 0)
 
 let print_iaction oc (i,e) = fprintf oc "(%d) := %a" i (print_a_exp ("(" ^ string_of_int i ^ ")")) e
@@ -67,14 +71,14 @@ let print_ipred oc (i,e) = print_p_exp (string_of_int i) oc e
 let print_opt_rule oc iirr =
   let so = Option.print String.print in
   let io = Option.print Int.print in
-  Printf.fprintf oc "{p:%d; rx:%a acts:%a nt: %a}%!" 
-    iirr.prio so iirr.rx (List.print print_iaction) iirr.act io iirr.nt
+  Printf.fprintf oc "{p:%a; rx:%a acts:%a nt: %a}%!" 
+    (List.print Int.print) iirr.prio so iirr.rx (List.print print_iaction) iirr.act io iirr.nt
   
 let print_rule oc x = Pair.print (List.print print_ipred) print_opt_rule oc x
 
 let print_rules oc = function
   | [r] -> print_rule oc r
-  | l -> List.print ~first:"\n  " ~sep:"\n  " ~last:"\n" print_rule oc l
+  | l -> List.print ~first:"\n#  " ~sep:"\n#  " ~last:"\n" print_rule oc l
 
 let print_reg_ds_ca oc (ca: regular_grammar_arr) = 
   Array.iteri (Regex_dfa.index_print print_rules oc) ca
@@ -99,66 +103,63 @@ let prune_unreachable start rg =
   Map.partition (fun k _ -> Set.mem k !reachable) rg |> fst
 
 let dechain start rg =
-  let is_chain_rule rg = function (_,{rx=Some _; act=[]; nt=Some nt}) -> Map.find nt rg |> List.length = 1 | _ -> false in
-  let merge (p,rx) (p1, rr) = 
-    pred_pred_compose p p1, {rr with rx=Some (Option.map_default (merge_rx rx) rx rr.rx)} in 
+  let is_chain_rule = function (_,{rx=Some _; act=[]; nt=Some _}) -> true | _ -> false in
+  let one_is_single rg nt = function None -> false | Some nt2 -> Map.find nt rg |> List.length = 1 || Map.find nt2 rg |> List.length = 1 in
+  let merge (p,rx,pri) (p1, rr) = 
+    pred_pred_compose p p1, {rr with rx=Some (Option.map_default (merge_rx rx) rx rr.rx); prio = pri @ rr.prio} in 
   let elim_chain_rules rg nt = 
     let rs = Map.find nt rg in
-    let chain_rules, non_chain_rules = List.partition (is_chain_rule rg) rs in
+    let chain_rules, non_chain_rules = List.partition is_chain_rule rs in
     let dechained r = match r with 
-      | (p,{rx=Some rx; nt=Some next}) -> Map.find next rg |> List.map (merge (p, rx))
+      | (p,{rx=Some rx; nt=Some next; prio=pri}) -> Map.find next rg |> List.map (merge (p, rx, pri))
       | _ -> assert false (* not a chain state *)
     in
     let next_rs = List.map dechained chain_rules |> List.flatten in
     Map.add nt (non_chain_rules @ next_rs) rg
   in
-  let find_fixable reg_rs = Map.filter (List.exists (is_chain_rule reg_rs)) reg_rs in
+  let find_fixable reg_rs = Map.filteri (fun nt rs -> List.exists (fun r -> is_chain_rule r && one_is_single reg_rs nt (snd r).nt) rs) reg_rs in
   let rg = ref rg in
   let chain_states = ref (find_fixable !rg) in
   while not (Map.is_empty !chain_states) do
     let nt,_ = Map.choose !chain_states in
-      (*    print_reg_ca stdout !rg;
-	    printf "Merging forward state %s\n" nt; *)
+(*    print_reg_ca stdout !rg;
+    printf "Merging forward state %s\n" nt;  *)
     rg := elim_chain_rules !rg nt |> prune_unreachable start;
     chain_states := find_fixable !rg;
   done;
   !rg
 
 let regularize : grammar -> regular_grammar = fun grammar ->
-  let prio_map rs =
-    let prios = List.map (fun r -> r.priority) rs |> List.sort_unique (List.make_compare Int.compare) in
-    (fun prio -> List.index_of prio prios |> Option.get |> (+) 1)
-  in
-  let make_r prio_map r =  
+  let make_r r =  
     let rec head_tail = function
       | [(Term a, head_act); (Nonterm b, tail_act)] ->  
-	  {prio = prio_map r.priority; 
+	  {prio = r.priority; 
 	   rx   = Some a; 
 	   act  = 
 	      act_act_compose head_act tail_act |> VarMap.enum |> List.of_enum;
 	   nt   = Some b } 
       | [(Term a, head_act)] ->
-	  {prio = prio_map r.priority;
+	  {prio = r.priority;
 	   rx   = Some a;
 	   act  = VarMap.enum head_act |> List.of_enum;
 	   nt   = None}
       | (Term a, head_act) :: (Term b, bhead_act) :: t -> 
 	head_tail ((Term (merge_rx a b), (act_act_compose head_act bhead_act)) :: t)
       | [] ->
-	  {prio = prio_map r.priority;
+	  {prio = r.priority;
 	   rx   = None;
 	   act  = [];
 	   nt   = None } 
-      | [(Nonterm a, head_act)] -> { prio = prio_map r.priority; rx=Some "//"; act=VarMap.enum head_act |> List.of_enum; nt = Some a }
+(*      | [(Nonterm a, head_act)] -> { prio = prio_map r.priority; rx=Some "//"; act=VarMap.enum head_act |> List.of_enum; nt = Some a } *)
       | x -> print_endline (Std.dump x); raise (Non_regular_rule r) 
 	  
     in
     ( r.predicates, (head_tail r.expression ) )
   in 
   let make_regular_g g = 
-    NTMap.enum g.rules |> map (second (fun rs -> List.map (make_r (prio_map rs)) rs)) |> Map.of_enum
+    NTMap.enum g.rules |> map (second (List.map make_r)) |> Map.of_enum
   in 
-  grammar |> normalize_grammar (*|> idle_elimination*) |> make_regular_g ;; 
+  grammar |> normalize_grammar |> idle_elimination |> make_regular_g ;; 
 
 let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) = 
   fun start ca ->
@@ -169,7 +170,7 @@ let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) =
     int_of_nt start |> ignore; (* make sure start state is #0 *)
     let fix_pair_a (v,a) = (int_of_v v, freeze_a a) in
     let fix_pair_p (v,p) = (int_of_v v, freeze_p p) in
-    let fix_rule (r: (string, string) regular_rule) = {r with act = List.map fix_pair_a r.act; nt = Option.map int_of_nt r.nt} in
+    let fix_rule (r: (string, string, 'prio) regular_rule) = {r with act = List.map fix_pair_a r.act; nt = Option.map int_of_nt r.nt} in
     let fix_pred (p:pred) = VarMap.enum p |> Enum.map fix_pair_p |> List.of_enum in
     let pmap = Map.enum ca |> 
 	Enum.map (fun (ca, pro) -> int_of_nt ca, (List.map (fun (p,r) -> fix_pred p, fix_rule r) pro)) in
@@ -186,6 +187,14 @@ let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) =
       print_reg_ds_ca ret; *)
     ret, var_count
 
+
+let flatten_priorities ca =
+  let prio_map rs =
+    let prios = List.map (fun (_p,r) -> r.prio) rs |> List.sort_unique (List.make_compare Int.compare) in
+    (fun prio -> List.index_of prio prios |> Option.get |> (+) 1)
+  in
+  let fix_pri m (p,r) = p,{r with prio = m r.prio} in
+  Array.map (fun rs -> List.map (fix_pri (prio_map rs)) rs) ca
 
 (* sets [var] to the result of [act] in the state in [acc] *)
 
