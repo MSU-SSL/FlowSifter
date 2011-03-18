@@ -28,14 +28,14 @@ type str_spec_t = str_rule list
 
 open ParsedPCFG
 
-type ('a, 'b) regular_rule = {prio : int; rx : string option;
+type ('a, 'b, 'pri) regular_rule = {prio : 'pri; rx : string option;
 		     act: ('a * a_exp) list; nt : 'b option}
 type pred = p_exp VarMap.t
-type regular_grammar = (string, (pred * (string, string) regular_rule) list) Map.t
+type regular_grammar = (string, (pred * (string, string, int list) regular_rule) list) Map.t
 
 
 type pred_arr = (int * p_exp) list
-type regular_grammar_arr = (pred_arr * (int, int) regular_rule) list array
+type regular_grammar_arr = (pred_arr * (int, int, int list) regular_rule) list array
 
 type compiled_rules = int
 type regular_grammar_opt = (int array -> (string -> int list -> int) -> compiled_rules) array
