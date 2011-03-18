@@ -26,7 +26,7 @@ let parse_acts s =
 let hook_act act_map l = (Nonterm "@EPSILON", act_map) :: l
 
 let full_parse (nt,predopt,priopt,rules) =
-  let pri = Option.default default_priority priopt in
+  let pri = match priopt with None -> default_priority | Some p -> [p] in
   let preds = match predopt with None -> VarMap.empty | Some str -> parse_preds str in
   let rec expand_term_act acc = function
     | Capture rules, Some func ->
@@ -125,35 +125,40 @@ let dechain start rg =
   !rg
 
 let regularize : grammar -> regular_grammar = fun grammar ->
-  let make_r r =  
+  let prio_map rs =
+    let prios = List.map (fun r -> r.priority) rs |> List.sort_unique (List.make_compare Int.compare) in
+    (fun prio -> List.index_of prio prios |> Option.get |> (+) 1)
+  in
+  let make_r prio_map r =  
     let rec head_tail = function
       | [(Term a, head_act); (Nonterm b, tail_act)] ->  
-	  {prio = r.priority; 
+	  {prio = prio_map r.priority; 
 	   rx   = Some a; 
 	   act  = 
 	      act_act_compose head_act tail_act |> VarMap.enum |> List.of_enum;
 	   nt   = Some b } 
       | [(Term a, head_act)] ->
-	  {prio = r.priority;
+	  {prio = prio_map r.priority;
 	   rx   = Some a;
 	   act  = VarMap.enum head_act |> List.of_enum;
 	   nt   = None}
       | (Term a, head_act) :: (Term b, bhead_act) :: t -> 
 	head_tail ((Term (merge_rx a b), (act_act_compose head_act bhead_act)) :: t)
       | [] ->
-	  {prio = r.priority;
+	  {prio = prio_map r.priority;
 	   rx   = None;
 	   act  = [];
 	   nt   = None } 
-      | _ -> raise (Non_regular_rule r) 
+      | [(Nonterm a, head_act)] -> { prio = prio_map r.priority; rx=Some "//"; act=VarMap.enum head_act |> List.of_enum; nt = Some a }
+      | x -> print_endline (Std.dump x); raise (Non_regular_rule r) 
 	  
     in
     ( r.predicates, (head_tail r.expression ) )
   in 
   let make_regular_g g = 
-    NTMap.enum g.rules |> map (second (List.map make_r)) |> Map.of_enum
+    NTMap.enum g.rules |> map (second (fun rs -> List.map (make_r (prio_map rs)) rs)) |> Map.of_enum
   in 
-  grammar |> normalize_grammar |> idle_elimination |> make_regular_g ;; 
+  grammar |> normalize_grammar (*|> idle_elimination*) |> make_regular_g ;; 
 
 let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) = 
   fun start ca ->
@@ -215,7 +220,7 @@ let verify_grammar g =
 
 let parse_spec_file fn =
   let epsilon_rule = {name="@EPSILON"; predicates=VarMap.empty; 
-		      expression=[]; priority=50} in
+		      expression=[]; priority=[50]} in
   let rules = 
     try 
       Lexing.from_channel (open_in fn)

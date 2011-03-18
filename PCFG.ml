@@ -63,10 +63,10 @@ module Make (Name : Names_t) = struct
       { name : Name.nonterm;
 	predicates : predicates;
 	expression : expression;
-	priority : int
+	priority : int list
       }
 
-  let default_priority = 50
+  let default_priority = [50]
     
   module NT = struct
     type t = Name.nonterm
@@ -329,7 +329,7 @@ module Make (Name : Names_t) = struct
   let print_production oc p =
     Name.print_nonterm oc p.name;
     print_varmap print_pred oc p.predicates;
-    if p.priority <> default_priority then Int.print oc p.priority;
+    if p.priority <> default_priority then List.print Int.print oc p.priority;
     IO.nwrite oc " -> ";
     print_exp oc p.expression
 
@@ -519,11 +519,11 @@ module Make (Name : Names_t) = struct
 	  modify_last_elem (fun (pi,a) -> pi,act_act_compose act a)
 	    new_rule.expression
 	in(* TODO: CHECK PRIORITY OF CREATED RULE *)
-	{ rul with name=rul.name; 
-	    expression = combined_expr;
-	    predicates  = pred_pred_compose 
-	    rul.predicates
-	    (act_pred_compose act new_rule.predicates)
+	{ rul with
+	  expression = combined_expr;
+	  predicates = pred_pred_compose rul.predicates
+	    (act_pred_compose act new_rule.predicates);
+	  priority   = new_rule.priority @ rul.priority;
 	}
       in
       NTMap.find nt_child rules |> List.map hoist_r 
