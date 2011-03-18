@@ -663,7 +663,9 @@ http_uri_abs_path:
 
 RegExMatcher regexmatcher_1("[^]()<>@,;:\\\"/\\[?={} \\t]+");
 RegExMatcher regexmatcher_2("[ \\t]*");
-RegExMatcher regexmatcher_3("\\([]a-zA-Z0-9`~!@#$%^&*()_+=\\[{}\\\\\\|;':\",-./<>?]\\|[^\x01-\x7f]\\)+[ \\t]*");
+///[^\x00-\x1f\x7f ]+/
+RegExMatcher regexmatcher_3("[^\\x00-\\x1f\\x7f ]+[ \\t]*");
+//\\([]a-zA-Z0-9`~!@#$%^&*()_+=\\[{}\\\\\\|;':\",-./<>?]\\|[^\x01-\x7f]\\)+[ \\t]*");
 RegExMatcher regexmatcher_4("[ \\t]*");
 RegExMatcher regexmatcher_5("[ \\t]*");
 RegExMatcher regexmatcher_6("[ \\t]*");
