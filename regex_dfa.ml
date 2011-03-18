@@ -171,6 +171,7 @@ let summarize_dfa ~id oc dfa =
 (*let max_depth = Value.observe_int_ref "Depth (Max)" (ref 0) *)
 
 let build_dfa ?(labels=false) (_,_,_,dec_comp as dec_rules) reg =
+  assert false; (* Don't use this code, instead use Nfa.build_dfa *)
   let new_id = ref (fun _ _ -> assert false) in (* hole for recursion *)
   let id_map = map_id_set ~comp:(Minreg.compare ~dec_comp) ~min_id:0 (fun x id -> !new_id x id) in
   let states = ref Vect.empty in
