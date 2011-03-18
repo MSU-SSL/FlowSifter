@@ -5,6 +5,10 @@ open Minreg
 open Ean_std
 open Regex_dfa
 
+let debug = false
+
+let dtap = if debug then fun f x -> f x; x else fun _f x -> x
+
 type qset = int Set.t
 type 'a nfa_label = {n_label: 'a; mutable epsilon: qset}
 type ('a,'b) nfa_state = ('a nfa_label, qset IMap.t, 'b) state
@@ -14,19 +18,19 @@ let print_ids dfa = iter (fun i -> printf "%d) %d  " i dfa.qs.(i).id) (0 --^ siz
 let print_iset oc s = Set.print ~first:"{" ~sep:"," ~last:"}" Int.print oc s
 
 let print_tmap oc v = IMap.iter_range (print_range Int.print oc) v
-let print_ntmap oc v = IMap.iter_range (print_range (List.print Int.print) oc) v
+let print_ntmap oc v = IMap.iter_range (print_range print_iset oc) v
 
 
 
-let print_nfa write_label write_dec oc dfa =
+let print_nfa write_label write_dec oc nfa =
   let print_q oc {id=id;label={n_label=nlabel; epsilon=eps};map=map;dec=dec} =
-    if id > 0 then fprintf oc "%a %a\n#%a %a\n"
+    if id > 0 then fprintf oc "%a %a\n#%a d:%a\n"
       write_label nlabel
       (fun oc e -> if Set.is_empty e then () else fprintf oc " eps: %a" print_iset e) eps
       print_ntmap map
       write_dec dec;
   in
-  print_fa print_q oc dfa
+  print_fa print_q oc nfa
 
  (** ROUTINE TO FACTOR REGULAR EXPRESSIONS * Reorganizes a regex into
      an almost-DFA-like structure *)
@@ -61,9 +65,13 @@ let factor_rx ~dec_comp = function
     Union (Set.union (factor_rxs ~dec_comp concat) other)
   | x -> x
 
-let factor_rx ~dec_comp x =
-  printf "Pre_factor: %a\n" (Minreg.printp ~dec:true) x;
-  factor_rx ~dec_comp x |> tap (printf "Post_factor: %a\n" (Minreg.printp ~dec:true))
+let factor_rx =
+  if debug then 
+    fun ~dec_comp x -> 
+      printf " Pre_factor: %a\n" (Minreg.printp ~dec:true) x;
+      factor_rx ~dec_comp x |> tap (printf "Post_factor: %a\n" (Minreg.printp ~dec:true))
+  else
+    factor_rx
 
 (** BUILD A NFA FROM A GIVEN REGEXP and some decision handling data *)
 let build_nfa (dec0, of_dec, _, dec_comp) reg =
@@ -121,20 +129,20 @@ let merge_nfa_maps m1 m2 =
   in
   IMap.union merge_dst m1 m2
 
-type hmap_status = Unmade | In_progress | No_change | Done of qset IMap.t * qset
+type 'a hmap_status = Unmade | In_progress | No_change | Done of (qset IMap.t * qset * 'a)
 
-let simplify_nfa nfa = (* remove in-epsilon-only states *)
+let simplify_nfa (dec0, _of_dec, dec_merge, _dec_comp) nfa = (* remove in-epsilon-only states *)
   let remove = Array.create (size nfa) true in
   let set_unremovable d = remove.(d) <- false in
   let set_targets_unremovable q =
     IMap.iter (fun _c dsts -> Set.iter set_unremovable dsts) q.map
   in
   let hoisted_maps = Array.create (size nfa) Unmade in
-  let merge_hmap i (m,e) = match hoisted_maps.(i) with
-    | In_progress -> m,e
+  let merge_hmap i (m,e,d) = match hoisted_maps.(i) with
+    | In_progress -> m,e,d
     | No_change -> let q = nfa.qs.(i) in
-		   (merge_nfa_maps m q.map), (merge_iset e q.label.epsilon)
-    | Done (m2,e2) ->  (merge_nfa_maps m m2), (merge_iset e e2)
+		   (merge_nfa_maps m q.map), (merge_iset e q.label.epsilon), (dec_merge d q.dec)
+    | Done (m2,e2,d2) ->  (merge_nfa_maps m m2), (merge_iset e e2), (dec_merge d d2)
     | Unmade -> assert false
   in
   let rec hoist_removed_targets i =
@@ -152,26 +160,26 @@ let simplify_nfa nfa = (* remove in-epsilon-only states *)
 	  hoisted_maps.(i) <- No_change
 	else begin
 	  Set.iter hoist_removed_targets !to_hoist;
-	  let m,e = Set.fold merge_hmap !to_hoist (nfa.qs.(i).map,eps_keep) in
-	  hoisted_maps.(i) <- Done (m,e)
+	  let med = Set.fold merge_hmap !to_hoist (nfa.qs.(i).map,eps_keep,nfa.qs.(i).dec) in
+	  hoisted_maps.(i) <- Done med
 	end
   in
-  let null_q = {id=(-1); map=IMap.empty; dec=nfa.q0.dec;
+  let null_q = {id=(-1); map=IMap.empty; dec=dec0;
 		label={n_label=nfa.q0.label.n_label; epsilon=Set.empty};}  in
   let q_with_hoisted_map q =
     match hoisted_maps.(q.id),remove.(q.id) with
       | Unmade,_ | In_progress,_ -> assert false
       | _, true -> null_q
       | No_change,false -> q
-      | Done (m,e),false->
-	{q with map = m; label={q.label with epsilon = e}}
+      | Done (m,e,d),false->
+	{q with map = m; label={q.label with epsilon = e}; dec = d}
   in
   (* don't remove start state *)
   remove.(nfa.q0.id) <- false;
   (* mark removable states *)
   Array.iter set_targets_unremovable nfa.qs;
   let num_to_remove = Array.filter identity remove |> Array.length in
-  printf "Simplify_nfa: removing %d of %d nfa states\n" num_to_remove (size nfa);
+  if debug then printf "Simplify_nfa: removing %d of %d nfa states\n" num_to_remove (size nfa); 
   iter hoist_removed_targets (Array.range hoisted_maps);
   map_qs q_with_hoisted_map nfa
 
@@ -195,17 +203,23 @@ let close_transitions nfa =
   in
   map_qs q_with_closed_map nfa
 
+let print_nfa_label _oc _l = ()
+let print_nfa_dec oc d = Std.dump d |> String.print oc
+
 let build_dfa ~labels (dec0, _of_dec, dec_merge, _dec_comp as dec_rules) reg =
   ignore labels;
-  let nfa = build_nfa dec_rules reg |> simplify_nfa |> close_transitions in
-(*  printf "NFA built %.3f (%d states)\n%!" (Sys.time()) (Array.length nfa.qs); *)
-  (* let print_nfa_label oc l = () in
-     let print_nfa_dec oc d = () in
-     printf "NFA: \n%a" (print_nfa print_nfa_label print_nfa_dec) nfa;
-     printf "q0: %d\n" nfa.q0.id; *)
+  let nfa = build_nfa dec_rules reg 
+		   |> dtap (printf "NFA0: \n%a" (print_nfa print_nfa_label print_nfa_dec)) 
+		   |> simplify_nfa dec_rules
+		   |> dtap (printf "NFA1: \n%a" (print_nfa print_nfa_label print_nfa_dec)) 
+		   |> close_transitions in
+  if debug then (
+    printf "NFA built %.3f (%d states)\n%!" (Sys.time()) (Array.length nfa.qs); 
+    printf "NFA2: \n%a" (print_nfa print_nfa_label print_nfa_dec) nfa;
+    printf "q0: %d\n" nfa.q0.id;  
+  );
   let states = ref Vect.empty in
   let make_node get_id ns id =
-(*    eprintf "Making state %d for %a\n%!" id  ns; *)
     (* get the transitions for that character from the nfa *)
 (*    if id mod 100 = 1 then eprintf "N %d @ %.2f\n%!" id (Sys.time ()); *)
     let map =
