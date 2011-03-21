@@ -11,7 +11,7 @@ type parser_t = [ `Null | `Sift | `Pac ]
 let p_to_string = function `Null -> "Null" | `Sift -> "Sift" | `Pac -> "Pac "
 
 type mode = Pcap | Mux | Gen
-type main = Parse | Stat
+type main = Parse | Stat | Diff
 (*** GLOBAL CONFIGURATION ***)
 let check_mem_per_packet = ref false
 let parse_by_flow = ref false
@@ -24,7 +24,7 @@ let mode = ref Pcap
 let min_lev = ref 0
 let gen_count = ref 0
 let packet_skip = ref 0
-let packet_limit = ref max_int
+let packet_limit = ref (max_int/2)
 let main = ref Parse
 (*** ARGUMENT HANDLING ***)
 
@@ -40,9 +40,11 @@ let args =
      "Assemble the pcap files into flows"); 
     (Both ('m', "mux"), [set_mode Mux], [], 
      "Mux the given flow files into a simulated pcap");
+    (Both ('d', "diff"), [Unit (fun () -> main := Diff)], [],
+     "Compare flowsifter with *PAC on events");
     (Name "stat", [Unit (fun () -> main := Stat)], [], 
      "Print flow statistics on the input packets only");
-    (Both ('g', "gen"), [set_mode Gen; Int_var min_lev; Int_var gen_count], [],
+    (Both ('g', "gen"), [set_mode Gen; Int_var min_lev; Int_var packet_limit], [],
      "Generate SOAP traffic to parse (need min_lev, count)");
     (Both ('n', "rep-cnt"), [Int_var rep_cnt], [],
      "Set the number of repetitions to do");
@@ -149,6 +151,16 @@ let mem_gc () = (get_ocaml_mem() - !mem0gc)
 
 let run_id = ref ""
 
+let ediff = ref 0
+
+
+let is_printable c = c = '\n' || (Char.code c >= 32 && Char.code c <= 126) 
+let clean_unprintable s = String.map (fun x -> if is_printable x then x else '.') s 
+let print_ip oc x = 
+  let x = (Int32.to_int x) in
+  fprintf oc "%d.%d.%d.%d" (x lsr 24 land 255) (x lsr 16 land 255) (x lsr 8 land 255) (x land 255)
+let print_flow oc (a,b,c,d) = fprintf oc "(%a,%a,%d,%d)" print_ip a print_ip b c d
+
 let run pr = 
 
   let ht = Hashtbl.create 1000 in
@@ -172,7 +184,7 @@ let run pr =
     mem_ctr := make_counter 1;
     let tsize = float (!trace_len * 8) /. 1024. /. 1024. /. 1024. in
     let gbps = 
-      if pr.id = "null" 
+      if pr.p_type = `Null
       then ( null_t := time; tsize /. time )
       else tsize /. (time -. !null_t)
     in
@@ -182,18 +194,9 @@ let run pr =
       | `Sift -> (!Prog_parse.fail_drop / (!rep_cnt + 2) * 100) /! !trace_len in
     if !check_mem_per_packet then printf "#";
     printf "%s\t%s\t%d\t%4.3f\t" !run_id pr.id round time;
-    if Ns_types.debug_ca then
-      printf "%d\n%!" (pr.get_event_count()) 
-    else
-      printf "\t%d\t%.2f\t%d\t%d\t%d\t%.1f\t%.1f\n%!" !trace_len gbps (mem()) !conc_flows (pr.get_event_count()) pct_parsed dropped
+    printf "\t%d\t%.2f\t%d\t%d\t%d\t%.1f\t%.1f\n%!" 
+      !trace_len gbps (mem()) !conc_flows (pr.get_event_count()) pct_parsed dropped
   in
-
-  let is_printable c = c = '\n' || (Char.code c >= 32 && Char.code c <= 126) in
-  let clean_unprintable s = String.map (fun x -> if is_printable x then x else '.') s in
-  let print_ip oc x = 
-    let x = (Int32.to_int x) in
-    fprintf oc "%d.%d.%d.%d" (x lsr 24 land 255) (x lsr 16 land 255) (x lsr 8 land 255) (x land 255) in
-  let print_flow oc (a,b,c,d) = fprintf oc "(%a,%a,%d,%d)" print_ip a print_ip b c d in
 
   let get_dir (_,_,sp,_dp) = if sp = 80 then Downflow else Upflow in
 
@@ -212,11 +215,9 @@ let run pr =
     if !check_mem_per_packet && !mem0 > 0 then (
       printf "%s %s %d %d %d\n" !run_id pr.id !packet_ctr !conc_flows (mem ());
     );
-    if !packet_limit < max_int then (
-      let events = pr.get_event_count () in
-      printf "%d " (events - !last_events);
-      last_events := events;
-    );
+    let events = pr.get_event_count () in
+    ediff := events - !last_events;
+    last_events := events;
     if fin then (
       decr conc_flows;
       Hashtbl.remove ht flow; pr.delete_parser p;
@@ -227,42 +228,59 @@ let run pr =
 
 
 (*** RUN FUNCTION IN A LOOP AND INSTRUMENT ***)
+let main_check_mem (_reset_parsers, _post_round, f) _rep_cnt xs =
+  Gc.compact ();
+  mem0gc := get_ocaml_mem (); mem0 := get_vmsize (); 
+  Array.iter f xs
+
+let main_debug (reset_parsers, post_round, f) rep_cnt xs =
+  Gc.compact ();
+  Array.iter f xs;
+  printf "\n";
+  post_round rep_cnt 0.;
+  reset_parsers ()
+
 let main_loop (reset_parsers, post_round, f) rep_cnt xs =
-  if !check_mem_per_packet then begin
-    mem0gc := get_ocaml_mem (); mem0 := get_vmsize (); 
-    Array.iter f xs;
-  end else if Ns_types.debug_ca || !packet_limit < max_int then begin
-    Array.iter f xs;
-    printf "\n";
-    post_round rep_cnt 0.;
-    reset_parsers ();
-  end else begin
+  Array.iter f xs; 
+  reset_parsers ();
+  let tpre = Sys.time () in
+  for round_num = 1 to rep_cnt do
     Array.iter f xs; 
     reset_parsers ();
-    let tpre = Sys.time () in
-    for round_num = 1 to rep_cnt do
-      Array.iter f xs; 
-      reset_parsers ();
-    done;
-    let time = (Sys.time () -. tpre) /. float rep_cnt in
-    mem0gc := get_ocaml_mem (); mem0 := get_vmsize (); 
-    Array.iter f xs;
-    post_round rep_cnt time;
-    reset_parsers ();
-  end; ()
+  done;
+  let time = (Sys.time () -. tpre) /. float rep_cnt in
+  Gc.compact ();
+  mem0gc := get_ocaml_mem (); mem0 := get_vmsize (); 
+  Array.iter f xs;
+  post_round rep_cnt time;
+  reset_parsers ()
 
-
-let print_header () = 
-  Gc.compact()
-(*  let t0 = Sys.time () in*)
- (* printf "# Init time: %4.2f\n" t0; *)
-(*  printf "parser\tround\ttime\tmem\tparsers\tleak\n%!" *)
 
 (*** PARSER STRUCTURE ***)
 let get_fs = function
   | `Null -> run null_p
   | `Sift -> run sift_p
   | `Pac -> run pac_p
+
+let diff_loop xs =
+  let (_,_,f1) = get_fs `Sift and (_,_,f2) = get_fs `Pac in
+  let rec loop i = 
+    if i >= Array.length xs then () else begin
+      f1 xs.(i); 
+      let e1 = !ediff in
+      f2 xs.(i);
+      if e1 <> !ediff then decr packet_skip;
+      if e1 <> !ediff && !packet_skip < 0 then begin
+	let (flow, data, _fin) = xs.(i) in
+	Printf.printf "\nP%a @ pos: %d:\n%s\n" print_flow flow i (clean_unprintable data);
+	Printf.printf "Sift: %d events, PAC: %d events\n" e1 !ediff;
+      end;
+      loop (i+1)
+    end
+  in
+  loop 0
+  
+
 
 let expand_dirs e = 
   let rec exp fn = 
@@ -290,31 +308,24 @@ let main () =
       sprintf "Soap %d" !min_lev
     else 
       String.concat "," (List.map filename !fns);
-(*  let fns = List.enum !fns |> expand_dirs in *)
-  let main_loops chunks =
-    if chunks = [| |] then failwith "No packets to parse";
-    print_header ();
-    let run p = main_loop (get_fs p) !rep_cnt chunks in
-    if !baseline then run `Null;
-    List.iter run !parsers;
-  in
-  let stat chunks = 
-    printf "%s: %d packets, total length %d\n" !run_id (Array.length chunks) !trace_len
-  in
   let packet_enum = 
     match !parse_by_flow, !mode with
       |	true, Pcap ->  List.enum !fns |> Pcap.assemble (!packet_skip + !packet_limit)
       | false, Pcap -> List.enum !fns |> Pcap.pre_parse
       | true, Mux -> List.enum !fns |> Pcap.make_flows
       | false, Mux ->  List.enum !fns |> Pcap.make_packets_files
-      | true, Gen -> Enum.from gen_pkt |> Enum.take !gen_count |> Pcap.make_flows
-      | false, Gen -> Enum.from gen_pkt |> Enum.take !gen_count |> Pcap.make_packets
+      | true, Gen -> Enum.from gen_pkt |> Pcap.make_flows
+      | false, Gen -> Enum.from gen_pkt |> Pcap.make_packets
   in
   let packets = packet_enum |> Enum.skip !packet_skip |> Enum.take !packet_limit |> Array.of_enum in
   trace_len := trace_size packets;
+  if packets = [| |] then failwith "No packets";
+  let run l p = l (get_fs p) !rep_cnt packets in
   match !main with 
-    | Parse -> main_loops packets 
-    | Stat -> stat packets
-
+    | Stat  -> printf "%s: %d packets, total length %d\n" !run_id (Array.length packets) !trace_len
+    | Diff  -> diff_loop packets
+    | _ when !check_mem_per_packet -> List.iter (run main_check_mem) !parsers
+    | _ when Ns_types.debug_ca -> List.iter (run main_debug) !parsers
+    | Parse -> if !baseline then run main_loop `Null; List.iter (run main_loop) !parsers
 
 let () = main ()
