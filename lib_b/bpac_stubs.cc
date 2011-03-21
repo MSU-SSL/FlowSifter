@@ -33,7 +33,7 @@ extern "C" value add_data (value v_prsr, value v_dir, value v_str) {
   try {
     parser->NewData(Bool_val(v_dir), (binpac::uint8*) str, (binpac::uint8*) end);
   } catch ( binpac::Exception const &e ) {
-    printf("Binpac raised: %s\n", e.c_msg());
+    //    printf("Binpac raised: %s\n", e.c_msg());
   }
 
   CAMLreturn (Val_unit);
