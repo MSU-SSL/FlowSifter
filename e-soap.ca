@@ -1,20 +1,18 @@
 # HTTP REPLY
 HTTP1 -> /HTTP\/[0-9]+\.[0-9]+ / TEXT CRLF HEADERS1 BODY1 HTTP1;
 # HTTP REQUEST
-HTTP1 99 -> NONWS [x := token(0)] LWS token( URL ) LWS VERSION CRLF 
-	    HEADERS1 HTTP1;
+HTTP1 99 -> NONWS LWS URL LWS VERSION CRLF HEADERS1 BODY1 HTTP1;
 
 HEADERS1 -> HEADER1 CRLF HEADERS1 ;
 HEADERS1 -> CRLF;
 
-HEADER1 1 -> token ( /(?i:Content-length):\s*/ ) // [bodylength := getnum(); cv := token(-1) ] ;
-HEADER1 99 -> token ( /[^\x00-\x1f()<>@,;:\\"\/[]?={} ]+:\s*/ ) token(TEXT DEFAULTVALUE1) ;
+HEADER1 1 -> /(?i:Content-length):\s*/ [ bodylength := getnum() ] ;
+HEADER1 99 -> /[^\x00-\x1f()<>@,;:\\"\/[]?={} ]+:\s*/ TEXT DEFAULTVALUE1 ;
 
 DEFAULTVALUE1 -> ;
 DEFAULTVALUE1 -> LWS TEXT DEFAULTVALUE1 ;
 
 BODY1 -> XML1;
-#BODY [xml == 0] -> /./ [clen := skip( clen - 1 )];
 
 ###
 
