@@ -194,7 +194,7 @@ let run pr =
       | `Sift -> (!Prog_parse.fail_drop / (!rep_cnt + 2) * 100) /! !trace_len in
     if !check_mem_per_packet then printf "#";
     printf "%s\t%s\t%d\t%4.3f\t" !run_id pr.id round time;
-    printf "\t%d\t%.2f\t%d\t%d\t%d\t%.1f\t%.1f\n%!" 
+    printf "%d\t%.2f\t%d\t%d\t%d\t%.1f\t%.1f\n%!" 
       !trace_len gbps (mem()) !conc_flows (pr.get_event_count()) pct_parsed dropped
   in
 
@@ -308,14 +308,15 @@ let main () =
       sprintf "Soap %d" !min_lev
     else 
       String.concat "," (List.map filename !fns);
+  let gen_count = !packet_skip + !packet_limit in
   let packet_enum = 
     match !parse_by_flow, !mode with
-      |	true, Pcap ->  List.enum !fns |> Pcap.assemble (!packet_skip + !packet_limit)
+      |	true, Pcap ->  List.enum !fns |> Pcap.assemble gen_count
       | false, Pcap -> List.enum !fns |> Pcap.pre_parse
       | true, Mux -> List.enum !fns |> Pcap.make_flows
       | false, Mux ->  List.enum !fns |> Pcap.make_packets_files
-      | true, Gen -> Enum.from gen_pkt |> Pcap.make_flows
-      | false, Gen -> Enum.from gen_pkt |> Pcap.make_packets
+      | true, Gen -> Enum.from gen_pkt |> Enum.take gen_count |> Pcap.make_flows
+      | false, Gen -> Enum.from gen_pkt |> Enum.take gen_count |> Pcap.make_packets
   in
   let packets = packet_enum |> Enum.skip !packet_skip |> Enum.take !packet_limit |> Array.of_enum in
   trace_len := trace_size packets;
