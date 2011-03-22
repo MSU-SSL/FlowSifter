@@ -92,7 +92,7 @@ let merge_rx r s =
 let prune_unreachable start rg =
   let reachable = ref (Set.singleton start) in
   let c = ref !reachable in
-  let close s = Set.iter (fun nt -> List.iter (fun (_,{nt=next}) -> Option.may (fun x -> c := Set.add x !c) next) (Map.find nt rg)) s in
+  let close s = Set.iter (fun nt -> List.iter (fun (_,{nt=next}) -> Option.may (fun x -> c := Set.add x !c) next) rg.(nt)) s in
   close !reachable;
   while Set.is_empty !c |> not do
     let new_rs = Set.diff !c !reachable in
@@ -100,34 +100,7 @@ let prune_unreachable start rg =
     c := Set.empty; 
     close new_rs; 
   done;
-  Map.partition (fun k _ -> Set.mem k !reachable) rg |> fst
-
-let dechain start rg =
-  let is_chain_rule = function (_,{rx=Some _; act=[]; nt=Some _}) -> true | _ -> false in
-  let one_is_single rg nt = function None -> false | Some nt2 -> Map.find nt rg |> List.length = 1 || Map.find nt2 rg |> List.length = 1 in
-  let merge (p,rx,pri) (p1, rr) = 
-    pred_pred_compose p p1, {rr with rx=Some (Option.map_default (merge_rx rx) rx rr.rx); prio = pri @ rr.prio} in 
-  let elim_chain_rules rg nt = 
-    let rs = Map.find nt rg in
-    let chain_rules, non_chain_rules = List.partition is_chain_rule rs in
-    let dechained r = match r with 
-      | (p,{rx=Some rx; nt=Some next; prio=pri}) -> Map.find next rg |> List.map (merge (p, rx, pri))
-      | _ -> assert false (* not a chain state *)
-    in
-    let next_rs = List.map dechained chain_rules |> List.flatten in
-    Map.add nt (non_chain_rules @ next_rs) rg
-  in
-  let find_fixable reg_rs = Map.filteri (fun nt rs -> List.exists (fun r -> is_chain_rule r && one_is_single reg_rs nt (snd r).nt) rs) reg_rs in
-  let rg = ref rg in
-  let chain_states = ref (find_fixable !rg) in
-  while not (Map.is_empty !chain_states) do
-    let nt,_ = Map.choose !chain_states in
-(*    print_reg_ca stdout !rg;
-    printf "Merging forward state %s\n" nt;  *)
-    rg := elim_chain_rules !rg nt |> prune_unreachable start;
-    chain_states := find_fixable !rg;
-  done;
-  !rg
+  Array.range rg |> Enum.iter (fun i -> if not (Set.mem i !reachable) then rg.(i) <- [])
 
 let regularize : grammar -> regular_grammar = fun grammar ->
   let make_r r =  
@@ -187,6 +160,44 @@ let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) =
       print_reg_ds_ca ret; *)
     ret, var_count
 
+let compose_preds p1 p2 =
+  let pred_order (v1,_exp) (v2,_exp2) = Int.compare v1 v2 in
+  let p1 = List.sort ~cmp:pred_order p1 in
+  let p2 = List.sort ~cmp:pred_order p2 in
+  let rec merge = function
+    | [], x | x, [] -> x
+    | (v1,_ as a)::t1, ((v2,_)::_ as b) when v1 < v2 -> a::(merge (t1,b))
+    | ((v1,_)::_ as a), ((v2,_ as b)::t2) when v1 > v2 -> b::(merge (a,t2))
+    | (v1,e1)::t1, ((_v2,e2)::t2) (*when v1 = v2*) -> (v1, p_compose e1 e2)::(merge (t1,t2))
+  in
+  merge (p1,p2)
+
+let dechain (rg: regular_grammar_arr) =
+  let is_chain_rule rs = function (_,{rx=Some _; act=[]; nt=Some nt}) -> List.length rs = 1 || List.length rg.(nt) = 1 | _ -> false in
+  let merge p rx pri (p1, rr) = 
+    compose_preds p p1, {rr with rx=Some (Option.map_default (merge_rx rx) rx rr.rx); prio = pri @ rr.prio} 
+  in 
+  let can_improve rs = List.exists (is_chain_rule rs) rs in
+  let elim_chain_rules nt = 
+    let dechained = function
+      | (p, {rx=Some rx; act=[]; prio=pri; nt=Some next}) when List.length rg.(nt) = 1 || List.length rg.(next) = 1 ->
+	List.map (merge p rx pri) rg.(next)
+      | r -> [r] (* not an improvable rule *)
+    in
+    rg.(nt) <- List.map dechained rg.(nt) |> List.flatten
+  in
+  let find_fixable () = Array.Exceptionless.findi can_improve rg in
+  let chain_state = ref (find_fixable ()) in
+  while !chain_state <> None do
+    let nt = Option.get !chain_state in
+(*    print_reg_ds_ca stdout rg;
+    printf "Merging forward state %d\n%!" nt;    *)
+    elim_chain_rules nt;
+    prune_unreachable 0 rg;
+    chain_state := find_fixable ()
+  done;
+(*printf "Done dechaining\n%!";*)
+  rg
 
 let flatten_priorities ca =
   let prio_map rs =
