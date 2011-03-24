@@ -154,14 +154,10 @@ let rec union_elim acc = function
     [] -> List.sort_unique Pervasives.compare acc
   | Union x :: t -> union_elim acc (x@t)
   | h :: t -> union_elim (h::acc) t
-
-
 let rec concat_elim acc = function
     [] -> List.rev acc
   | Concat x :: t -> concat_elim acc (x@t)
   | h :: t -> concat_elim (h::acc) t
-
-
 let rec reduce = function
   | Union [x] -> reduce x
   | Union l -> Union (union_elim [] l |> List.map reduce)
@@ -171,7 +167,6 @@ let rec reduce = function
   | Kleene x -> Kleene (reduce x)
   | Value _ as e -> e
   | Accept _ as e -> e 
-
 
 let rec print_regex printa ~root oc = function 
   | x when x == root -> IO.nwrite oc "ROOT"
