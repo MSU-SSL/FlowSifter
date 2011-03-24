@@ -6,6 +6,7 @@ namespace binpac
 {
 
   int match_events = 0;
+  int debug = 1;
 
 void printData(const char * dataBegin, const char * dataEnd)
 {
@@ -20,9 +21,12 @@ void printData(const char * dataBegin, const char * dataEnd)
 int matchHTTPMethod(FastParser * parser, const char * dataBegin, const char * dataEnd, bool isFinished)
 {
   match_events++;
-  //  printf("matchHTTPMethod: ");
-  //  printData(dataBegin, dataEnd);
-  //  printf("\n");
+  if (debug) {
+    printf("matchHTTPMethod: ");
+    printData(dataBegin, dataEnd);
+    printf("\n");
+    fflush(stdout);
+  }
 
     /*    
     HTTPAnalyzer * analyzer = (HTTPAnalyzer *)parser->getParam();
@@ -56,9 +60,12 @@ int matchHTTPMethod(FastParser * parser, const char * dataBegin, const char * da
 int matchHTTPUri(FastParser * parser, const char * dataBegin, const char * dataEnd, bool isFinished)
 {
   match_events++;
-  //      printf("matchHTTPUri: ");
-  //  printData(dataBegin, dataEnd);
-  //  printf("\n");
+  if (debug) {
+    printf("matchHTTPUri: ");
+    printData(dataBegin, dataEnd);
+    printf("\n");
+    fflush(stdout);
+  }
     /*    
     HTTPAnalyzer * analyzer = (HTTPAnalyzer *)parser->getParam();
         
@@ -89,10 +96,12 @@ int matchHTTPUri(FastParser * parser, const char * dataBegin, const char * dataE
 int matchHTTPHeaderName(FastParser * parser, const char * dataBegin, const char * dataEnd, bool isFinished)
 {
   match_events++;
-  // printf("matchHTTPHeaderName: ");
-  //  printData(dataBegin, dataEnd);
-  //  printf("\n");
-
+  if (debug) {
+    printf("matchHTTPHeaderName: ");
+    printData(dataBegin, dataEnd);
+    printf("\n");
+    fflush(stdout);
+  }
     /*    
     HTTPAnalyzer * analyzer = (HTTPAnalyzer *)parser->getParam();
     
@@ -123,10 +132,12 @@ int matchHTTPHeaderName(FastParser * parser, const char * dataBegin, const char 
 int matchHTTPHeaderValue(FastParser * parser, const char * dataBegin, const char * dataEnd, bool isFinished)
 {
   match_events++;
-  //      printf("matchHTTPHeaderValue: ");
-  //  printData(dataBegin, dataEnd);
-  //  printf("\n");
-
+  if (debug) {
+    printf("matchHTTPHeaderValue: ");
+    printData(dataBegin, dataEnd);
+    printf("\n");
+    fflush(stdout);
+  }
     /*    
     if(parseOnly->count > 0)
     {
