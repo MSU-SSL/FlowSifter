@@ -153,7 +153,6 @@ let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) =
     let var_count = v_counter () in
     let ret = Array.create nt_count (Obj.magic 0) in
     Enum.iter (fun (ca, pro) -> ret.(ca) <- pro) pmap;
-    if debug_ca then print_reg_ds_ca stdout ret;
 (*    printf (* "varmap: %a\nca_statemap: %a\n "*)"ca: %a\n"
 (*      (Hashtbl.print String.print Int.print) var_ht
       (Hashtbl.print String.print Int.print) ca_ht*)
@@ -191,12 +190,13 @@ let dechain (rg: regular_grammar_arr) =
   while !chain_state <> None do
     let nt = Option.get !chain_state in
 (*    print_reg_ds_ca stdout rg;
-    printf "Merging forward state %d\n%!" nt;    *)
+    printf "Merging forward state %d\n%!" nt;     *)
     elim_chain_rules nt;
     prune_unreachable 0 rg;
     chain_state := find_fixable ()
   done;
-(*printf "Done dechaining\n%!";*)
+(*  printf "Done dechaining\n%!";*)
+  if debug_ca then print_reg_ds_ca stdout rg;
   rg
 
 let flatten_priorities ca =
