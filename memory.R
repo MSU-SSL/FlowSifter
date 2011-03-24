@@ -8,7 +8,7 @@ picheight=3.5
 picwidth=4.0
 
 ### MEMORY vs. SPEED
-ggplot() + theme_bw() + xlab("Parsing Speed (gbps)") + ylab("Memory used(B)") + scale_y_log10() + geom_point(data=d1, aes(shape=parser, x=gbps, y=mem), size=1.5) + opts(legend.position=c(0.8,0.7))
+ggplot() + theme_bw() + xlab("\nParsing Speed (gbps)") + ylab("Memory used(B)") + scale_y_log10() + geom_point(data=d1, aes(shape=parser, x=gbps, y=mem), size=1.5) + opts(legend.position=c(0.8,0.7))
 
 ggsave("overall.pdf", height=picheight, width=picwidth); ggsave("overall.eps", height=picheight, width=picwidth); ggsave("overall.png", height=picheight, width=picwidth, dpi=300)
 
