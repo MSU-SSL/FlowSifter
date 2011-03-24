@@ -76,30 +76,31 @@ let null_env = (0,ref 0, "")
 
 (* get the decisions from a CA for the given NT(q) and with predicates
    satisfying vars *)
+
+let get_rules_bits_aux var_sat pr_list =
+  let pred_satisfied pred = List.for_all var_sat pred in
+  let bitvect a (p,_) = if pred_satisfied p then (a lsl 1) + 1 else a lsl 1 in
+  List.fold_left bitvect 0 pr_list
+
 let get_rules_bits state pr_list vars =
   let var_satisfied (v,p) = val_p_exp state vars.(v) p in
-  let pred_satisfied pred = List.for_all var_satisfied pred in
-  List.fold_left (fun acc (p,_) -> let a = acc lsl 1 in if pred_satisfied p then a + 1 else a ) 0 pr_list
+  get_rules_bits_aux var_satisfied pr_list 
 
 let get_rules_bits_uni state pr_list i =
   let var_satisfied (_v,p) = val_p_exp state i p in
-  let pred_satisfied pred = List.for_all var_satisfied pred in
-  List.fold_left (fun acc (p,_) -> let a = acc lsl 1 in if pred_satisfied p then a + 1 else a ) 0 pr_list
+  get_rules_bits_aux var_satisfied pr_list 
 
 let is_univariate_predicate rs =
   let v = ref None in
   let is_v x = match !v with None -> v := Some x; true | Some v -> v = x in
   let test (p,_) = List.for_all (fun (v,pexp) -> is_v v && is_clean_p pexp) p in
-  if List.for_all test rs then 
-    !v
-  else
-    None
+  if List.for_all test rs then !v else None
 
 let get_rules_v i rules =
   let var_satisfied (_,p) = val_p_exp null_env i p in
   let pred_satisfied pred = List.for_all var_satisfied pred in
   List.filter_map (fun (p,e) -> if pred_satisfied p then Some e else None) rules
-  
+
 let rec get_comb_aux i = function
   | [] -> []
   | (_p,rs)::t when i land 1 = 1 -> rs :: get_comb_aux (i lsr 1) t
@@ -119,15 +120,16 @@ let optimize_preds ca =
       if Ns_types.debug_ca then 
 	printf "#DFA: %d\n%a\n" _i (Regex_dfa.print_array_dfa (fun oc {item=(_,q)} -> Int.print oc q)) dfa;
       (fun _ _ -> dfa)
-    else match is_univariate_predicate rules with
+    else 
+      let cas = Array.init (1 lsl (List.length rules)) 
+	(fun i -> get_comb i rules |> compile_ca) 
+      in
+      match is_univariate_predicate rules with
 	Some v -> 
-	  let cas = Array.init (1 lsl (List.length rules)) (fun i -> get_comb i rules |> compile_ca) in
-	  let rule_map = 
-	    Array.init (var_max+1) (fun i -> cas.(get_rules_bits_uni null_env rules i))
-	  in
+	  let get_rs i = cas.(get_rules_bits_uni null_env rules i) in
+	  let rule_map = Array.init (var_max+1) get_rs in
 	  (fun vars _ -> rule_map.(vars.(v) land var_max))
       | None ->  
-	let cas = Array.init (1 lsl (List.length rules)) (fun _ -> assert false) in
 	(fun vars parse_state ->
 	  cas.(get_rules_bits parse_state rules vars) )
   in
