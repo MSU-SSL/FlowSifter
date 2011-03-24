@@ -2,13 +2,17 @@
 HTTP -> HTTP_START HEADERS BODY HTTP;
 HTTP -> ;
 
-CRLF -> /\r?\n/ ;
-LWS -> /(\r?\n)?[ \t]+/ ;
-NONWS -> /[^\x00-\x1f\x7f ]+/ ; # excludes cr, lf, tab, space
-TEXT -> /[^\x00-\x1f\x7f]+/ ;   # excludes cr, lf, tab
-TOKEN -> /[^\x00-\x1f()<>@,;:\\"\/[]?={} ]+/ ; # excludes CTLs and separators
+CRLF -> /\r?\n/;
+SP -> /\x20/;
+LWS -> /(\r?\n)?[ \t]+/;
+CHAR -> /[\x00-\x7f]/; #ascii 0-127
+NONWS -> /[^\x00-\x1f\x7f ]+/; # excludes cr, lf, tab, space
+TEXT -> /[^\x00-\x1f\x7f]+/;   # excludes cr, lf, tab
+QDTEXT -> /[^\x00-\x1f\x7f"]+/;   # excludes cr, lf, tab, quote
+TOKEN -> /[^\x00-\x1f()<>@,;:\\"\/[]?={} ]+/; # excludes CTLs and separators
+STATUS -> /\d\d\d/;
+URL -> NONWS;
 
-HTTP_START -> /HTTP/ TEXT CRLF ;
 #HTTP_START -> /GET/ REQUESTPART ;
 #HTTP_START -> /POST/ REQUESTPART ;
 #HTTP_START -> /PUT/ REQUESTPART ;
@@ -17,24 +21,53 @@ HTTP_START -> /HTTP/ TEXT CRLF ;
 #HTTP_START -> /DELETE/ REQUESTPART ;
 #HTTP_START -> /TRACE/ REQUESTPART ;
 #HTTP_START -> /CONNECT/ REQUESTPART ;
-HTTP_START 99 -> NONWS LWS URL LWS VERSION CRLF;
 
-URL -> NONWS ;
+#Response
+HTTP_START -> VERSION SP STATUS SP TEXT CRLF;
+#Request
+HTTP_START 99 -> TOKEN SP URL SP VERSION CRLF;
 
-VERSION -> NONWS ;
-VERSION -> ;
+VERSION 1 -> /HTTP\/1\.0/ [httpversion := 0];
+VERSION 1 -> /HTTP\/1\.1/ [httpversion := 1];
+VERSION 99 -> /HTTP\/[0-9]+\.[0-9]+/;
 
-HEADERS -> HEADER CRLF HEADERS ;
-HEADERS -> ;
+HEADERS -> HEADER CRLF HEADERS;
+HEADERS -> CRLF;
 
 HEADER -> TOKEN /:/ VALUE;
-HEADER -> /(?i:Content-Length):/ LWS [bodyend := getnum()] ;
+HEADER -> /(?i:Content-Length):/ LWS [bodylength := getnum()];
+HEADER -> /(?i:Transfer-Encoding:\s+chunked/ [bodychunked := 1];
 
-VALUE -> TEXT ;
-VALUE -> TEXT LWS VALUE ;
+VALUE -> TEXT VALUE;
+VALUE -> LWS VALUE;
+VALUE -> ;
+
+BODY [ bodylength > 0 ] -> // [bodylength := skip(bodylength)];
+BODY [ bodychunked == 1 ] -> CHUNKED_BODY;
+BODY [ httpversion == 0; bodylength == 0 ] -> // [bodylength := skip(9999999)];
 
 BODY_XML -> CRLF [bodyend := bodyend + pos()] XML;
-BODY -> CRLF [bodyend := skip(bodyend)];
+
+CHUNKED_BODY -> CHUNK CHUNKED_BODY;
+CHUNKED_BODY -> LAST_CHUNK TRAILERS CRLF;
+
+CHUNK -> // [chunksize := gethex()] CHUNK_EXTENSION CRLF [chunksize := skip(chunksize)] CRLF ;
+LAST_CHUNK -> /0/ CHUNK_EXTENSION CRLF ;
+
+CHUNK_EXTENSION -> /;/ TOKEN CHUNK_EXTENSION ;
+CHUNK_EXTENSION -> /;/ TOKEN /=/ TOKEN CHUNK_EXTENSION ;
+CHUNK_EXTENSION -> /;/ TOKEN /=/ QUOTED_STRING CHUNK_EXTENSION ;
+CHUNK_EXTENSION -> ;
+
+QUOTED_STRING -> TEXT;
+#QUOTED_STRING -> /"/ QINNER /"/;
+#QINNER -> QDTEXT QINNER;
+#QINNER -> QUOTED_PAIR QINNER;
+#QINNER -> ;
+#QUOTED_PAIR -> /\\/ CHAR;
+
+TRAILERS -> ;
+TRAILERS -> HEADER CRLF TRAILERS;
 
 XML -> XVER XENV [bodyend := skip_to(bodyend)];
 
