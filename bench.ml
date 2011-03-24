@@ -208,7 +208,7 @@ let run pr =
 	pr.new_parser () |> tap (Hashtbl.add ht flow) 
     in
     incr packet_ctr;
-    if Ns_types.debug_ca then 
+    if Ns_types.debug_ca && !main <> Diff then 
       Printf.printf "\nP%a:\n%s\n" print_flow flow (clean_unprintable data);
 (*    print_string (if get_dir flow = Downflow then "D" else "U"); *)
     pr.add_data p (get_dir flow) data;
