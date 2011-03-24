@@ -30,7 +30,7 @@ let full_parse (nt,predopt,priopt,rules) =
   let preds = match predopt with None -> VarMap.empty | Some str -> parse_preds str in
   let rec expand_term_act acc = function
     | Capture rules, Some func ->
-	let cap_id = "capture(" ^ (capture_counter () |> string_of_int) ^")" in
+	let cap_id = "capture" ^ (capture_counter () |> string_of_int) in
 	let get_pos = Function ("pos", get_f "pos", []) in
 	let start_cap = VarMap.add cap_id get_pos VarMap.empty in
 	let end_exp = Function (func, get_f func, [Variable]) in
@@ -56,6 +56,7 @@ let print_reg_rule oc rr =
     (List.print Int.print) rr.prio so rr.rx (List.print print_action) rr.act so rr.nt
 
 let print_reg_rules oc = function
+  | [] -> ()
   | [r] -> Pair.print (print_varmap print_pred) print_reg_rule oc r
   | l -> List.print ~first:"\n#  " ~sep:"\n#  " ~last:"\n" (Pair.print (print_varmap print_pred) print_reg_rule) oc l
 
@@ -77,6 +78,7 @@ let print_opt_rule oc iirr =
 let print_rule oc x = Pair.print (List.print print_ipred) print_opt_rule oc x
 
 let print_rules oc = function
+  | [] -> ()
   | [r] -> print_rule oc r
   | l -> List.print ~first:"\n#  " ~sep:"\n#  " ~last:"\n" print_rule oc l
 
@@ -141,8 +143,8 @@ let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) =
     let nt_counter = Ean_std.make_counter 0 in
     let {Cache.get=int_of_nt} = Cache.make_ht (fun _ -> nt_counter ()) 10 in
     int_of_nt start |> ignore; (* make sure start state is #0 *)
-    let fix_pair_a (v,a) = (int_of_v v, freeze_a a) in
-    let fix_pair_p (v,p) = (int_of_v v, freeze_p p) in
+    let fix_pair_a (v,a) = (int_of_v v, a) in
+    let fix_pair_p (v,p) = (int_of_v v, p) in
     let fix_rule (r: (string, string, 'prio) regular_rule) = {r with act = List.map fix_pair_a r.act; nt = Option.map int_of_nt r.nt} in
     let fix_pred (p:pred) = VarMap.enum p |> Enum.map fix_pair_p |> List.of_enum in
     let pmap = Map.enum ca |> 
