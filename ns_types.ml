@@ -108,6 +108,18 @@ let ca_functions = ref
 	done;
 	!ret
       | _ -> wrong_args "getnum");
+    "gethex",
+    (fun (_base_pos, sim_pos, flow_data) ->  function 
+      | [] -> 
+	let rec hloop acc =
+	  match flow_data.[!sim_pos] with
+	    | '0'..'9' as c -> incr sim_pos; hloop ((Char.code c - 0x30) + acc lsl 4)
+	    | 'a'..'f' as c -> incr sim_pos; hloop ((Char.code c - 0x61 + 10) + acc lsl 4)
+	    | 'A'..'F' as c -> incr sim_pos; hloop ((Char.code c - 0x41 + 10) + acc lsl 4)
+	    | _ -> acc
+	in
+	hloop 0
+      | _ -> wrong_args "gethex");
     "save", (fun (base_pos, _sim_pos, flow_data) -> function | [start_pos; end_pos] -> 
       let start_pos = start_pos - base_pos and end_pos = end_pos - base_pos in
       let str = try String.sub flow_data (start_pos+1) (end_pos - start_pos) |> String.trim |> String.lowercase with _ -> "??" in
