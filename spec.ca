@@ -1,5 +1,5 @@
 #HTTP grammar
-HTTP -> HTTP_START HEADERS BODY HTTP;
+HTTP -> HTTP_START [bodychunked := 0; bodylength := 0] HEADERS BODY HTTP;
 HTTP -> ;
 
 CRLF -> /\r?\n/;
@@ -27,39 +27,47 @@ HTTP_START -> VERSION SP STATUS SP TEXT CRLF;
 #Request
 HTTP_START 99 -> TOKEN SP URL SP VERSION CRLF;
 
-VERSION 1 -> /HTTP\/1\.0/ [httpversion := 0];
-VERSION 1 -> /HTTP\/1\.1/ [httpversion := 1];
+# capture the HTTP version string
+VERSION -> /HTTP\/1\.0/ [httpversion := 0];
+VERSION -> /HTTP\/1\.1/ [httpversion := 1];
 VERSION 99 -> /HTTP\/[0-9]+\.[0-9]+/;
 
+#Header Field overall structure (including final CRLF)
 HEADERS -> HEADER CRLF HEADERS;
 HEADERS -> CRLF;
 
-HEADER -> TOKEN /:/ VALUE;
-HEADER -> /(?i:Content-Length):/ LWS [bodylength := getnum()];
-HEADER -> /(?i:Transfer-Encoding:\s+chunked/ [bodychunked := 1];
+#Each individual header - special attention to content length & transfer encoding as they determine body format
+HEADER -> /(?i:Content-Length):\s*/ [bodylength := getnum()];
+HEADER -> /(?i:Transfer-Encoding:\s*chunked/ [bodychunked := 1];
+HEADER 99 -> TOKEN /:/ VALUE;
 
 VALUE -> TEXT VALUE;
 VALUE -> LWS VALUE;
 VALUE -> ;
 
+#body types
+## Content length known
 BODY [ bodylength > 0 ] -> // [bodylength := skip(bodylength)];
-BODY [ bodychunked == 1 ] -> CHUNKED_BODY;
-BODY [ httpversion == 0; bodylength == 0 ] -> // [bodylength := skip(9999999)];
+## Chunked body
+BODY [ bodychunked == 1 ] -> CHUNK_BODY;
+## HTTP/1.0, unknown bodylength: skip rest of flow
+BODY [ bodychunked == 0; httpversion == 0; bodylength == 0 ] -> // [bodylength := skip(9999999)];
+## HTTP/1.1, unknown bodylength, assume = 0
+BODY [ bodychunked == 0; httpversion == 1; bodylength == 0 ] -> ;
 
 BODY_XML -> CRLF [bodyend := bodyend + pos()] XML;
 
-CHUNKED_BODY -> CHUNK CHUNKED_BODY;
-CHUNKED_BODY -> LAST_CHUNK TRAILERS CRLF;
+CHUNK_BODY -> // [chunksize := gethex()] CHUNK_EXTENSION CRLF [chunksize := skip(chunksize)] CRLF CHUNK_BODY;
+CHUNK_BODY 10 -> /0/ CRLF TRAILERS CRLF;
+CHUNK_BODY 10 -> /0;/ TEXT CRLF TRAILERS CRLF;
 
-CHUNK -> // [chunksize := gethex()] CHUNK_EXTENSION CRLF [chunksize := skip(chunksize)] CRLF ;
-LAST_CHUNK -> /0/ CHUNK_EXTENSION CRLF ;
-
-CHUNK_EXTENSION -> /;/ TOKEN CHUNK_EXTENSION ;
-CHUNK_EXTENSION -> /;/ TOKEN /=/ TOKEN CHUNK_EXTENSION ;
-CHUNK_EXTENSION -> /;/ TOKEN /=/ QUOTED_STRING CHUNK_EXTENSION ;
+CHUNK_EXTENSION -> /;/ TEXT;
+#CHUNK_EXTENSION -> /;/ TOKEN CHUNK_EXTENSION;
+#CHUNK_EXTENSION -> /;/ TOKEN /=/ TOKEN CHUNK_EXTENSION;
+#CHUNK_EXTENSION -> /;/ TOKEN /=/ QUOTED_STRING CHUNK_EXTENSION;
 CHUNK_EXTENSION -> ;
 
-QUOTED_STRING -> TEXT;
+#QUOTED_STRING -> TEXT;
 #QUOTED_STRING -> /"/ QINNER /"/;
 #QINNER -> QDTEXT QINNER;
 #QINNER -> QUOTED_PAIR QINNER;
@@ -81,3 +89,40 @@ XBDY -> /\s*<soap:Body>\s*/ ARRAY /\s*<\/soap:Body>\s*/;
 
 ARRAY -> /<array>/ ARRAY /<\/array>/ ARRAY ;
 ARRAY -> ;
+
+#GETBASETEN -> ;
+#GETBASETEN -> /0/ GETBASETEN[bodylength := 0 + bodylength * 10] ;
+#GETBASETEN -> /1/ GETBASETEN[bodylength := 1 + bodylength * 10] ;
+#GETBASETEN -> /2/ GETBASETEN[bodylength := 2 + bodylength * 10] ;
+#GETBASETEN -> /3/ GETBASETEN[bodylength := 3 + bodylength * 10] ;
+#GETBASETEN -> /4/ GETBASETEN[bodylength := 4 + bodylength * 10] ;
+#GETBASETEN -> /5/ GETBASETEN[bodylength := 5 + bodylength * 10] ;
+#GETBASETEN -> /6/ GETBASETEN[bodylength := 6 + bodylength * 10] ;
+#GETBASETEN -> /7/ GETBASETEN[bodylength := 7 + bodylength * 10] ;
+#GETBASETEN -> /8/ GETBASETEN[bodylength := 8 + bodylength * 10] ;
+#GETBASETEN -> /9/ GETBASETEN[bodylength := 9 + bodylength * 10] ;
+
+#GETHEX -> ;
+#GETHEX -> /0/ GETHEX[chunksize := 0 + chunksize * 16] ;
+#GETHEX -> /1/ GETHEX[chunksize := 1 + chunksize * 16] ;
+#GETHEX -> /2/ GETHEX[chunksize := 2 + chunksize * 16] ;
+#GETHEX -> /3/ GETHEX[chunksize := 3 + chunksize * 16] ;
+#GETHEX -> /4/ GETHEX[chunksize := 4 + chunksize * 16] ;
+#GETHEX -> /5/ GETHEX[chunksize := 5 + chunksize * 16] ;
+#GETHEX -> /6/ GETHEX[chunksize := 6 + chunksize * 16] ;
+#GETHEX -> /7/ GETHEX[chunksize := 7 + chunksize * 16] ;
+#GETHEX -> /8/ GETHEX[chunksize := 8 + chunksize * 16] ;
+#GETHEX -> /9/ GETHEX[chunksize := 9 + chunksize * 16] ;
+#GETHEX -> /A/ GETHEX[chunksize := 10 + chunksize * 16] ;
+#GETHEX -> /B/ GETHEX[chunksize := 11 + chunksize * 16] ;
+#GETHEX -> /C/ GETHEX[chunksize := 12 + chunksize * 16] ;
+#GETHEX -> /D/ GETHEX[chunksize := 13 + chunksize * 16] ;
+#GETHEX -> /E/ GETHEX[chunksize := 14 + chunksize * 16] ;
+#GETHEX -> /F/ GETHEX[chunksize := 15 + chunksize * 16] ;
+#GETHEX -> /a/ GETHEX[chunksize := 10 + chunksize * 16] ;
+#GETHEX -> /b/ GETHEX[chunksize := 11 + chunksize * 16] ;
+#GETHEX -> /c/ GETHEX[chunksize := 12 + chunksize * 16] ;
+#GETHEX -> /d/ GETHEX[chunksize := 13 + chunksize * 16] ;
+#GETHEX -> /e/ GETHEX[chunksize := 14 + chunksize * 16] ;
+#GETHEX -> /f/ GETHEX[chunksize := 15 + chunksize * 16] ;
+
