@@ -45,6 +45,12 @@ let print_dfa_dec oc d =
   Printf.fprintf oc "{%d,%a,%a}%!" 
     d.pri (List.print print_action) (fst d.item) so (snd d.item)
 
+let print_iaction oc (i,e) = fprintf oc "(%d) := %a" i (print_a_exp ("(" ^ string_of_int i ^ ")")) e
+let print_reg_rule oc rr = 
+  let so = Option.print String.print in
+  let io = Option.print Int.print in
+  Printf.fprintf oc "{p:%d; rx:%a acts:%a nt: %a}" 
+    rr.prio so rr.rx (List.print print_iaction) rr.act io rr.nt
 
 (*let comp_p = Point.create "comp_ca"
 let comp_t = Time.create "comp_ca" *)
@@ -60,6 +66,7 @@ let make_rx_pair r =
 (* Compiles a list of rules into an automaton with decisions of
    (priority, action, nt) *)
 let compile_ca rules =
+(*  printf "Making dfa of \n%a\n%!" (List.print print_reg_rule) rules;*)
   List.enum rules
   |> Enum.filter_map make_rx_pair
   |> Pcregex.rx_of_dec_strings ~anchor:true
@@ -121,17 +128,22 @@ let optimize_preds ca =
 	printf "#DFA: %d\n%a\n" _i (Regex_dfa.print_array_dfa (fun oc {item=(_,q)} -> Int.print oc q)) dfa;
       (fun _ _ -> dfa)
     else 
-      let cas = Array.init (1 lsl (List.length rules)) 
-	(fun i -> get_comb i rules |> compile_ca) 
-      in
-      match is_univariate_predicate rules with
-	Some v -> 
-	  let get_rs i = cas.(get_rules_bits_uni null_env rules i) in
-	  let rule_map = Array.init (var_max+1) get_rs in
-	  (fun vars _ -> rule_map.(vars.(v) land var_max))
-      | None ->  
-	(fun vars parse_state ->
-	  cas.(get_rules_bits parse_state rules vars) )
+      if List.length rules < 20 then (*TODO: PARTITION RULES BY PREDICATE *)
+	let cas = Array.init (1 lsl (List.length rules)) 
+	  (fun i -> get_comb i rules |> compile_ca) 
+	in
+	match is_univariate_predicate rules with
+	    Some v -> 
+	      let get_rs i = cas.(get_rules_bits_uni null_env rules i) in
+	      let rule_map = Array.init (var_max+1) get_rs in
+	      (fun vars _ -> rule_map.(vars.(v) land var_max))
+	  | None ->  
+	    (fun vars parse_state ->
+	      cas.(get_rules_bits parse_state rules vars) )
+      else (
+	printf "Cannot optimize rules, too many rules:\n%a\n%!" (List.print ~sep:"\n" print_reg_rule) (List.map snd rules);
+	exit 1;
+      )
   in
   Array.mapi opt_prod ca
 
@@ -155,10 +167,16 @@ let rec resume_arr qs input pri decision dec_pos q pos =
     End_of_input (q,pri,decision,dec_pos)
   ) else
     let q_next_id = Array.unsafe_get q.Regex_dfa.map (Char.code (String.unsafe_get input pos)) in
-    if debug_ca then printf "%C->%d " input.[pos] q_next_id;
-    if q_next_id = -1 then Dec (decision, dec_pos)
-    else
+    if q_next_id = -1 then (
+      if debug_ca then printf "%C done" input.[pos]; 
+      Dec (decision, dec_pos)
+    ) else if q_next_id = q.Regex_dfa.id then ( (* TODO: TEST OPTIMIZATION *)
+      if debug_ca then printf "%C" input.[pos];
+      let dec_pos = if q.Regex_dfa.dec = None then dec_pos else (pos+1) in
+      resume_arr qs input pri decision dec_pos q (pos+1)
+    ) else
       let q = Array.unsafe_get qs q_next_id in
+      if debug_ca then printf "%C->%d " input.[pos] q_next_id;
       let pos = pos+1 in 
       match q.Regex_dfa.dec with
 	| Some d when d.pri <= pri -> 
