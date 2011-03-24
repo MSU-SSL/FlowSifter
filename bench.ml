@@ -263,22 +263,27 @@ let get_fs = function
   | `Pac -> run pac_p
 
 let diff_loop xs =
+  let diffs = ref 0 in
+  let count = ref 0 in
   let (_,_,f1) = get_fs `Sift and (_,_,f2) = get_fs `Pac in
   let rec loop i = 
     if i >= Array.length xs then () else begin
+      incr count;
       f1 xs.(i); 
       let e1 = !ediff in
       f2 xs.(i);
       if e1 <> !ediff then decr packet_skip;
       if e1 <> !ediff && !packet_skip < 0 then begin
 	let (flow, data, _fin) = xs.(i) in
+	incr diffs;
 	Printf.printf "\nP%a @ pos: %d:\n%s\n" print_flow flow i (clean_unprintable data);
 	Printf.printf "Sift: %d events, PAC: %d events\n" e1 !ediff;
       end;
       loop (i+1)
     end
   in
-  loop 0
+  loop 0;
+  printf "Total different flows: %d of %d (%.2f%%)\n" !diffs !count (100. *. float !diffs /. float !count)
   
 
 
