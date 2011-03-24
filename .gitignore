@@ -9,3 +9,5 @@ bench-null
 *.pdf
 *.png
 *.eps
+_build/
+.backups/
