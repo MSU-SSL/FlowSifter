@@ -215,6 +215,7 @@ bool http_header(fast_parser_t t_fast_parser)
 		else if ( bytestring_casecmp(name, "TRANSFER-ENCODING") == 0 )
 			{
 			if ( bytestring_caseprefix(value, "CHUNKED") )
+printf("CH"); fflush(stdout);
 				t_fast_parser->delivery_mode_ = CHUNKED;
 			}
 
@@ -663,9 +664,7 @@ http_uri_abs_path:
 
 RegExMatcher regexmatcher_1("[^]()<>@,;:\\\"/\\[?={} \\t]+");
 RegExMatcher regexmatcher_2("[ \\t]*");
-///[^\x00-\x1f\x7f ]+/
-RegExMatcher regexmatcher_3("[^\\x00-\\x1f\\x7f ]+[ \\t]*");
-//\\([]a-zA-Z0-9`~!@#$%^&*()_+=\\[{}\\\\\\|;':\",-./<>?]\\|[^\x01-\x7f]\\)+[ \\t]*");
+RegExMatcher regexmatcher_3("[[:alnum:][:punct:]]+");
 RegExMatcher regexmatcher_4("[ \\t]*");
 RegExMatcher regexmatcher_5("[ \\t]*");
 RegExMatcher regexmatcher_6("[ \\t]*");

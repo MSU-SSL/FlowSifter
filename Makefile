@@ -18,6 +18,9 @@ http-baseconn.o: http-baseconn.cc
 #### Compile bpac.cmxa
 ####
 
+#lib_b/http_matcher.cc lib_b/http_pac.h: lib_u/http.pac lib_u/http-analyzer.pac lib_u/http-protocol.pac
+#	cd lib_b; ./binpac http.pac; cd ..
+
 lib_b/%.o: lib_b/%.cc
 	g++ $(CPPFLAGS) -c -I lib_b/ $^ -o $@
 
@@ -27,6 +30,9 @@ bpac.cmxa: http-baseconn.o lib_b/binpac_buffer.o lib_b/http_pac.o lib_b/libbinpa
 ####
 #### Compile upac.cmxa
 ####
+
+lib_u/http_pac_fast.cc lib_u/http_pac.h lib_u/http_pac_fast.h: lib_u/http.pac lib_u/http-analyzer.pac lib_u/http-protocol.pac
+	cd lib_u; ./ultrapac http.pac; cd ..
 
 lib_u/%.o: lib_u/%.cc
 	g++ $(CPPFLAGS) -c -I lib_u/ $^ -o $@

@@ -25,9 +25,9 @@ enum DeliveryMode {
 type HTTP_TOKEN	= RE/[^]()<>@,;:\\"\/\[?={} \t]+/;	#windows only
 #type HTTP_TOKEN	= bytestring &length=match_HTTP_token($input);
 type HTTP_WS	= RE/[ \t]*/;
-#type HTTP_URI	= RE/[[:alnum:][:punct:]]+/;
+type HTTP_URI	= RE/[[:alnum:][:punct:]]+/; 	 #fixed by EAN
 #type HTTP_URI	= RE/\\([]a-zA-Z0-9`~!@#$%^&*()_+=\[{}\\\\\|;':\",-.\/<>?]\\|[^\x01-\x7f]\\)+/;	 #windows only
-type HTTP_URI	= RE/\\([]a-zA-Z0-9`~!@#$%^&*()_+=\[{}\\\\\|;':\",-.\/<>?]\\|[^\x01-\x7f]\\)+[ \t]*/;	 #windows only
+#type HTTP_URI	= RE/\\([]a-zA-Z0-9`~!@#$%^&*()_+=\[{}\\\\\|;':\",-.\/<>?]\\|[^\x01-\x7f]\\)+[ \t]*/;	 #windows only
 
 type HTTP_PDU(is_orig: bool) = case is_orig of {
 	true ->		request:	HTTP_Request;

@@ -1,5 +1,6 @@
 #HTTP grammar
-HTTP -> HTTP_START [bodychunked := 0; bodylength := 0] HEADERS BODY HTTP;
+HTTP -> HTTP_START [bodychunked := 0; bodylength := 0] 
+     	HEADERS CRLF BODY HTTP;
 HTTP -> ;
 
 CRLF -> /\r?\n/;
@@ -34,7 +35,7 @@ VERSION 99 -> /HTTP\/[0-9]+\.[0-9]+/;
 
 #Header Field overall structure (including final CRLF)
 HEADERS -> HEADER CRLF HEADERS;
-HEADERS -> CRLF;
+HEADERS -> ;
 
 #Each individual header - special attention to content length & transfer encoding as they determine body format
 HEADER -> /(?i:Content-Length):\s*/ [bodylength := getnum()];
@@ -58,24 +59,11 @@ BODY [ bodychunked == 0; httpversion == 1; bodylength == 0 ] -> ;
 BODY_XML -> CRLF [bodyend := bodyend + pos()] XML;
 
 CHUNK_BODY -> // [chunksize := gethex()] CHUNK_EXTENSION CRLF [chunksize := skip(chunksize)] CRLF CHUNK_BODY;
-CHUNK_BODY 10 -> /0/ CRLF TRAILERS CRLF;
-CHUNK_BODY 10 -> /0;/ TEXT CRLF TRAILERS CRLF;
+CHUNK_BODY 10 -> /0/ CRLF HEADERS CRLF;
+CHUNK_BODY 10 -> /0;/ TEXT CRLF HEADERS CRLF;
 
 CHUNK_EXTENSION -> /;/ TEXT;
-#CHUNK_EXTENSION -> /;/ TOKEN CHUNK_EXTENSION;
-#CHUNK_EXTENSION -> /;/ TOKEN /=/ TOKEN CHUNK_EXTENSION;
-#CHUNK_EXTENSION -> /;/ TOKEN /=/ QUOTED_STRING CHUNK_EXTENSION;
 CHUNK_EXTENSION -> ;
-
-#QUOTED_STRING -> TEXT;
-#QUOTED_STRING -> /"/ QINNER /"/;
-#QINNER -> QDTEXT QINNER;
-#QINNER -> QUOTED_PAIR QINNER;
-#QINNER -> ;
-#QUOTED_PAIR -> /\\/ CHAR;
-
-TRAILERS -> ;
-TRAILERS -> HEADER CRLF TRAILERS;
 
 XML -> XVER XENV [bodyend := skip_to(bodyend)];
 

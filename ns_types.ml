@@ -43,7 +43,7 @@ type regular_grammar_opt = (int array -> (string -> int list -> int) -> compiled
 
 (****** Parsing functions ******)
 
-let debug_ca = true
+let debug_ca = false
 
 exception Invalid_arg_count of string
 let wrong_args name = raise (Invalid_arg_count name)
