@@ -9,7 +9,7 @@ all: bench-all
 .PHONY: clean hwrun %.threadlog bench-all runlog.% outliers rectest
 
 clean:
-	rm -f *.a *.o *.cmi *.cmx *.cmo *.cmxa *.annot lib_b/*.o lib_u/*.o
+	rm -f *.a *.o *.cmi *.cmx *.cmo *.cmxa *.annot lib_b/*.o lib_u/*.o ns_lex.ml ns_yac.ml
 
 http-baseconn.o: http-baseconn.cc
 	g++ $(CPPFLAGS) -c $^ -o $@
@@ -37,7 +37,7 @@ lib_u/http_pac_fast.cc lib_u/http_pac.h lib_u/http_pac_fast.h: lib_u/http.pac li
 lib_u/%.o: lib_u/%.cc
 	g++ $(CPPFLAGS) -c -I lib_u/ $^ -o $@
 
-upac.cmxa: lib_u/binpac.o lib_u/http_pac_fast.o lib_u/http_matcher.o lib_u/libubinpac.a lib_u/upac_stubs.o anypac.cmx
+upac.cmxa: lib_u/binpac.o lib_u/http_pac_fast.o lib_u/http_matcher.o lib_u/upac_stubs.o anypac.cmx
 	ocamlmklib -custom -o upac $^
 
 ####
@@ -188,3 +188,7 @@ figures: rundata rectest memory.R
 
 outliers: bench-upac
 	./bench-upac ~/traces/http/use/98w3-wednesday.pcap 
+
+diff-test: all
+	./bench-upac -f -d ~/traces/http/use/harvest.pcap* -l 100 > log; tail -n 1 log
+	./bench-bpac -f -d ~/traces/http/use/harvest.pcap* -l 100 >> log; tail -n 1 log
