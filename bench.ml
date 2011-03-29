@@ -22,7 +22,7 @@ let parsers : parser_t list ref = ref [`Sift; `Pac]
 let baseline = ref true
 let mode = ref Pcap
 let min_lev = ref 0
-let gen_count = ref 0
+let gen_flows = ref 0
 let packet_skip = ref 0
 let packet_limit = ref (max_int/2)
 let main = ref Parse
@@ -44,7 +44,7 @@ let args =
      "Compare flowsifter with *PAC on events");
     (Name "stat", [Unit (fun () -> main := Stat)], [], 
      "Print flow statistics on the input packets only");
-    (Both ('g', "gen"), [set_mode Gen; Int_var min_lev; Int_var packet_limit], [],
+    (Both ('g', "gen"), [set_mode Gen; Int_var min_lev; Int_var gen_flows], [],
      "Generate SOAP traffic to parse (need min_lev, count)");
     (Both ('n', "rep-cnt"), [Int_var rep_cnt], [],
      "Set the number of repetitions to do");
@@ -272,13 +272,13 @@ let diff_loop xs =
       f1 xs.(i); 
       let e1 = !ediff in
       f2 xs.(i);
-      if e1 <> !ediff then decr packet_skip;
-      if e1 <> !ediff && !packet_skip < 0 then begin
+      let wrong = !ediff - e1 > 2 in
+      Printf.printf "Sift: %d events, PAC: %d events (diff: %B) pos:%d \n" e1 !ediff wrong i;
+      if wrong then ( 
+	incr diffs;      
 	let (flow, data, _fin) = xs.(i) in
-	incr diffs;
-	Printf.printf "\nP%a @ pos: %d:\n%s\n" print_flow flow i (clean_unprintable data);
-	Printf.printf "Sift: %d events, PAC: %d events\n" e1 !ediff;
-      end;
+	Printf.printf "\nP%a:\n%s\n%!" print_flow flow (clean_unprintable data);
+      );
       loop (i+1)
     end
   in
@@ -320,8 +320,8 @@ let main () =
       | false, Pcap -> List.enum !fns |> Pcap.pre_parse
       | true, Mux -> List.enum !fns |> Pcap.make_flows
       | false, Mux ->  List.enum !fns |> Pcap.make_packets_files
-      | true, Gen -> Enum.from gen_pkt |> Enum.take gen_count |> Pcap.make_flows
-      | false, Gen -> Enum.from gen_pkt |> Enum.take gen_count |> Pcap.make_packets
+      | true, Gen -> Enum.from gen_pkt |> Enum.take !gen_flows |> Pcap.make_flows
+      | false, Gen -> Enum.from gen_pkt |> Enum.take !gen_flows |> Pcap.make_packets
   in
   let packets = packet_enum |> Enum.skip !packet_skip |> Enum.take !packet_limit |> Array.of_enum in
   trace_len := trace_size packets;
