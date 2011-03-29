@@ -21,8 +21,9 @@ extern "C" value new_parser (value v_unit) {
   CAMLparam1 (v_unit);
   // use HTTP_Flow?
   //  cout << "b";
-  value p = (value) new binpac::HTTP::HTTP_Conn(new BaseConn());
-  CAMLreturn (p);
+  binpac::HTTP::HTTP_Conn* p = new binpac::HTTP::HTTP_Conn(new BaseConn());
+  //  p->
+  CAMLreturn ((value) p);
 }
 
 extern "C" value add_data (value v_prsr, value v_dir, value v_str) {
@@ -33,7 +34,7 @@ extern "C" value add_data (value v_prsr, value v_dir, value v_str) {
   try {
     parser->NewData(Bool_val(v_dir), (binpac::uint8*) str, (binpac::uint8*) end);
   } catch ( binpac::Exception const &e ) {
-    //    printf("Binpac raised: %s\n", e.c_msg());
+    //    printf("Binpac raised: %s\n", e.c_msg());  fflush(stdout);
   }
 
   CAMLreturn (Val_unit);
@@ -41,7 +42,7 @@ extern "C" value add_data (value v_prsr, value v_dir, value v_str) {
 
 extern "C" value get_event_count (value v_unit) {
   CAMLparam1 (v_unit);
-  value ret = Val_int (binpac::HTTP::events);
+  value ret = Val_int(binpac::HTTP::events);
   CAMLreturn (ret);
 }
 
