@@ -108,11 +108,13 @@ type HTTP_Message(expect_body: ExpectBody) = record {
 # Multi-line headers are supported by allowing header names to be
 # empty.
 #
-type HTTP_HEADER_NAME = RE/|([^: \t]+:)/;
+type HTTP_HEADER_NAME = RE/([^: \t]+:)|/;
 type HTTP_Header = record {
   name:   HTTP_HEADER_NAME &transient;
   :   HTTP_WS;
   value:    bytestring &restofdata &transient;
+} &let {
+  process_header: bool = $context.flow.http_header(name, value);
 } &oneline;
 
 type MIME_Line = record {
@@ -226,6 +228,61 @@ flow HTTP_Flow(is_orig: bool) {
         (const char*) end_of_multipart_.begin(),
         len) == 0 );
     %}
+
+    function http_header(name_colon: const_bytestring,
+                         value: const_bytestring): bool
+    %{
+    const_bytestring name(
+      name_colon.begin(),
+      name_colon.length() > 0 ?
+         name_colon.end() - 1 :
+	 name_colon.end());
+//	printf("HH:%s,%s\n", std_str(name_colon).c_str(), std_str(value).c_str());
+//	fflush(stdout);
+    if ( bytestring_casecmp(name, "CONTENT-LENGTH") == 0 )
+    {
+	content_length_ = bytestring_to_int(value, 10);
+//	printf("CL:%d",content_length_);
+//	fflush(stdout);
+	delivery_mode_ = CONTENT_LENGTH;
+    }
+    else if ( bytestring_casecmp(name, "TRANSFER-ENCODING") == 0 )
+    {           
+//		printf("TE");fflush(stdout);
+                      
+	if ( bytestring_caseprefix(value, "CHUNKED") ) {
+//		printf("CH");fflush(stdout);
+		delivery_mode_ = CHUNKED;
+        }
+    }
+    else if ( bytestring_casecmp(name, "CONTENT-TYPE") == 0 )
+    {
+	if ( bytestring_caseprefix(value, "MULTIPART") )
+	{
+		end_of_multipart_.free();
+		end_of_multipart_ = extract_boundary(value);
+		if ( end_of_multipart_.length() > 0 )
+			delivery_mode_ = MULTIPART;
+	}
+    }
+    return true;
+    %}
+    function extract_boundary(value: const_bytestring): bytestring
+	%{
+	const char* boundary_prefix = "boundary=";
+	const char* boundary_begin = strcasestr(
+					(const char*) value.begin(),
+					boundary_prefix);
+		if ( ! boundary_begin )
+		return bytestring();
+		boundary_begin += 9;
+		const char* boundary_end = strcasestr(boundary_begin, ";");
+	if ( ! boundary_end )
+		boundary_end = (const char*) value.end();
+		return bytestring((const uint8*) boundary_begin,
+				(const uint8*) boundary_end);
+	%}
+
 };
 
 
@@ -233,18 +290,15 @@ flow HTTP_Flow(is_orig: bool) {
 ## Sample event
 ##
 
+%code{
+int events = 0;
+%}
+
 function scb_store_method_uri( method: const_bytestring, 
 	                       uri: const_bytestring): bool %{
   
-  //
-  // Store the parsed fields
-  //  
-//  bytestring_to_string(method, conn->method);
-//  bytestring_to_string(uri, conn->uri);
-//  bytestring_to_string(version, conn->version);
-  
+//	printf("BMethod:%s\nBURL:%s\n", std_str(method).c_str(), std_str(uri).c_str());	fflush(stdout);
 //Count these extractions
-
 	events += 2;
 
   return true;
@@ -252,16 +306,18 @@ function scb_store_method_uri( method: const_bytestring,
 
 function scb_header_name(name: const_bytestring) : voidptr
 %{
+//	printf("BHeaderName:%s\n", std_str(name).c_str());	fflush(stdout);
 	events += 1;
 %}
 
 function scb_header_value(value: const_bytestring) : voidptr
 %{
+//	printf("BHeaderValue:%s\n", std_str(value).c_str());	fflush(stdout);
 	events += 1;
 %}
 
 refine typeattr HTTP_RequestLine += &let {
-        process_request: bool = scb_store_method_uri(method, uri);
+        process_request1: bool = scb_store_method_uri(method, uri);
 };
 
 refine typeattr HTTP_Header += &let {
