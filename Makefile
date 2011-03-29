@@ -18,13 +18,13 @@ http-baseconn.o: http-baseconn.cc
 #### Compile bpac.cmxa
 ####
 
-#lib_b/http_matcher.cc lib_b/http_pac.h: lib_u/http.pac lib_u/http-analyzer.pac lib_u/http-protocol.pac
-#	cd lib_b; ./binpac http.pac; cd ..
+lib_b/http_pac.cc lib_b/http_pac.h: lib_b/http.pac  lib_b/binpac-lib.pac
+	cd lib_b; ./binpac http.pac; cd ..
 
 lib_b/%.o: lib_b/%.cc
 	g++ $(CPPFLAGS) -c -I lib_b/ $^ -o $@
 
-bpac.cmxa: http-baseconn.o lib_b/binpac_buffer.o lib_b/http_pac.o lib_b/libbinpac.a lib_b/bpac_stubs.o anypac.cmx
+bpac.cmxa: http-baseconn.o lib_b/binpac_buffer.o lib_b/http_pac.o lib_b/bpac_stubs.o anypac.cmx
 	ocamlmklib -custom -o bpac $^
 
 ####
@@ -190,5 +190,5 @@ outliers: bench-upac
 	./bench-upac ~/traces/http/use/98w3-wednesday.pcap 
 
 diff-test: all
-	./bench-upac -f -d ~/traces/http/use/harvest.pcap* -l 100 > log; tail -n 1 log
-	./bench-bpac -f -d ~/traces/http/use/harvest.pcap* -l 100 >> log; tail -n 1 log
+	./bench-bpac -f -d ~/traces/http/use/harvest.pcap* -l 1000 > log; tail -n 1 log
+	./bench-upac -f -d ~/traces/http/use/harvest.pcap* -l 1000 >> log; tail -n 1 log
