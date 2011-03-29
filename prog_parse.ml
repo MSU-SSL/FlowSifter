@@ -17,22 +17,20 @@ let () = at_exit (fun () ->
 let gen_parser p e = 
   let proto = Ns_parse.parse_file_as_spec p 
   and extr = Ns_parse.parse_file_as_extraction e in
-  let ca,var_count = Ns_parse.merge_cas ~proto ~extr |> Ns_parse.regularize |> Ns_parse.destring extr.start in
-  let ca = Ns_parse.dechain ca |> Ns_parse.flatten_priorities |> Ns_run.optimize_preds in
+  let ca,var_count = Ns_parse.merge_cas ~proto ~extr |> Ns_parse.regularize 
+    |> Ns_parse.destring extr.start in
+  let ca = Ns_parse.dechain ca |> Ns_parse.flatten_priorities 
+    |> Ns_run.optimize_preds in
   fun () -> (* allow creating many parsers *)
     let vars = Array.make var_count 0 in    
     let dfa0 = ca.(0) vars (0, ref 0, "") in
-    let q = ref (Some (Ns_run.init_state dfa0 0))
+    let q = ref (Ns_run.init_state dfa0 0)
     and skip_left = ref 0
     and base_pos = ref 0 in
     let rec parse str =
       if !skip_left = 0 then 
-	match !q with
-	  | None -> fail_drop := !fail_drop + String.length str
-	  | Some q_in ->
-	    q := Ns_run.simulate_ca_string 
-	      ~ca ~vars fail_drop skip_left base_pos str q_in;
-	    base_pos := !base_pos + String.length str;
+	q := Ns_run.simulate_ca_string 
+	  ~ca ~vars fail_drop skip_left base_pos str !q
       else (* skip_left > 0 *)
 	let len = String.length str in
 	if !skip_left >= len then ( (* skip the packet entirely *)

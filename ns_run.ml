@@ -17,8 +17,9 @@ let get_all_rule_groups (ca:regular_grammar_arr) =
   in
   Array.enum ca |> map groups_of_rlist |> Enum.flatten
 
-let run_act state vars (var, act) =
-  vars.(var) <- val_a_exp state vars.(var) act
+let run_act rerun state vars (var, act) =
+  try vars.(var) <- val_a_exp state vars.(var) act
+  with Ns_types.Data_stall -> rerun := (var,act) :: !rerun;
 
 type 'a opt_rules = ('a option * ('a -> 'a option) * ('a option -> 'a option -> 'a option) * ('a -> 'a -> int))
 (* rules for handling decisions when creating the DFA *)
@@ -194,57 +195,81 @@ let () =
 *)
 let null_state = -1
 
+type ca_next = (int * a_exp) list * int
+type 'a state = ('a option, int array, ca_next pri_dec option) Regex_dfa.state
+
+type 'a ca_resume = 
+  | Done 
+  | Dfa of 'a state array * 'a state * int * ca_next * int * string
+  | Ca of (int * a_exp) list * int
+
 let init_state dfa pos =
   let q0 = dfa.Regex_dfa.q0 in
   match q0.Regex_dfa.dec with 
-      Some {pri=p; item=i} -> (dfa.Regex_dfa.qs, q0, p, i, pos, "")
-    | None -> (dfa.Regex_dfa.qs, q0, max_int, ([], null_state), pos, "")
+      Some {pri=p; item=i} -> Dfa (dfa.Regex_dfa.qs, q0, p, i, pos, "")
+    | None -> Dfa (dfa.Regex_dfa.qs, q0, max_int, ([], null_state), pos, "")
 
 let ca_trans = ref 0 
 
 (* let () = at_exit (fun () -> printf "#CA Transitions: %d\n" !ca_trans)  *)
 
-let rec simulate_ca_string ~ca ~vars fail_drop skip_left base_pos flow_data (qs, q, pri, item, ri, tail_data) = 
+let rec simulate_ca_string ~ca ~vars fail_drop skip_left base_pos flow_data =
   let flow_len = String.length flow_data in
   let pos = ref 0 in
+  let rerun = ref [] in
   let rec run_d2fa qs q pri item ri tail_data =
     if !pos >= flow_len then ( (* skipped past end of current packet *)
       skip_left := !pos - flow_len; 
-      Some (qs, q, pri, item, !base_pos + ri, "")
+      let ri_pos = !base_pos + ri in
+      base_pos := !base_pos + flow_len;
+      Dfa (qs, q, pri, item, ri_pos, "")
     ) else if !pos < 0 then ( (* handle DFA backtrack into previous packet *)
       (* TODO: optimize backtracking? *)
       let new_ri = ri + !base_pos in
       base_pos := !base_pos + !pos;
-      simulate_ca_string ~ca ~vars fail_drop skip_left base_pos (tail_data ^ flow_data) (qs, q, pri, item, new_ri, "")
+      simulate_ca_string ~ca ~vars fail_drop skip_left base_pos 
+	(tail_data ^ flow_data) (Dfa (qs, q, pri, item, new_ri, ""))
     ) else
       let dfa_result = resume_arr qs flow_data pri item ri q !pos in
       match dfa_result with
 	| Dec ((acts,q_next),pos_new) -> 
-	  if debug_ca then printf "\nCA: %d @ pos %d(%d)" q_next (pos_new + !base_pos) pos_new;
-	  incr ca_trans; 
 	  parsed_bytes := !parsed_bytes + (pos_new - !pos);
 	  pos := pos_new;
-	  let ca_state = (!base_pos, pos, flow_data) in
-	  if acts <> [] then List.iter (run_act ca_state vars) acts;
-	  if q_next = null_state then (
-	    fail_drop := !fail_drop + (flow_len - pos_new);
-	    None
-	  ) else
-	    let dfa = ca.(q_next) vars ca_state in
-	    ( match dfa.Regex_dfa.q0.Regex_dfa.dec with
-	      | None -> 
-		run_d2fa dfa.Regex_dfa.qs dfa.Regex_dfa.q0 max_int ([],null_state) !pos ""
-	      | Some {pri=p; item=i} ->
-		run_d2fa dfa.Regex_dfa.qs dfa.Regex_dfa.q0 p i !pos ""
-	    )
+	  run_ca acts q_next; (* Run the CA *)
 	| End_of_input (q_final, pri, item, ri) -> 
 	  parsed_bytes := !parsed_bytes + (String.length flow_data - !pos);
 	  let tail_out = 
 	    if ri < 0 then tail_data ^ flow_data 
 	    else String.tail flow_data ri 
 	  in
-	  Some (qs,q_final,pri,item, !base_pos + ri,tail_out)
-		
+	  let ri_pos = !base_pos + ri in
+	  base_pos := !base_pos + flow_len;
+	  Dfa (qs,q_final,pri,item, ri_pos,tail_out)
+  and run_ca acts q_next =
+    if debug_ca then printf "\nCA: %d @ pos %d(%d)" 
+      q_next (!pos + !base_pos) !pos;
+    incr ca_trans; 
+    let ca_state = (!base_pos, pos, flow_data) in
+    if acts <> [] then List.iter (run_act rerun ca_state vars) acts;
+    if !rerun <> [] then Ca (!rerun, q_next)
+    else if q_next = null_state then (
+      fail_drop := !fail_drop + (flow_len - !pos);
+      Done
+    ) else
+      let dfa = ca.(q_next) vars ca_state in
+      match dfa.Regex_dfa.q0.Regex_dfa.dec with
+	| None -> 
+	  run_d2fa dfa.Regex_dfa.qs dfa.Regex_dfa.q0 
+	    max_int ([],null_state) 
+	    !pos ""
+	| Some {pri=p; item=i} ->
+	  run_d2fa dfa.Regex_dfa.qs dfa.Regex_dfa.q0 
+	    p i 
+	    !pos ""
   in
-  run_d2fa qs q pri item (ri - !base_pos) tail_data
+  function
+    | Dfa (qs, q, pri, item, ri, tail_data) ->
+      run_d2fa qs q pri item (ri - !base_pos) tail_data
+    | Ca (runme,q_next) -> run_ca runme q_next
+    | Done -> fail_drop := !fail_drop + flow_len; Done
 

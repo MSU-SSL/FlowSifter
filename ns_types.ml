@@ -47,6 +47,7 @@ let debug_ca = false
 
 exception Invalid_arg_count of string
 let wrong_args name = raise (Invalid_arg_count name)
+exception Data_stall
 
 let matches = ref 0
 let saves = Hashtbl.create 100
@@ -56,6 +57,8 @@ let () = at_exit (fun () -> if !zero_size > 0 then Printf.eprintf "#Zero size ma
 (*
 let () = at_exit (fun () -> Hashtbl.iter (fun k v -> Printf.printf "%d %s\n" !v k) saves)
 *)
+
+let loop_init = ref 0
 
 let ca_functions = ref 
   [ "pos", (fun (base_pos, sim_pos, _flow_data) -> function 
@@ -100,23 +103,30 @@ let ca_functions = ref
     "getnum",
     (fun (_base_pos, sim_pos, flow_data) ->  function 
       | [] -> 
-	let ret = ref 0 in
-	while (let c = Char.code flow_data.[!sim_pos] in c >= 0x30 && c <= 0x39) do
-	  let c = Char.code flow_data.[!sim_pos] in
-	  ret := !ret * 10 + (c - 0x30);
-	  incr sim_pos;
-	done;
-	!ret
+	let rec dloop acc =
+	  if !sim_pos >= String.length flow_data then 
+	    (loop_init := acc; raise Data_stall);
+	  match flow_data.[!sim_pos] with
+	    | '0'..'9' as c -> 
+	      incr sim_pos; dloop ((Char.code c - 0x30) + acc * 10)
+	    | _ -> loop_init := 0; acc
+	in
+	dloop !loop_init
       | _ -> wrong_args "getnum");
     "gethex",
     (fun (_base_pos, sim_pos, flow_data) ->  function 
       | [] -> 
 	let rec hloop acc =
+	  if !sim_pos >= String.length flow_data then
+	    (loop_init := acc; raise Data_stall);
 	  match flow_data.[!sim_pos] with
-	    | '0'..'9' as c -> incr sim_pos; hloop ((Char.code c - 0x30) + acc lsl 4)
-	    | 'a'..'f' as c -> incr sim_pos; hloop ((Char.code c - 0x61 + 10) + acc lsl 4)
-	    | 'A'..'F' as c -> incr sim_pos; hloop ((Char.code c - 0x41 + 10) + acc lsl 4)
-	    | _ -> acc
+	    | '0'..'9' as c -> 
+	      incr sim_pos; hloop ((Char.code c - 0x30) + acc lsl 4)
+	    | 'a'..'f' as c -> 
+	      incr sim_pos; hloop ((Char.code c - 0x61 + 10) + acc lsl 4)
+	    | 'A'..'F' as c -> 
+	      incr sim_pos; hloop ((Char.code c - 0x41 + 10) + acc lsl 4)
+	    | _ -> loop_init := 0; acc
 	in
 	hloop 0
       | _ -> wrong_args "gethex");
