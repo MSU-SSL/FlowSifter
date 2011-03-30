@@ -175,7 +175,7 @@ bool http_header(fast_parser_t t_fast_parser)
 		else if ( bytestring_casecmp(name, "TRANSFER-ENCODING") == 0 )
 			{
 			if ( bytestring_caseprefix(value, "CHUNKED") )
-printf("CH"); fflush(stdout);
+//printf("CH"); fflush(stdout);
 				t_fast_parser->delivery_mode_ = CHUNKED;
 			}
 
