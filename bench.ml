@@ -335,6 +335,8 @@ let main () =
   let packets = packet_enum |> Enum.skip !packet_skip |> Enum.take !packet_limit |> Array.of_enum in
   trace_len := trace_size packets;
   if packets = [| |] then failwith "No packets";
+(*  let (_,kapack,_,_) = packets.(6924) in
+  printf "%S\n" kapack; *)
   let run l p = l (get_fs p) !rep_cnt packets in
   match !main with 
     | Stat  -> printf "%s: %d packets, total length %d\n" !run_id (Array.length packets) !trace_len
