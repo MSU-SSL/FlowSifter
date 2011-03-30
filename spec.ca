@@ -11,7 +11,6 @@ NONWS -> /[^\x00-\x1f\x7f ]+/; # excludes cr, lf, tab, space
 TEXT -> /[^\x00-\x1f\x7f]+/;   # excludes cr, lf, tab
 QDTEXT -> /[^\x00-\x1f\x7f"]+/;   # excludes cr, lf, tab, quote
 TOKEN -> /[^\x00-\x1f()<>@,;:\\"\/[]?={} ]+/; # excludes CTLs and separators
-STATUS -> /\d\d\d/;
 URL -> NONWS;
 
 #HTTP_START -> /GET/ REQUESTPART ;
@@ -24,14 +23,21 @@ URL -> NONWS;
 #HTTP_START -> /CONNECT/ REQUESTPART ;
 
 #Response
-HTTP_START -> VERSION SP STATUS SP TEXT CRLF;
+HTTP_START -> VERSION SP STATUS TAILOP CRLF;
 #Request
-HTTP_START 99 -> TOKEN SP URL SP VERSION CRLF;
+HTTP_START 99 -> TOKEN SP URL SP VERSION CRLF [httprequest := 1];
+
+#Response part
+TAILOP -> SP TEXT;
+TAILOP -> ;
 
 # capture the HTTP version string
 VERSION -> /HTTP\/1\.0/ [httpversion := 0];
 VERSION -> /HTTP\/1\.1/ [httpversion := 1];
 VERSION 99 -> /HTTP\/[0-9]+\.[0-9]+/;
+
+# Status code
+STATUS -> /\d\d\d/;
 
 #Header Field overall structure (including final CRLF)
 HEADERS -> HEADER CRLF HEADERS;
@@ -39,7 +45,8 @@ HEADERS -> ;
 
 #Each individual header - special attention to content length & transfer encoding as they determine body format
 HEADER -> /(?i:Content-Length):\s*/ [bodylength := getnum()];
-HEADER -> /(?i:Transfer-Encoding:\s*chunked/ [bodychunked := 1];
+HEADER -> /(?i:Transfer-Encoding:\s*chunked)/ [bodychunked := 1];
+#HEADER -> /(?i:Connection:\s*Keep-Alive)/ [keepalive := 1];
 HEADER 99 -> TOKEN /:/ VALUE;
 
 VALUE -> TEXT VALUE;
@@ -49,12 +56,16 @@ VALUE -> ;
 #body types
 ## Content length known
 BODY [ bodylength > 0 ] -> // [bodylength := skip(bodylength)];
+BODY [ bodylength == 0] -> BODY_NO_LEN;
+
 ## Chunked body
-BODY [ bodychunked == 1 ] -> CHUNK_BODY;
-## HTTP/1.0, unknown bodylength: skip rest of flow
-BODY [ bodychunked == 0; httpversion == 0; bodylength == 0 ] -> // [bodylength := skip(9999999)];
-## HTTP/1.1, unknown bodylength, assume = 0
-BODY [ bodychunked == 0; httpversion == 1; bodylength == 0 ] -> ;
+BODY_NO_LEN [ bodychunked == 1 ] -> CHUNK_BODY;
+BODY_NO_LEN [ bodychunked == 0 ] -> BODY_VERSION;
+
+## HTTP/1.0: skip rest of flow
+BODY_VERSION [httpversion == 0] -> // [bodylength := skip(9999999)];
+## HTTP/1.1, assume bodylength = 0, eat any nulls used as keepalive
+BODY_VERSION [httpversion == 1] -> /\x00*/ ;
 
 BODY_XML -> CRLF [bodyend := bodyend + pos()] XML;
 
