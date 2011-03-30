@@ -202,9 +202,10 @@ module SList = struct
       get_data_aux str t;
       let min_offset = List.map fst t |> List.min in
       String.tail str min_offset
-  let get_exp = function
+  let rec get_exp = function
     | [] -> 1
-    | (on,pn)::_ -> on + String.length pn
+    | [(on,pn)] -> on + String.length pn
+    | _::t -> get_exp t
   let rec count_ready_aux acc = function
     | [_] -> acc + 1
     | (o,p)::((a,_)::_ as tl) when a = o + String.length p -> count_ready_aux (acc+1) tl
@@ -213,8 +214,10 @@ module SList = struct
   let get_one = function
     | [] -> raise Not_found
     | h::t -> h, t
+  let avail_offset = function [] -> -1 | (o,_)::_ -> o
   let singleton d = [(0,d)]
   let empty = []
+  let shift_offset x t = List.map (fun (o,d) -> o - x, d) t
 end
 module PB = SList
 
@@ -260,24 +263,27 @@ let assemble count fns =
     if Vect.length !flows < count then 
     (*    if offset < 0 || offset > 1 lsl 25 then printf "Offset: %d, skipping\n%!" offset 
 	  else *)
-    let prev, isn = 
+    let buffer, isn = 
       try Hashtbl.find ht2 flow 
-      with Not_found -> new_flow (); PB.empty, offset + 1 
+      with Not_found -> count_new_flow (); PB.empty, offset + 1 
     in
     let offset = offset - isn in
-    let joined, isn = (* TODO: handle pre-arrivals? *)
+    let joined, isn = 
       if data = "" || offset = -1 then
-	prev, isn (* no change *)
-      else if offset < 0 || offset > 160_000 + (PB.get_exp prev) then (
-	(* assume new flow *)
-	push_v flows (flow, PB.get_all prev, true);
-	(PB.singleton data), offset
-      ) else 
-	PB.add_pkt prev data offset, isn
+	buffer, isn (* no change *)
+      else if abs (offset - PB.get_exp buffer) > 160_000 then ( 
+	(* assume 100 packets don't just get dropped *)
+	(* classify as new flow *)
+	push_v flows (flow, PB.get_all buffer, true, isn);
+	(PB.singleton data), offset + isn
+      ) else if offset < 0 then 
+	PB.add_pkt buffer data offset |> PB.shift_offset offset, isn - offset
+      else 
+	PB.add_pkt buffer data offset, isn
     in
-    if fin then (
-      push_v flows (flow, PB.get_all joined, true);
-      done_flow();
+    if fin then ( (* TODO: handle out-of-order fin *)
+      push_v flows (flow, PB.get_all joined, true, isn);
+      count_done_flow();
       Hashtbl.remove ht2 flow
     ) else
       Hashtbl.replace ht2 flow (joined, isn)
