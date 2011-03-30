@@ -40,7 +40,7 @@ let args =
      "Assemble the pcap files into flows"); 
     (Both ('m', "mux"), [set_mode Mux], [], 
      "Mux the given flow files into a simulated pcap");
-    (Both ('d', "diff"), [Unit (fun () -> main := Diff)], [],
+    (Both ('d', "diff"), [Unit (fun () -> main := Diff; parse_by_flow := true)], [],
      "Compare flowsifter with *PAC on events");
     (Name "stat", [Unit (fun () -> main := Stat)], [], 
      "Print flow statistics on the input packets only");
@@ -200,7 +200,7 @@ let run pr =
 
   let get_dir (_,_,sp,_dp) = if sp = 80 then Downflow else Upflow in
 
-  let act_packet (flow, data, fin) =
+  let act_packet (flow, data, fin, _off) =
     let p = 
       try Hashtbl.find ht flow 
       with Not_found -> 
@@ -264,7 +264,9 @@ let get_fs = function
 
 let diff_loop xs =
   let diffs = ref 0 in
+  let close_count = ref 0 in
   let count = ref 0 in
+  let wrongs = ref [] in
   let (_,_,f1) = get_fs `Sift and (_,_,f2) = get_fs `Pac in
   let rec loop i = 
     if i >= Array.length xs then () else begin
@@ -272,18 +274,25 @@ let diff_loop xs =
       f1 xs.(i); 
       let e1 = !ediff in
       f2 xs.(i);
-      let wrong = !ediff - e1 > 2 in
-      Printf.printf "Sift: %d events, PAC: %d events (diff: %B) pos:%d \n" e1 !ediff wrong i;
+      let wrong = abs (!ediff - e1) > 2 in
+      let close = !ediff <> e1 && not wrong in
+      Printf.printf "Sift: %d events, PAC: %d events (diff: %B) (close: %B) pos:%d \n" e1 !ediff wrong close i;
+      let (flow, data, _fin, off) = xs.(i) in
       if wrong then ( 
 	incr diffs;      
-	let (flow, data, _fin) = xs.(i) in
-	Printf.printf "\nP%a:\n%s\n%!" print_flow flow (clean_unprintable data);
+	Printf.printf "\nWP%a@%d:\n%s\n%!" print_flow flow off (clean_unprintable data);
+	wrongs := i :: !wrongs;
+      );
+      if close then (
+	incr close_count;
+	Printf.printf "\nCP%a@%d:\n%s\n%!" print_flow flow off (clean_unprintable data);
       );
       loop (i+1)
     end
   in
   loop 0;
-  printf "Total different flows: %d of %d (%.2f%%)\n" !diffs !count (100. *. float !diffs /. float !count)
+  printf "Packets with more than two events difference:\n%a\n" (List.print Int.print) (List.rev !wrongs);
+  printf "Total different flows: %d of %d (%.2f%%) %d close (%.2f%%)\n" !diffs !count (100. *. float !diffs /. float !count) !close_count (100. *. float !close_count /. float !count)
   
 
 
@@ -305,7 +314,7 @@ let gen_pkt () =
   Buffer.contents b 
 
 let trace_size a = 
-  Array.fold_left (fun acc (_,x,_) -> acc + String.length x) 0 a
+  Array.fold_left (fun acc (_,x,_,_) -> acc + String.length x) 0 a
 
 (*** MAIN ***) 
 let main () = 

@@ -182,7 +182,9 @@ module EBuf = struct
 end
 
 module SList = struct
+  (* (offset * data) list, sorted by offset in increasing order *)
   type t = (int * string) list
+
   let rec add_pkt_aux offset data = function 
     | (off,_)::_ as l when offset < off -> (offset,data) :: l
     | e::t (* offset >= off *) -> e :: add_pkt_aux offset data t
@@ -235,18 +237,18 @@ let packets_of_files fns =
   |> Enum.reduce (Enum.merge (fun (ts1,_,_,_,_) (ts2,_,_,_,_) -> ts1 < ts2))
 
 let trace_size_v v = 
-  Vect.fold_left (fun acc (_,x,_) -> acc + String.length x) 0 v 
+  Vect.fold_left (fun acc (_,x,_,_) -> acc + String.length x) 0 v 
 let trace_size a = 
-  Array.fold_left (fun acc (_,x,_) -> acc + String.length x) 0 a
+  Array.fold_left (fun acc (_,x,_,_) -> acc + String.length x) 0 a
 
 let max_conc = ref 0
 let conc_flows = ref 0
 let flow_count = ref 0
 
-let new_flow () = incr flow_count; incr conc_flows; max_conc := max !max_conc !conc_flows
-let done_flow () = decr conc_flows 
+let count_new_flow () = incr flow_count; incr conc_flows; max_conc := max !max_conc !conc_flows
+let count_done_flow () = decr conc_flows 
 
-let is_empty (_,p,_) = String.is_empty p
+let is_empty (_,p,_,_) = String.is_empty p
 let push_v vr x = vr := Vect.append x !vr
 
 (*** FLOW REASSEMBLY ***)
@@ -284,7 +286,7 @@ let assemble count fns =
 (*  let stream_len = trace_size_v !flows in
   printf "# %d streams re-assembled, total_len: %d\n" (Vect.length !flows) stream_len; *)
   let flows2 = ref Vect.empty in
-  Hashtbl.iter (fun (_sip,_dip,_sp,_dp as fid) (j,_) -> let j = PB.get_all j in if String.length j > 0 then ((*Printf.printf "(%lx,%lx,%d,%d): %S\n" sip dip sp dp (j);*) push_v flows2 (fid,j,false))) ht2;
+  Hashtbl.iter (fun (_sip,_dip,_sp,_dp as fid) (j,_) -> let j = PB.get_all j in if String.length j > 0 then ((*Printf.printf "(%lx,%lx,%d,%d): %S\n" sip dip sp dp (j);*) push_v flows2 (fid,j,false,0))) ht2;
 (*  let stream_len2 = trace_size_v !flows2 in
   printf "# %d streams un-fin'ed, total_len: %d\n" (Vect.length !flows2) stream_len2; *)
   let all_flows = Vect.concat !flows !flows2 in
@@ -297,30 +299,38 @@ let assemble count fns =
 let parseable = 
   let ht = Hashtbl.create 1000 in
   fun (_ts, flow, offset, data, (_syn,_ack,fin)) ->
-    let exp = 
+    let exp,buf = 
       try Hashtbl.find ht flow 
-      with Not_found -> new_flow(); (ref (offset+1)) |> tap (Hashtbl.add ht flow)
+      with Not_found -> count_new_flow(); (ref (offset+1), ref PB.empty) |> tap (Hashtbl.add ht flow)
     in
     let dlen = String.length data in
     let should_parse = (dlen > 0 && offset = !exp) || fin in
-    if fin then (Hashtbl.remove ht flow; done_flow ());
-    if should_parse then (exp := !exp + dlen; true) else false
+    if not should_parse && offset > !exp then buf := PB.add_pkt !buf data offset;
+    if should_parse then exp := !exp + dlen;
+    let data = ref data in
+    while PB.avail_offset !buf <= !exp do 
+      let (o,d),t = PB.get_one !buf in
+      let dlen = String.length d in
+      buf := t;
+      if o < !exp then 
+	if o + dlen < !exp then
+	  (* take the tail of the packet *)
+	  ( data := !data ^ (String.tail d (!exp - o)); exp := !exp + (dlen - (!exp - o)); )
+	else () (* packet is strictly in the past, drop *)
+      else
+	  ( data := !data ^ d; exp := !exp + dlen; )
+    done;
+    if fin then (Hashtbl.remove ht flow; count_done_flow ());
+    (flow, !data, fin, offset)
 
-let to_flow_packet (_ts, flow, _offset, data, (_syn, _ack, fin)) = (flow,data,fin)
-
-let pre_parse fns = 
-  packets_of_files fns
-  // parseable (* very stateful check of whether we should parse that packet *)
-  /@ to_flow_packet        (* remove unneeded fields *)
-(*  printf "#Flows pre-filtered for parsability (len: %a max_conc: %d flows: %d)\n" Ean_std.print_size_B trace_len !max_conc !flow_count; *)
-
+let pre_parse fns = packets_of_files fns /@ parseable (* very stateful check of whether we should parse that packet *)
 
 (***  INPUT FROM AN ENUM OF FILES - ONE FLOW PER FILE ***)
 
 let make_flows fns = 
   max_conc := 1; flow_count := Enum.count fns;
   fns |> Enum.map (read_file_as_str ~verbose:false) 
-    |> Enum.map (fun s -> ((0l,0l,1,unique()),s,true)) (* add the fin flag *)
+    |> Enum.map (fun s -> ((0l,0l,1,unique()),s,true,0)) (* forge the fin flag, flow id and offset *)
 (*|> (fun v -> v, trace_size v)
     |> tap (fun (_,l) -> printf "#Flows read from file (len: %a max_conc: %d flows: %d)\n" Ean_std.print_size_B l 1 !flow_count;)
 *)
@@ -342,9 +352,9 @@ let make_packets flows =
     let c = send_byte_count () in 
     let h,t = String.head s c, String.tail s c in
     if t = "" then 
-      (id,h,true), None
+      (id,h,true,-1), None
     else
-      (id,h,false), Some (id, t)
+      (id,h,false,-1), Some (id, t)
   in
   let rec loop ifp =
     if Enum.is_empty flows && Enum.is_empty ifp then () else (
