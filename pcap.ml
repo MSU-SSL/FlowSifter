@@ -183,40 +183,39 @@ end
 
 module SList = struct
   (* (offset * data) list, sorted by offset in increasing order *)
-  type t = (int * string) list
+  type t = {exp: int; buf: (int * string) list}
 
-  let rec add_pkt_aux offset data = function 
+  let shift_offset x t = List.map (fun (o,d) -> o - x, d) t
+  let rec add_pkt_aux exp offset data = function 
     | (off,_)::_ as l when offset < off -> (offset,data) :: l
-    | e::t (* offset >= off *) -> e :: add_pkt_aux offset data t
-    | [] -> [(offset,data)]
-  let add_pkt t data offset = add_pkt_aux offset data t
-  let rec get_data_aux str = function
-    | [] -> ()
-    | (o,d)::t -> String.blit d 0 str o (String.length d); get_data_aux str t
-  let end_pos (on, pn) = on + String.length pn
+    | (o,d)::_ as l when o + String.length d >= offset + String.length data -> l
+    | e::t (* offset >= off *) -> e :: add_pkt_aux exp offset data t
+    | [] -> exp:=offset + String.length data; [(offset,data)]
+  let add_pkt t data offset =
+    let e = ref t.exp in
+    let b = add_pkt_aux e offset data t.buf in
+    if offset < 0 then {exp = !e; buf=shift_offset offset b} else {exp = !e;buf=b}
+  let rec blit_data str (o,d) = String.blit d 0 str o (String.length d)
   let get_all t = 
-    if t = [] then "" else
-      let len = List.map end_pos t |> List.max in
-      let str = (String.create len) in
+    match t.buf with
+      |	[] -> ""
+      | (min_offset,_)::_ ->
+	let str = String.create t.exp in
 (*      printf "Flow len computed: %d, Packet (offset,len)s: %a\n" len (Int.print |> Pair.print2 |> List.print) (List.map (second String.length) t); *)
-      get_data_aux str t;
-      let min_offset = List.map fst t |> List.min in
-      String.tail str min_offset
-  let rec get_exp = function
-    | [] -> 1
-    | [(on,pn)] -> on + String.length pn
-    | _::t -> get_exp t
-  let rec count_ready_aux acc = function
+	List.iter (blit_data str) t.buf;
+	String.tail str min_offset
+  let rec get_exp t = t.exp
+(*  let rec count_ready_aux acc = function
     | [_] -> acc + 1
     | (o,p)::((a,_)::_ as tl) when a = o + String.length p -> count_ready_aux (acc+1) tl
     | _ -> acc
-  let count_ready t = count_ready_aux 0 t
+  let count_ready t = count_ready_aux 0 t *)
   let get_one = function
-    | [] -> raise Not_found
-    | h::t -> h, t
-  let avail_offset = function [] -> -1 | (o,_)::_ -> o
-  let singleton d = [(0,d)]
-  let empty = []
+    | {buf=[]} -> raise Not_found
+    | {exp=e;buf=h::t} -> h, {exp=e; buf=t}
+  let avail_offset = function {buf=[]} -> max_int | {buf=(o,_)::_} -> o
+  let singleton d = {exp=String.length d; buf=[0,d]}
+  let empty = {exp=0; buf=[]}
   let shift_offset x t = List.map (fun (o,d) -> o - x, d) t
 end
 module PB = SList
@@ -276,10 +275,8 @@ let assemble count fns =
 	(* classify as new flow *)
 	push_v flows (flow, PB.get_all buffer, true, isn);
 	(PB.singleton data), offset + isn
-      ) else if offset < 0 then 
-	PB.add_pkt buffer data offset |> PB.shift_offset offset, isn - offset
-      else 
-	PB.add_pkt buffer data offset, isn
+      ) else 
+	PB.add_pkt buffer data offset, if offset < 0 then isn - offset else isn
     in
     if fin then ( (* TODO: handle out-of-order fin *)
       push_v flows (flow, PB.get_all joined, true, isn);
