@@ -15,28 +15,3 @@ HEADER1 99 -> token( /[^\x00-\x1f()<>@,;:\\"\/[]?={} ]+:\s*/ ) token( VALUE ) ;
 
 HEADER1 -> /(?i:Transfer-Encoding):\s*chunked/ token(//) token(//) // [ bodychunked := 1 ] ;
 HEADER1 80 -> token( /(?i:Transfer-Encoding):\s*/ ) token( VALUE ) ;
-
-#HEADER1 -> /(?i:Connection:\s*Keep-Alive)/ token(//) token(//) // [keepalive := 1];
-#HEADER1 -> token( /(?i:Connection:\s*/) token( VALUE );
-
-
-
-
-
-## DON'T COUNT FIELDS IN TRAILERS
-#body types
-## Content length known
-#BODY1 [ bodylength > 0 ] -> // [bodylength := skip(bodylength)];
-#BODY1 [ bodylength == 0] -> BODY_NO_LEN;
-## Chunked body
-#BODY_NO_LEN [ bodychunked == 1 ] -> CHUNK_BODY1;
-#BODY_NO_LEN [ bodychunked == 0 ] -> BODY_UNKNOWN;
-
-## HTTP/1.0: skip rest of flow
-#VERSION_BODY [httpversion == 0] -> // [bodylength := skip(9999999)];
-## HTTP/1.1, assume bodylength = 0
-#VERSION_BODY [httpversion == 1] -> ;
-
-#CHUNK_BODY1 -> // [chunksize := gethex()] CHUNK_EXTENSION CRLF [chunksize := skip(chunksize)] CRLF CHUNK_BODY1;
-#CHUNK_BODY1 10 -> /0/ CRLF HEADERS1 CRLF;
-#CHUNK_BODY1 10 -> /0;/ TEXT CRLF HEADERS1 CRLF;
