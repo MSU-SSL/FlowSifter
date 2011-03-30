@@ -8,7 +8,7 @@ picheight=3.5
 picwidth=4.0
 
 ### MEMORY vs. SPEED
-ggplot() + theme_bw() + xlab("\nParsing Speed (gbps)") + ylab("Memory used(B)") + scale_y_log10() + geom_point(data=d1, aes(shape=parser, x=gbps, y=mem), size=1.5) + opts(legend.position=c(0.8,0.7))
+ggplot() + theme_bw() + xlab("\nParsing Speed (gbps)") + ylab("Memory used(B)") + scale_y_log10(breaks=c(10000, 100000, 1000000, 10000000, 100000000), labels=c("10K", "100K", "1M", "10M", "100M")) + geom_point(data=d1, aes(shape=parser, x=gbps, y=mem), size=1.5) + opts(legend.position=c(0.8,0.7))
 
 ggsave("overall.pdf", height=picheight, width=picwidth); ggsave("overall.eps", height=picheight, width=picwidth); ggsave("overall.png", height=picheight, width=picwidth, dpi=300)
 
@@ -27,9 +27,7 @@ ggplot() + theme_bw() + xlab(NULL) + ylab("Memory Improvement") +
   c("BinPAC/\nSifter","UltraPAC/\nSifter")) + geom_boxplot(aes(x =
   variable,y = value),data=bs)
 
-ggsave("memimp.pdf", height=picheight, width=picwidth)
-ggsave("memimp.eps", height=picheight, width=picwidth)
-ggsave("memimp.png", height=picheight, width=picwidth, dpi=300)
+ggsave("memimp.pdf", height=picheight, width=picwidth); ggsave("memimp.eps", height=picheight, width=picwidth); ggsave("memimp.png", height=picheight, width=picwidth, dpi=300)
 
 ### MEMORY PER FLOW
 d1$mpf <- d1$mem / d1$flows
@@ -40,9 +38,7 @@ ggplot() +
   theme_bw() + xlab(NULL) + ylab("Memory per Flow") +
   geom_jitter(aes(x = parser,y = mpf),data=d1)
 
-ggsave("memper.pdf", height=picheight, width=picwidth)
-ggsave("memper.eps", height=picheight, width=picwidth)
-ggsave("memper.png", height=picheight, width=picwidth, dpi=300)
+ggsave("memper.pdf", height=picheight, width=picwidth); ggsave("memper.eps", height=picheight, width=picwidth); ggsave("memper.png", height=picheight, width=picwidth, dpi=300)
 
 
 ### SPEED IMPROVEMENT
@@ -58,20 +54,16 @@ ggplot() + theme_bw() + xlab(NULL) + ylab("Speed Improvement") +
   c("Sifter/\nBinPAC","Sifter/\nUltraPAC")) + geom_boxplot(aes(x =
   variable,y = value),data=bs2)
 
-ggsave("bpsimp.pdf", height=picheight, width=picwidth)
-ggsave("bpsimp.eps", height=picheight, width=picwidth)
-ggsave("bpsimp.png", height=picheight, width=picwidth, dpi=300)
+ggsave("bpsimp.pdf", height=picheight, width=picwidth); ggsave("bpsimp.eps", height=picheight, width=picwidth); ggsave("bpsimp.png", height=picheight, width=picwidth, dpi=300)
 
 ### MEMORY VS. SPEED
-ggplot() + xlab("Memory Required(B)") + ylab("Speed (gbps)") +
+#ggplot() + xlab("Memory Required(B)") + ylab("Speed (gbps)") +
 #	scale_x_continuous(breaks=c(8192, 20480, 40960, 61440, 81920, 102400), labels=c("8K", "20K", "40K", "60K", "80K", "100K")) +
-	theme_bw() +
-	geom_point(aes(x = mem,y = gbps,shape = parser),data=d1)
-
-
-ggsave("memspeed.pdf", height=picheight, width=picwidth)
-ggsave("memspeed.eps", height=picheight, width=picwidth)
-ggsave("memspeed.png", height=picheight, width=picwidth, dpi=300)
+#	theme_bw() +
+#	geom_point(aes(x = mem,y = gbps,shape = parser),data=d1)
+#ggsave("memspeed.pdf", height=picheight, width=picwidth)
+#ggsave("memspeed.eps", height=picheight, width=picwidth)
+#ggsave("memspeed.png", height=picheight, width=picwidth, dpi=300)
 
 
 ### SPEED AT SOAP TRACES
@@ -89,6 +81,4 @@ ggplot() +
  geom_bar(aes(y = gbps,x = n),data=d2.sub,alpha = 0.37,fun.data = mean_sdl,mult = 1,stat = 'summary') +
  theme_bw()
 
-ggsave("soapbps.pdf", height=picheight, width=picwidth)
-ggsave("soapbps.eps", height=picheight, width=picwidth)
-ggsave("soapbps.png", height=picheight, width=picwidth, dpi=300)
+ggsave("soapbps.pdf", height=picheight, width=picwidth); ggsave("soapbps.eps", height=picheight, width=picwidth); ggsave("soapbps.png", height=picheight, width=picwidth, dpi=300)
