@@ -194,14 +194,14 @@ module SList = struct
   let add_pkt t data offset =
     let e = ref t.exp in
     let b = add_pkt_aux e offset data t.buf in
-    if offset < 0 then {exp = !e; buf=shift_offset offset b} else {exp = !e;buf=b}
+    if offset < 0 then {exp = !e-offset; buf=shift_offset offset b} else {exp = !e;buf=b}
   let rec blit_data str (o,d) = String.blit d 0 str o (String.length d)
   let get_all t = 
     match t.buf with
       |	[] -> ""
       | (min_offset,_)::_ ->
+(*	eprintf "Flow len computed: %d, Packet (offset,len)s: %a\n" t.exp (Int.print |> Pair.print2 |> List.print) (List.map (second String.length) t.buf);	*)
 	let str = String.create t.exp in
-(*      printf "Flow len computed: %d, Packet (offset,len)s: %a\n" len (Int.print |> Pair.print2 |> List.print) (List.map (second String.length) t); *)
 	List.iter (blit_data str) t.buf;
 	String.tail str min_offset
   let rec get_exp t = t.exp
@@ -270,7 +270,7 @@ let assemble count fns =
     let joined, isn = 
       if data = "" || offset = -1 then
 	buffer, isn (* no change *)
-      else if abs (offset - PB.get_exp buffer) > 160_000 then ( 
+      else if abs (offset - PB.get_exp buffer) > 20_000 then ( 
 	(* assume 100 packets don't just get dropped *)
 	(* classify as new flow *)
 	push_v flows (flow, PB.get_all buffer, true, isn);
