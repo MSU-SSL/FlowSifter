@@ -11,7 +11,7 @@ type parser_t = [ `Null | `Sift | `Pac ]
 let p_to_string = function `Null -> "Null" | `Sift -> "Sift" | `Pac -> "Pac "
 
 type mode = Pcap | Mux | Gen
-type main = Parse | Stat | Diff
+type main = Parse | Stat | Diff | Dump of int
 (*** GLOBAL CONFIGURATION ***)
 let check_mem_per_packet = ref false
 let parse_by_flow = ref false
@@ -57,6 +57,7 @@ let args =
     (Name "seed", [Int (fun i -> Random.init i)], [], "Set the random number seed");
     (Name "mhs", [Int set_mhs], [], "Set the minor heap size");
     (Name "mem", [Set check_mem_per_packet; Clear parse_by_flow], [], "Do memory testing");
+    (Name "dump", [Int (fun i -> main := Dump i)], [], "Dump packet i to stdout and exit");
   ]
 and usage_info = "bench-?pac [options] <trace_data.pcap>"
 and descr = "FlowSifter Simulation library"
@@ -262,6 +263,11 @@ let get_fs = function
   | `Sift -> run sift_p
   | `Pac -> run pac_p
 
+module String = struct
+  include String
+  let head ~len str = head str len
+end
+
 let diff_loop xs =
   let diffs = ref 0 in
   let close_count = ref 0 in
@@ -280,12 +286,12 @@ let diff_loop xs =
       let (flow, data, _fin, off) = xs.(i) in
       if wrong then ( 
 	incr diffs;      
-	Printf.printf "\nWP%a@%d:\n%s\n%!" print_flow flow off (clean_unprintable data);
+	Printf.printf "\nWP%a@%d:\n%s\n%!" print_flow flow off (data |> String.head ~len:1024 |> clean_unprintable);
 	wrongs := i :: !wrongs;
       );
       if close then (
 	incr close_count;
-	Printf.printf "\nCP%a@%d:\n%s\n%!" print_flow flow off (clean_unprintable data);
+	Printf.printf "\nCP%a@%d:\n%s\n%!" print_flow flow off (data |> String.head ~len:1024 |> clean_unprintable);
       );
       loop (i+1)
     end
@@ -335,12 +341,11 @@ let main () =
   let packets = packet_enum |> Enum.skip !packet_skip |> Enum.take !packet_limit |> Array.of_enum in
   trace_len := trace_size packets;
   if packets = [| |] then failwith "No packets";
-(*  let (_,kapack,_,_) = packets.(6924) in
-  printf "%S\n" kapack; *)
   let run l p = l (get_fs p) !rep_cnt packets in
   match !main with 
     | Stat  -> printf "%s: %d packets, total length %d\n" !run_id (Array.length packets) !trace_len
     | Diff  -> diff_loop packets
+    | Dump p_num ->   let (_,kapack,_,_) = packets.(p_num) in print_string kapack
     | _ when !check_mem_per_packet -> List.iter (run main_check_mem) !parsers
     | _ when Ns_types.debug_ca -> List.iter (run main_debug) !parsers
     | Parse -> if !baseline then run main_loop `Null; List.iter (run main_loop) !parsers
