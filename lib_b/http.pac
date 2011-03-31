@@ -292,12 +292,13 @@ flow HTTP_Flow(is_orig: bool) {
 
 %code{
 int events = 0;
+int debug = 0;
 %}
 
 function scb_store_method_uri( method: const_bytestring, 
 	                       uri: const_bytestring): bool %{
   
-//	printf("BMethod:%s\nBURL:%s\n", std_str(method).c_str(), std_str(uri).c_str());	fflush(stdout);
+if(debug) {	printf("BMethod:%s\nBURL:%s\n", std_str(method).c_str(), std_str(uri).c_str());	fflush(stdout);}
 //Count these extractions
 	events += 2;
 
@@ -306,13 +307,13 @@ function scb_store_method_uri( method: const_bytestring,
 
 function scb_header_name(name: const_bytestring) : voidptr
 %{
-//	printf("BHeaderName:%s\n", std_str(name).c_str());	fflush(stdout);
+if(debug) {	printf("BHeaderName:%s\n", std_str(name).c_str());	fflush(stdout);}
 	events += 1;
 %}
 
 function scb_header_value(value: const_bytestring) : voidptr
 %{
-//	printf("BHeaderValue:%s\n", std_str(value).c_str());	fflush(stdout);
+if(debug) {	printf("BHeaderValue:%s\n", std_str(value).c_str());	fflush(stdout);}
 	events += 1;
 %}
 
