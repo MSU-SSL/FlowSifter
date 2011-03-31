@@ -48,7 +48,7 @@ rs2$uspeedup <- rs2$sift / rs2$upac
 y2 <- rs2[,c("runid", "bspeedup", "uspeedup")]
 bs2 <- melt.data.frame(y2)
 
-ggplot() + theme_bw() + xlab(NULL) + ylab("Speed Improvement") +
+ggplot() + theme_bw() + xlab(NULL) + ylab("Speedup") +
   scale_y_continuous(breaks=c(1, 1.3, 1.6, 2, 2.3), labels=c("1x","1.3x", "1.6x", "2x", "2.3x")) + 
   scale_x_discrete(breaks = c("bspeedup","uspeedup"), labels =
   c("Sifter/\nBinPAC","Sifter/\nUltraPAC")) + geom_boxplot(aes(x =
