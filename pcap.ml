@@ -15,6 +15,8 @@ open Printf
  * libpcap endianness is determined at runtime.
  *)
 
+let debug = false
+
 let kept_packets = ref 0
 let kept_bytes = ref 0 
 let dropped_packets_non_tcp = ref 0
@@ -65,14 +67,14 @@ and libpcap_header bits =
 
 and libpcap_packet e _file_header bits =
   bitmatch bits with
-    | { _ts_sec : 32 : endian (e); (* packet timestamp seconds *)
-	ts_usec : 32 : endian (e);  (* packet timestamp microseconds *)
+    | { ts_sec : 32 : endian (e); (* packet timestamp seconds *)
+	_ts_usec : 32 : endian (e);  (* packet timestamp microseconds *)
 	incl_len : 32 : endian (e); (* packet length saved in this file *)
 	_orig_len : 32 : endian (e); (* packet length originally on wire *)
 	pkt_data : Int32.to_int incl_len*8 : bitstring;
 	rest : -1 : bitstring
       } ->
-      (ts_usec, pkt_data), rest
+      (ts_sec, pkt_data), rest
 
     | { _ } -> raise BatEnum.No_more_elements
 
@@ -156,54 +158,41 @@ let to_pkt_stream str =
   |> BatEnum.filter_map (decode_packet network)
 
 (*** IMPLEMENTATIONS OF reassembly buffers ***)
-let bslen x = Bitstring.bitstring_length x lsr 3
-module EBuf = struct
-  type t = string * int
-  let add_data (pbuf, plen) data offset = 
-    let blen = String.length pbuf in
-    let dlen = String.length data in
-    let have_len = ref blen in
-    let need_len = offset + dlen in
-    while !have_len < need_len do
-      have_len := 2 * !have_len;
-    done;
-    let pbuf = 
-      if !have_len <> blen then
-	let new_buf = String.create !have_len in
-	String.blit pbuf 0 new_buf 0 blen;
-	new_buf
-      else
-	pbuf
-    in
-    String.blit data 0 pbuf offset dlen;
-    (pbuf, plen + dlen)
-  let get_data (pbuf, plen) = String.head pbuf plen
-  let get_exp (_pbuf,plen) = plen
-end
-
 module SList = struct
   (* (offset * data) list, sorted by offset in increasing order *)
-  type t = {exp: int; buf: (int * string) list}
+  type t = {ts: int32; exp: int; buf: (int * string) list}
 
-  let shift_offset x t = List.map (fun (o,d) -> o - x, d) t
-  let rec add_pkt_aux exp offset data = function 
-    | (off,_)::_ as l when offset < off -> (offset,data) :: l
+  let shift_offset x t = if debug then printf "Adj%d " (-x); List.map (fun (o,d) -> o - x, d) t
+  let rec remove_until cutoff = function
+    | (off,d)::t when off + String.length d < cutoff -> remove_until cutoff t
+    | l -> l
+  let rec add_pkt_aux offset data = function 
+    | (off,_)::_ as l when offset < off -> (offset,data) :: (remove_until (off+String.length data) l)
+      (* drop the new packet if it overlaps completely an old one *)
     | (o,d)::_ as l when o + String.length d >= offset + String.length data -> l
-    | e::t (* offset >= off *) -> e :: add_pkt_aux exp offset data t
-    | [] -> exp:=offset + String.length data; [(offset,data)]
-  let add_pkt t data offset =
-    let e = ref t.exp in
-    let b = add_pkt_aux e offset data t.buf in
-    if offset < 0 then {exp = !e-offset; buf=shift_offset offset b} else {exp = !e;buf=b}
-  let rec blit_data str (o,d) = String.blit d 0 str o (String.length d)
+    | e::t (* offset >= off *) -> e :: add_pkt_aux offset data t
+    | [] -> [(offset,data)]
+  let add_pkt t data offset ts =
+    let e = max t.exp (offset + String.length data) in
+    let b = if String.length data > 0 then add_pkt_aux offset data t.buf else t.buf in
+    let ts = max ts t.ts in
+    if offset < 0 then (if debug then eprintf "O"; {ts=ts; exp=e-offset; buf=shift_offset offset b}) else {ts=ts;exp=e;buf=b}
+  let rec blit_data str low (o,d) = 
+    if debug then eprintf "Bl:%dB@%d " (String.length d) o;
+    String.blit d 0 str (o-low) (String.length d)
   let get_all t = 
     match t.buf with
-      |	[] -> ""
+      |	[] -> if debug then eprintf "E"; ""
       | (min_offset,_)::_ ->
-(*	eprintf "Flow len computed: %d, Packet (offset,len)s: %a\n" t.exp (Int.print |> Pair.print2 |> List.print) (List.map (second String.length) t.buf);	*)
-	let str = String.create t.exp in
-	List.iter (blit_data str) t.buf;
-	String.tail str min_offset
+	let max_end = List.fold_left (fun e (o,d) -> max e (o+String.length d)) 0 t.buf in
+	if debug then eprintf "Flow len computed: %d expected: %d, Packet (offset,len)s: %a\n" max_end t.exp (Int.print |> Pair.print2 |> List.print) (List.map (second String.length) t.buf);	
+(*	if max_end <> t.exp then assert false; *)
+	let len = max_end - min_offset in
+(*	if len > 50_000_000 then assert false; *)
+	let str = String.create len in
+	List.iter (blit_data str min_offset) t.buf;
+	if debug then eprintf "\n";
+	str
   let rec get_exp t = t.exp
 (*  let rec count_ready_aux acc = function
     | [_] -> acc + 1
@@ -212,10 +201,9 @@ module SList = struct
   let count_ready t = count_ready_aux 0 t *)
   let get_one = function
     | {buf=[]} -> raise Not_found
-    | {exp=e;buf=h::t} -> h, {exp=e; buf=t}
+    | {buf=h::t} as s -> h, {s with buf=t}
   let avail_offset = function {buf=[]} -> max_int | {buf=(o,_)::_} -> o
-  let singleton d = {exp=String.length d; buf=[0,d]}
-  let empty = {exp=0; buf=[]}
+  let empty = {ts=0l;exp=0; buf=[]}
   let shift_offset x t = List.map (fun (o,d) -> o - x, d) t
 end
 module PB = SList
@@ -247,51 +235,50 @@ let max_conc = ref 0
 let conc_flows = ref 0
 let flow_count = ref 0
 
-let count_new_flow () = incr flow_count; incr conc_flows; max_conc := max !max_conc !conc_flows
-let count_done_flow () = decr conc_flows 
+let count_new_flow () = incr flow_count; incr conc_flows; max_conc := max !max_conc !conc_flows; if debug then eprintf "N"
+let count_done_flow () = decr conc_flows; if debug then eprintf "D"
 
-let is_empty (_,p,_,_) = String.is_empty p
+let has_content (_,p,_,_) = not (String.is_empty p)
 let push_v vr x = vr := Vect.append x !vr
 
 (*** FLOW REASSEMBLY ***)
 let ht2 = Hashtbl.create 50000
 let assemble count fns =
   let flows = ref Vect.empty in
-  let push_v v x = if is_empty x then () else push_v v x in
-  let act_pkt (_ts,(_sip,_dip,_sp,_dp as flow), offset, data, (_syn,_ack,fin)) = 
+  let push_flow x = if has_content x then push_v flows x else if debug then eprintf "E" in
+  let act_pkt (ts,(_sip,_dip,_sp,_dp as flow), seq_no, data, (_syn,_ack,fin)) = 
     if Vect.length !flows < count then 
-    (*    if offset < 0 || offset > 1 lsl 25 then printf "Offset: %d, skipping\n%!" offset 
+    (*    if seq_no < 0 || seq_no > 1 lsl 25 then printf "Seq_No: %d, skipping\n%!" seq_no 
 	  else *)
-    let buffer, isn = 
+    let buffer, init_seq_no = 
       try Hashtbl.find ht2 flow 
-      with Not_found -> count_new_flow (); PB.empty, offset + 1 
+      with Not_found -> count_new_flow (); (ref PB.empty, ref seq_no) |> tap (Hashtbl.add ht2 flow)
     in
-    let offset = offset - isn in
-    let joined, isn = 
-      if data = "" || offset = -1 then
-	buffer, isn (* no change *)
-      else if abs (offset - PB.get_exp buffer) > 20_000 then ( 
-	(* assume 100 packets don't just get dropped *)
-	(* classify as new flow *)
-	push_v flows (flow, PB.get_all buffer, true, isn);
-	(PB.singleton data), offset + isn
-      ) else 
-	PB.add_pkt buffer data offset, if offset < 0 then isn - offset else isn
-    in
+    let rel_seq_no = seq_no - !init_seq_no in
+    let time_diff = Int32.sub ts !buffer.PB.ts in
+    if rel_seq_no <> 0 && time_diff > 120l then ( (* autoclose after 2 minutes idle *)
+      if debug then eprintf "A%ld " time_diff;
+      push_flow (flow, PB.get_all !buffer, true, !init_seq_no);
+      buffer := PB.empty; init_seq_no := seq_no;
+    );
+    buffer := PB.add_pkt !buffer data rel_seq_no ts;
+    (* fix out of order syn packet *)
+    if rel_seq_no < 0 then init_seq_no := seq_no;
+
     if fin then ( (* TODO: handle out-of-order fin *)
-      push_v flows (flow, PB.get_all joined, true, isn);
+      push_flow (flow, PB.get_all !buffer, true, !init_seq_no);
       count_done_flow();
       Hashtbl.remove ht2 flow
-    ) else
-      Hashtbl.replace ht2 flow (joined, isn)
+    )
   in
   packets_of_files fns |> Enum.iter act_pkt;
 (*  let stream_len = trace_size_v !flows in
-  printf "# %d streams re-assembled, total_len: %d\n" (Vect.length !flows) stream_len; *)
+  printf "# %d streams re-assembled (max:%d), total_len: %d\n" (Vect.length !flows) count stream_len;
+  printf "# flow_count: %d conc_flows: %d max_conc: %d\n" !flow_count !conc_flows !max_conc; *)
   let flows2 = ref Vect.empty in
-  Hashtbl.iter (fun (_sip,_dip,_sp,_dp as fid) (j,_) -> let j = PB.get_all j in if String.length j > 0 then ((*Printf.printf "(%lx,%lx,%d,%d): %S\n" sip dip sp dp (j);*) push_v flows2 (fid,j,false,0))) ht2;
+  Hashtbl.iter (fun (_sip,_dip,_sp,_dp as fid) (b,_) -> let d = PB.get_all !b in if String.length d > 0 then ((*Printf.printf "(%lx,%lx,%d,%d): %S\n" sip dip sp dp (j);*) push_v flows2 (fid,d,false,0))) ht2;
 (*  let stream_len2 = trace_size_v !flows2 in
-  printf "# %d streams un-fin'ed, total_len: %d\n" (Vect.length !flows2) stream_len2; *)
+  printf "# %d streams un-fin'ed, total_len: %d\n" (Vect.length !flows2) stream_len2;  *)
   let all_flows = Vect.concat !flows !flows2 in
 (*  printf "# Flows pre-assembled (len: %a max_conc: %d flows: %d)\n" Ean_std.print_size_B (stream_len + stream_len2) !max_conc !flow_count;
   printf "# Flows in vect: %d\n" (Vect.length all_flows);  *)
@@ -301,14 +288,14 @@ let assemble count fns =
 (*** FILTER DUPLICATE/OUT-OF-ORDER PACKETS ***)
 let parseable = 
   let ht = Hashtbl.create 1000 in
-  fun (_ts, flow, offset, data, (_syn,_ack,fin)) ->
+  fun (ts, flow, offset, data, (_syn,_ack,fin)) ->
     let exp,buf = 
       try Hashtbl.find ht flow 
       with Not_found -> count_new_flow(); (ref (offset+1), ref PB.empty) |> tap (Hashtbl.add ht flow)
     in
     let dlen = String.length data in
     let should_parse = (dlen > 0 && offset = !exp) || fin in
-    if not should_parse && offset > !exp then buf := PB.add_pkt !buf data offset;
+    if not should_parse && offset > !exp then buf := PB.add_pkt !buf data offset ts;
     if should_parse then exp := !exp + dlen;
     let data = ref data in
     while PB.avail_offset !buf <= !exp do 
