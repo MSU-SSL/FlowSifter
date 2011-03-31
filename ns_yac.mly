@@ -39,7 +39,7 @@
 
 spec: spec = ns_rule+ EOF { spec }
 
-    ns_rule:
+ns_rule:
   | NT BRACK? INT? BECOMES term* SEMI { ($1,$2,$3,$5) }
   | error { printf "ERROR(line %d): couldn't parse rule\n%!" ($startpos.pos_lnum); exit 1 }
 
