@@ -180,8 +180,6 @@ module Ocamlviz = struct
 
 end
 
-
-
 let _ = dispatch begin function
   | Before_options ->
       OCamlFind.before_options ();
@@ -192,44 +190,12 @@ let _ = dispatch begin function
       Batteries.after_rules ();
       Ocamlviz.after_rules ();
       flag ["ocaml"; "native"; "compile"; "ccgpp"] (S[A"-cc"; A"g++"]);
-      dep ["ocaml"; "native"; "link"; "libmwm"] ["mwmatching_ml.o"];
-      flag ["link_python"] (S[A"-ccopt"; A"-I/usr/include/python2.6"]);
-      flag ["dflow"; "compile"] (S[A"-ppopt"; A"-DFLOW"]);
-      
   | _ -> ()
 end
 
 
-(*
-   Requires ocamlbuild/ctools/myocamlbuild_config.ml
-   normally adding to current directory during start of build process 
-   
-   C files require cppi (C PreProcessor Include) file scanner tool in executable path.
-*)
+(**
+   which ocamlrun  ->   header
 
-open Myocamlbuild_config
-open Myocamlbuild_config.Build
-
-(* template project *)
-let project () =
-
-    
-  c_include ["include_ocaml"] (C.find_ocamllib());
-  
-  (* template for c dependency scanner handling root relative paths from inside a src dir  
-  Pathname.define_context "xyzzy" ["."];
-  *)
-
-  (* mixed c/ocaml template *)
-  dist_clib [] "libbpac" "lib/libbpac.a" "bpac" "dist/lib/ocaml";
-  dist_ocaml_clib "bpac" "libbpac" "." "dist/lib/ocaml";
-
-  dist_clib [] "libupac" "ulib/libbinpac.a" "upac" "dist/lib/ocaml";
-  dist_ocaml_clib "upac" "libupac" "." "dist/lib/ocaml";
-
-  ()
-;;
-
-Build.build project
-
-
+   print_backtrace -> ajouter "-b" après le header
+**)

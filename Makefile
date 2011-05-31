@@ -9,7 +9,7 @@ all: bench-all
 .PHONY: clean hwrun %.threadlog bench-all runlog.% outliers rectest
 
 clean:
-	rm -f *.a *.o *.cmi *.cmx *.cmo *.cmxa *.annot lib_b/*.o lib_u/*.o ns_lex.ml ns_yac.ml
+	rm -f *.a *.o *.cmi *.cmx *.cmo *.cmxa *.annot lib_b/*.o lib_u/*.o ns_lex.ml ns_yac.ml ns_yac.mli
 
 http-baseconn.o: http-baseconn.cc
 	g++ $(CPPFLAGS) -c $^ -o $@
@@ -91,6 +91,9 @@ pcap: pcap.ml
 hwrun:
 	ocamlbuild -no-hygiene hwrun.native
 	mv hwrun.native hwrun
+
+demo: *.ml
+	ocamlbuild demo.native
 
 #join -j 1 -o 1.1 1.2 2.2 null.20-timelog null.50-timelog | join -j 1 -o 1.1 1.2 1.3 2.2 - null.100-timelog | join -j 1 -o 1.1 1.2 1.3 1.4 2.2 - null.150-timelog | join -j 1 -o 1.1 1.2 1.3 1.4 1.5 2.2 - null.250-timelog 
 

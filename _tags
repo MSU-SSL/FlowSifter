@@ -1,6 +1,8 @@
-<*>: pkg_batteries, use_menhir, annot, debug, ocamlviz
+<*>: pkg_batteries, use_menhir, annot, debug, pkg_bitstring
+#, ocamlviz
 <bench.*>: dflow, syntax_camlp4o, pkg_camlp4.macro
-<{pcap,hwrun}.*>: syntax_bitstring.syntax, pkg_bitstring, pkg_bitstring.syntax
+<{pcap_parser,hwrun}.*>: syntax_camlp4o, pkg_bitstring.syntax
 <*_stubs.c>: include_ocaml
 <*/libbinpac.a>: precious
 <*/libubinpac.a>: precious
+<demo.*>: pkg_pcap

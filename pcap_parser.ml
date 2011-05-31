@@ -1,4 +1,4 @@
-open Batteries_uni
+open Batteries
 open Printf
 
 (* Print out packets from a tcpdump / libpcap / wireshark capture file.
@@ -147,6 +147,8 @@ and decode_packet = function
   | 101l -> decode_ip
   | 1l -> decode_eth
   | linktype -> failwith ("Unknown pcap Linktype: " ^ Int32.to_string linktype)
+
+let packet (ts:int32) contents = (ts, Bitstring.bitstring_of_string contents)
 
 (* let () = main () *)
 
