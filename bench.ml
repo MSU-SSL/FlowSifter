@@ -280,7 +280,7 @@ let diff_loop xs =
       f1 xs.(i); 
       let e1 = !ediff in
       f2 xs.(i);
-      let wrong = abs (!ediff - e1) > 2 in
+      let wrong = abs (!ediff - e1) > 4 in
       let close = !ediff <> e1 && not wrong in
       Printf.printf "Sift: %d events, PAC: %d events (diff: %B) (close: %B) pos:%d \n" e1 !ediff wrong close i;
       let (flow, data, _fin, off) = xs.(i) in
