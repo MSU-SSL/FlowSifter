@@ -1,8 +1,8 @@
 require(ggplot2)
 
-d <- read.csv("~/bpac/rundata", sep="\t")
+d <- read.csv("rundata", sep="\t")
 d1 <- d[d$parser != "null",]
-d1$parser<-factor(d1$parser,levels=c("bpac","sift","upac"),ordered=FALSE)
+d1$parser<-factor(d1$parser,levels=c("sift","bpac","upac"),ordered=FALSE)
 
 picheight=3.5
 picwidth=4.0
@@ -49,7 +49,7 @@ y2 <- rs2[,c("runid", "bspeedup", "uspeedup")]
 bs2 <- melt.data.frame(y2)
 
 ggplot() + theme_bw() + xlab(NULL) + ylab("Speedup") +
-  scale_y_continuous(breaks=c(1, 1.3, 1.6, 2, 2.3), labels=c("1x","1.3x", "1.6x", "2x", "2.3x")) + 
+  scale_y_continuous(breaks=c(1, 2, 3, 4, 5), labels=c("1x","2x", "3x", "4x", "5x")) + 
   scale_x_discrete(breaks = c("bspeedup","uspeedup"), labels =
   c("Sifter/\nBinPAC","Sifter/\nUltraPAC")) + geom_boxplot(aes(x =
   variable,y = value),data=bs2)
@@ -77,8 +77,25 @@ d2.sub<-subset(d2,parser == "sift")
 
 ggplot() +
  scale_y_continuous() +
+ geom_bar(aes(y = gbps,x = n),data=d2.sub,fun.data = mean_sdl,mult = 1,stat = 'summary', color="white",fill="grey70") +
  geom_errorbar(aes(y = gbps,x = n),data=d2.sub,fun.data = mean_cl_normal,conf.int = 0.95,stat = 'summary') +
- geom_bar(aes(y = gbps,x = n),data=d2.sub,alpha = 0.37,fun.data = mean_sdl,mult = 1,stat = 'summary') +
- theme_bw()
+ theme_bw() + ylab("Gbps") + xlab(expression(n))
 
 ggsave("soapbps.pdf", height=picheight, width=picwidth); ggsave("soapbps.eps", height=picheight, width=picwidth); ggsave("soapbps.png", height=picheight, width=picwidth, dpi=300)
+
+
+## Change picture dimensions for 3-across figures
+picheight=3.0
+picwidth=3.0
+
+mcdf <- ddply(d1,.(parser), summarize, lmem=unique(mem), ecdf = ecdf(mem)(unique(mem)))
+ggplot(mcdf, aes(lmem, ecdf, linetype=parser)) + geom_step() + theme_bw() + xlab("\nMemory Used (MB)") + ylab("CDF") + scale_x_log10(breaks=c(600000,1000000,3000000,10000000,30000000,100000000,300000000,1000000000),labels=c(".6","1","3","10","30","100","300","1000")) + scale_linetype('Parser', breaks=levels(mcdf$parser), labels=c('Sifter', 'BinPAC', 'UltraPAC'), legend=FALSE)
+ggsave("memcdf.pdf", height=picheight, width=picwidth); ggsave("memcdf.eps", height=picheight, width=picwidth); ggsave("memcdf.png", height=picheight, width=picwidth, dpi=300)
+
+scdf <- ddply(d1,.(parser), summarize, bps=unique(gbps), ecdf = ecdf(gbps)(unique(gbps)))
+ggplot(scdf, aes(bps, ecdf, linetype=parser)) + geom_step() + xlab("\nParsing speed(Gbps)") + ylab("CDF") + theme_bw() + scale_linetype('Parser', breaks=levels(mcdf$parser), labels=c('Sifter', 'BinPAC', 'UltraPAC'), legend=FALSE)
+ggsave("speedcdf.pdf", height=picheight, width=picwidth); ggsave("speedcdf.eps", height=picheight, width=picwidth); ggsave("speedcdf.png", height=picheight, width=picwidth, dpi=300)
+
+jcdf <- ddply(d1,.(parser), summarize, effic=unique(gbps/log10(mem)), ecdf = ecdf(gbps/log10(mem))(unique(gbps/log10(mem))))
+ggplot(jcdf, aes(effic,ecdf)) + geom_step(aes(linetype=parser)) + xlab("\nEfficiency (Gbps/log10(Mem))") + ylab("CDF") + theme_bw() + scale_linetype('Parser', breaks=levels(mcdf$parser), labels=c('Sifter', 'BinPAC', 'UltraPAC'))
+ggsave("efficcdf.pdf", height=picheight, width=4); ggsave("efficcdf.eps", height=picheight, width=4); ggsave("efficcdf.png", height=picheight, width=4, dpi=300)
