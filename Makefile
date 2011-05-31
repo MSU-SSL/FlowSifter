@@ -180,8 +180,10 @@ rectest: bench-upac
 harvdata: bench-bpac bench-upac
 	-mv -b $@ $@.bkp
 	echo -e $(HEADER) > $@
-	./bench-bpac -n $(COUNT) ~/traces/http/use/h*.pcap | tee -a $@
-	./bench-upac -n $(COUNT) ~/traces/http/use/h*.pcap | tee -a $@ 
+	./bench-bpac -n $(COUNT) ~/traces/http/use/h*t.pcap | tee -a $@
+	./bench-upac -n $(COUNT) ~/traces/http/use/h*t.pcap | tee -a $@ 
+	./bench-bpac -n $(COUNT) ~/traces/http/use/h*t1.pcap | tee -a $@
+	./bench-upac -n $(COUNT) ~/traces/http/use/h*t1.pcap | tee -a $@ 
 
 figures: rundata rectest memory.R
 	R --save < memory.R
@@ -190,5 +192,11 @@ outliers: bench-upac
 	./bench-upac ~/traces/http/use/98w3-wednesday.pcap 
 
 diff-test: all
-	./bench-bpac -f -d ~/traces/http/use/harvest.pcap* -l 1000 > log; tail -n 1 log
-	./bench-upac -f -d ~/traces/http/use/harvest.pcap* -l 1000 >> log; tail -n 1 log
+	./bench-bpac -f -d ~/traces/http/use/harvest.pcap* > log; tail -n 1 log;\
+	./bench-upac -f -d ~/traces/http/use/harvest.pcap* >> log; tail -n 1 log;\
+	./bench-bpac -f -d ~/traces/http/use/harvest1.pcap* >> log; tail -n 1 log;\
+	./bench-upac -f -d ~/traces/http/use/harvest1.pcap* >> log; tail -n 1 log;\
+	./bench-bpac -f -d ~/traces/http/use/98w3-wednesday.pcap >> log; tail -n 1 log;\
+	./bench-upac -f -d ~/traces/http/use/98w3-wednesday.pcap >> log; tail -n 1 log;\
+	./bench-bpac -f -d ~/traces/http/use/99w2-tuesday.inside* >> log; tail -n 1 log;\
+	./bench-upac -f -d ~/traces/http/use/99w2-tuesday.inside* >> log; tail -n 1 log
