@@ -1,7 +1,6 @@
 open Batteries_uni
 open Printf
 open Ean_std
-open Ocamlviz
 
 (* let ruleset_tag = Tag.create ~size:true ~count:true ~period:1000 "Ruleset" *)
 module Rule = struct 
