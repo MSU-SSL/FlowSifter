@@ -94,7 +94,7 @@ type 'a dec_ops = {
 
 type ('a,'b, 'c) state = {
   id    : int; (* the index of this state in the state array *)
-  pri   : int; (* the priority of the highest match reachable from this state *)
+  mutable pri   : int; (* the priority of the highest match reachable from this state *)
   label : 'a; (* a label for this state - used for deferments *)
   map   : 'b; (* the map to next states *)
   dec   : 'c; (* a decision type, usually option or list *)

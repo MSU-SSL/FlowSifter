@@ -185,11 +185,11 @@ let () =
 let null_state = -1
 
 type ca_next = (int * a_exp) list * int
-type 'a state = ('a option, int array, ca_next) Regex_dfa.state
+type state = (unit, int array, ca_next) Regex_dfa.state
 
-type 'a ca_resume = 
+type ca_resume = 
   | Done 
-  | Dfa of 'a state array * 'a state * int * ca_next * int * string
+  | Dfa of state array * state * int * ca_next * int * string
   | Ca of (int * a_exp) list * int
 
 let init_dfa ca vars = ca.(0) vars (0, ref 0, "")
