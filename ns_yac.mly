@@ -63,7 +63,7 @@ a_exp:
   | a_exp MUL a_exp { Multiply($1,$3) }
   | a_exp SUB a_exp { Sub($1,$3) }
   | a_exp DIV a_exp { Divide($1,$3) }
-  | var=NT LPAREN args=separated_list(COMMA, a_exp) RPAREN { Function(var, get_f var, args) }
+  | var=NT LPAREN args=separated_list(COMMA, a_exp) RPAREN { Function(var, get_f_id var, args) }
   | INT { Constant $1 }
   | NT { check_var $1; Variable }
   | LPAREN a_exp RPAREN { $2 }

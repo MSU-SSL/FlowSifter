@@ -1,4 +1,4 @@
-HTTP1 -> HTTP_START1 [bodychunked := 0; bodylength := 0] 
+HTTP1 -> // HTTP_START1 [bodychunked := 0; bodylength := 0] 
       	 HEADERS1 CRLF BODY HTTP1;
 HTTP1 -> ;
 
@@ -10,8 +10,8 @@ HTTP_START1 99 -> token(TOKEN) SP token(URL) SP VERSION CRLF;
 HEADERS1 -> HEADER1 CRLF HEADERS1 ;
 HEADERS1 -> ;
 
-HEADER1 -> token( /(?i:Content-length):\s*/ ) // [bodylength := getnum(); cv := token(-1) ] ;
+HEADER1 -> token( /(?i:Content-length):\s*/ ) // [bodylength := getnum()] ;
 HEADER1 99 -> token( /[^\x00-\x1f()<>@,;:\\"\/[]?={} ]+:\s*/ ) token( VALUE ) ;
 
-HEADER1 -> /(?i:Transfer-Encoding):\s*chunked/ token(//) token(//) // [ bodychunked := 1 ] ;
+HEADER1 -> /(?i:Transfer-Encoding):\s*chunked/ [ bodychunked := 1 ] ;
 HEADER1 80 -> token( /(?i:Transfer-Encoding):\s*/ ) token( VALUE ) ;

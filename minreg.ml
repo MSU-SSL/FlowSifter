@@ -11,13 +11,13 @@ type 'a t =
   | Union of 'a t Set.t
   | Concat of 'a t list * bool
   | Kleene of 'a t
-  | Accept of 'a
+  | Accept of 'a * int
 
 let epsilon = Concat ([],true)
 
 let rec compare ~dec_comp x y = match (x,y) with 
     Union a, Union b -> Enum.compare (compare ~dec_comp) (Set.enum a) (Set.enum b)
-  | Accept a, Accept b -> dec_comp a b
+  | Accept (a,_), Accept (b,_) -> dec_comp a b
   | Concat (a,_), Concat (b,_) -> List.make_compare (compare ~dec_comp) a b
   | Kleene a, Kleene b -> compare ~dec_comp a b
   | a,b -> Pervasives.compare a b
@@ -68,7 +68,7 @@ let rec print oc = function
   | Kleene (Concat (regl,_)) -> List.print ~first:"(" ~sep:"" ~last:")" print oc regl;  IO.write oc '*'
   | Kleene reg -> print oc reg; IO.write oc '*'
   | Value a -> Pcregex.print_iset oc a
-  | Accept i -> fprintf oc "{{%d}}" i
+  | Accept (i,p) -> fprintf oc "{{%d:%d}}" p i
 
 let rec printp ?(dec=true) oc = function 
   | Union s when Set.mem epsilon s -> printp oc (Union (Set.remove epsilon s)); IO.write oc '?'
@@ -78,7 +78,7 @@ let rec printp ?(dec=true) oc = function
   | Kleene (Concat (regl,_)) -> List.print ~first:"(" ~sep:"" ~last:")" printp oc regl;  IO.write oc '*'
   | Kleene reg -> printp oc reg; IO.write oc '*'
   | Value a -> Pcregex.print_iset oc a
-  | Accept x -> fprintf oc "{{%s}}" (if dec then dump x else "x")
+  | Accept (x,p) -> fprintf oc "{{%d:%s}}" p (if dec then dump x else "x")
 
 
 let print_inner_norm_regex oc rmap =
@@ -109,7 +109,7 @@ let rec tag_red = function
   | Pcregex.Concat l -> Concat (List.map tag_red l,true)
   | Pcregex.Kleene r -> Kleene (tag_red r)
   | Pcregex.Value a -> Value a
-  | Pcregex.Accept i -> Accept i
+  | Pcregex.Accept (i,p) -> Accept (i,p)
 
 let of_reg reg = Pcregex.reduce reg |> tag_red
 

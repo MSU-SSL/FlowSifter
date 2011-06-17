@@ -18,33 +18,15 @@ let get_all_rule_groups (ca:regular_grammar_arr) =
   Array.enum ca |> map groups_of_rlist |> Enum.flatten
 
 let run_act rerun state vars (var, act) =
-  try vars.(var) <- val_a_exp state vars.(var) act
+  try vars.(var) <- val_a_exp Ns_types.get_f state vars.(var) act
   with Ns_types.Data_stall -> rerun := (var,act) :: !rerun;
 
-type 'a opt_rules = ('a option * ('a -> 'a option) * ('a option -> 'a option -> 'a option) * ('a -> 'a -> int))
-(* rules for handling decisions when creating the DFA *)
-let dec_rules comp =
-  let lowest_precedence a b = match a,b with
-    | None, None -> None
-    | Some r, None | None, Some r -> Some r
-    | Some r1, Some r2 -> if comp r1 r2 = -1 then Some r1 else Some r2 in
-  (None, (fun i -> Some i),lowest_precedence, comp: 'a opt_rules)
-
 type ca_data = (int * a_exp) list * int
-type 'a pri_dec = {pri: int; item: 'a} 
 
-let comp_dec d1 d2 = Int.compare d1.pri d2.pri
-
-let dec_eq a b = match a,b with
-  | Some {pri=p1; item=(ps1,n1)}, Some {pri=p2; item=(ps2,n2)} ->
-      p1 = p2 && n1 = n2 && List.length ps1 = List.length ps2 && 
-        List.for_all2 (fun (v1,e1) (v2,e2) -> v1 = v2 && aeq e1 e2) ps1 ps2
-  | _ -> false
-
-let print_dfa_dec oc d =
+let print_dfa_dec oc (a,b) =
   let so = Option.print Int.print in
-  Printf.fprintf oc "{%d,%a,%a}%!" 
-    d.pri (List.print print_action) (fst d.item) so (snd d.item)
+  Printf.fprintf oc "{%a,%a}%!" 
+    (List.print print_action) a so b
 
 let print_iaction oc (i,e) = fprintf oc "(%d) := %a" i (print_a_exp ("(" ^ string_of_int i ^ ")")) e
 let print_reg_rule oc rr = 
@@ -57,25 +39,28 @@ let print_reg_rule oc rr =
 let comp_t = Time.create "comp_ca" *)
 
 let make_rx_pair r =
-  let to_pair rx = 
-    ({pri=r.prio; item=(r.act,Option.default (-1) r.nt)} : ca_data pri_dec), 
-    (rx |> String.lchop |> String.rchop), (* remove /rx/'s slashes *)
-    [`Extended]
+  let rx = (* remove /rx/'s slashes *)
+    match r.rx with
+      | None -> ""
+      | Some rx -> (rx |> String.lchop |> String.rchop)
   in
-  Option.map to_pair r.rx 
-    
+  (r.act,Option.default (-1) r.nt), 
+  rx, [`Extended; `Pri r.prio]
+
+let merge_dec (act1,nt1 as a) (act2, nt2 as b) = if nt1 > nt2 then a else b
+
 (* Compiles a list of rules into an automaton with decisions of
    (priority, action, nt) *)
 let compile_ca rules =
+  let dec_ops = {Regex_dfa.dec0 = ([],-1); merge = merge_dec; cmp = compare} in
 (*  printf "Making dfa of \n%a\n%!" (List.print print_reg_rule) rules;*)
-  List.enum rules
-  |> Enum.filter_map make_rx_pair
+  List.enum rules 
+  |> Enum.map make_rx_pair
   |> Pcregex.rx_of_dec_strings ~anchor:true
   |> Minreg.of_reg
-  |> Nfa.build_dfa ~labels:false (dec_rules comp_dec) 
-  |> Regex_dfa.minimize ~dec_comp:dec_eq
+  |> Nfa.build_dfa ~labels:false dec_ops
+  |> Regex_dfa.minimize
   |> Regex_dfa.to_array
-
 
 let fill_cache cached_compile ca = 
   Enum.iter (cached_compile |- ignore) (get_all_rule_groups ca)
@@ -91,11 +76,11 @@ let get_rules_bits_aux var_sat pr_list =
   List.fold_left bitvect 0 pr_list
 
 let get_rules_bits state pr_list vars =
-  let var_satisfied (v,p) = val_p_exp state vars.(v) p in
+  let var_satisfied (v,p) = val_p_exp Ns_types.get_f state vars.(v) p in
   get_rules_bits_aux var_satisfied pr_list 
 
 let get_rules_bits_uni state pr_list i =
-  let var_satisfied (_v,p) = val_p_exp state i p in
+  let var_satisfied (_v,p) = val_p_exp Ns_types.get_f state i p in
   get_rules_bits_aux var_satisfied pr_list 
 
 let is_univariate_predicate rs =
@@ -105,7 +90,7 @@ let is_univariate_predicate rs =
   if List.for_all test rs then !v else None
 
 let get_rules_v i rules =
-  let var_satisfied (_,p) = val_p_exp null_env i p in
+  let var_satisfied (_,p) = val_p_exp Ns_types.get_f null_env i p in
   let pred_satisfied pred = List.for_all var_satisfied pred in
   List.filter_map (fun (p,e) -> if pred_satisfied p then Some e else None) rules
 
@@ -125,13 +110,13 @@ let optimize_preds ca =
   let opt_prod _i rules =
     if List.for_all (fun (p,_) -> List.length p = 0) rules then
       let dfa = List.map snd rules |> compile_ca in
-      if Ns_types.debug_ca then 
-	printf "#DFA: %d\n%a\n" _i (Regex_dfa.print_array_dfa (fun oc {item=(_,q)} -> Int.print oc q)) dfa;
-      (fun _ _ -> dfa)
+(*      if Ns_types.debug_ca then 
+	printf "#DFA: %d\n%a\n" _i (Regex_dfa.print_array_dfa (fun oc {item=(_,q)} -> Int.print oc q)) dfa;*)
+	(fun _ _ -> dfa)
     else 
       if List.length rules < 20 then (*TODO: PARTITION RULES BY PREDICATE *)
 	let cas = Array.init (1 lsl (List.length rules)) 
-	  (fun i -> get_comb i rules |> compile_ca) 
+	  (fun i -> get_comb i rules |> compile_ca)
 	in
 	match is_univariate_predicate rules with
 	    Some v -> 
@@ -161,29 +146,33 @@ exception Parse_complete
 type ('a, 'b) resume_ret = 
   | End_of_input of 'a * int * 'b * int
   | Dec of 'b * int
+open Regex_dfa
 
 let rec resume_arr qs input pri decision dec_pos q pos =
   if pos >= String.length input then (
-    if debug_ca then printf "EOI: q:%d pri:%d dec_pos:%d\n" q.Regex_dfa.id pri dec_pos;
+    if debug_ca then printf "EOI: q:%d pri:%d dec_pos:%d\n" q.id pri dec_pos;
     End_of_input (q,pri,decision,dec_pos)
   ) else
-    let q_next_id = Array.unsafe_get q.Regex_dfa.map (Char.code (String.unsafe_get input pos)) in
+    let q_next_id = Array.unsafe_get q.map (Char.code (String.unsafe_get input pos)) in
     if q_next_id = -1 then (
       if debug_ca then printf "%C done" input.[pos]; 
       Dec (decision, dec_pos)
-    ) else if q_next_id = q.Regex_dfa.id then ( (* TODO: TEST OPTIMIZATION *)
+(* 
+   ) else if q_next_id = q.id then ( (* TODO: TEST OPTIMIZATION *)
       if debug_ca then printf "%C" input.[pos];
-      let dec_pos = if q.Regex_dfa.dec = None then dec_pos else (pos+1) in
+      let dec_pos = if q.dec = None then dec_pos else (pos+1) in
       resume_arr qs input pri decision dec_pos q (pos+1)
+ *)
     ) else
       let q = Array.unsafe_get qs q_next_id in
       if debug_ca then printf "%C->%d " input.[pos] q_next_id;
       let pos = pos+1 in 
-      match q.Regex_dfa.dec with
-	| Some d when d.pri <= pri -> 
-	  if debug_ca then printf "M%d " (snd d.item);
-	  resume_arr qs input d.pri d.item pos q pos
-	| _ -> 
+      if q.pri < pri then 
+	Dec (decision, dec_pos)
+      else
+	if q.dec_pri > pri then
+	  resume_arr qs input q.dec_pri q.dec pos q pos
+	else
 	  resume_arr qs input pri decision dec_pos q pos
 (*
 let test_dfa = [{pri=1; item=0}, "[abcxyz].*[bahd].*\n", []] |> List.enum |> Pcregex.rx_of_dec_strings |> Minreg.of_reg |> Regex_dfa.build_dfa ~labels:false (dec_rules comp_dec) |> Regex_dfa.minimize ~dec_comp:(=) |> Regex_dfa.to_array
@@ -196,18 +185,18 @@ let () =
 let null_state = -1
 
 type ca_next = (int * a_exp) list * int
-type 'a state = ('a option, int array, ca_next pri_dec option) Regex_dfa.state
+type 'a state = ('a option, int array, ca_next) Regex_dfa.state
 
 type 'a ca_resume = 
   | Done 
   | Dfa of 'a state array * 'a state * int * ca_next * int * string
   | Ca of (int * a_exp) list * int
 
+let init_dfa ca vars = ca.(0) vars (0, ref 0, "")
+
 let init_state dfa pos =
-  let q0 = dfa.Regex_dfa.q0 in
-  match q0.Regex_dfa.dec with 
-      Some {pri=p; item=i} -> Dfa (dfa.Regex_dfa.qs, q0, p, i, pos, "")
-    | None -> Dfa (dfa.Regex_dfa.qs, q0, max_int, ([], null_state), pos, "")
+  let q0 = dfa.q0 in
+  Dfa (dfa.qs, q0, q0.dec_pri, q0.dec, pos, "")
 
 let ca_trans = ref 0 
 
@@ -257,15 +246,8 @@ let rec simulate_ca_string ~ca ~vars fail_drop skip_left base_pos flow_data =
       Done
     ) else
       let dfa = ca.(q_next) vars ca_state in
-      match dfa.Regex_dfa.q0.Regex_dfa.dec with
-	| None -> 
-	  run_d2fa dfa.Regex_dfa.qs dfa.Regex_dfa.q0 
-	    max_int ([],null_state) 
-	    !pos ""
-	| Some {pri=p; item=i} ->
-	  run_d2fa dfa.Regex_dfa.qs dfa.Regex_dfa.q0 
-	    p i 
-	    !pos ""
+      let q0 = dfa.q0 in
+      run_d2fa dfa.qs q0 q0.dec_pri q0.dec !pos ""
   in
   function
     | Dfa (qs, q, pri, item, ri, tail_data) ->

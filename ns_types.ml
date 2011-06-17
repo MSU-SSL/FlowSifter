@@ -30,11 +30,11 @@ open ParsedPCFG
 
 type ('a, 'b, 'pri) regular_rule = {prio : 'pri; rx : string option;
 		     act: ('a * a_exp) list; nt : 'b option}
-type pred = p_exp VarMap.t
+type pred = a_exp p_exp VarMap.t
 type regular_grammar = (string, (pred * (string, string, int list) regular_rule) list) Map.t
 
 
-type pred_arr = (int * p_exp) list
+type pred_arr = (int * a_exp p_exp) list
 type regular_grammar_arr = (pred_arr * (int, int, int list) regular_rule) list array
 
 type compiled_rules = int
@@ -43,14 +43,13 @@ type regular_grammar_opt = (int array -> (string -> int list -> int) -> compiled
 
 (****** Parsing functions ******)
 
-let debug_ca = false
+let debug_ca = true
 
 exception Invalid_arg_count of string
 let wrong_args name = raise (Invalid_arg_count name)
 exception Data_stall
 
 let matches = ref 0
-let saves = Hashtbl.create 100
 
 let zero_size = ref 0
 let () = at_exit (fun () -> if !zero_size > 0 then Printf.eprintf "#Zero size matches: %d\n" !zero_size)
@@ -61,27 +60,48 @@ let () = at_exit (fun () -> Hashtbl.iter (fun k v -> Printf.printf "%d %s\n" !v 
 let loop_init = ref 0
 
 let ca_functions = ref 
-  [ "pos", (fun (base_pos, sim_pos, _flow_data) -> function 
-    | [] -> base_pos + !sim_pos 
+  [| "pos", (fun (base_pos, sim_pos, _flow_data) -> function 
+    | [] -> base_pos + !sim_pos
     | _ -> wrong_args "pos");
     "token", 
-    (fun (_base_pos, _sim_pos, _flow_data) -> function 
-      | [_start_pos] -> (* end_pos = pos() - 1 *)
-	if debug_ca then printf "T"; incr matches; 0
+    (fun (base_pos, sim_pos, flow_data) -> function 
+      | [start_pos] -> (* end_pos = pos() - 1 *)
+	if debug_ca then printf "T"; incr matches; 
+	printf "start_pos: %d \tbase_pos: %d \tsim_pos: %d\n" 
+	  start_pos base_pos !sim_pos;
+	if start_pos = -1 then 
+	  printf "field: ...%s\n" (String.sub flow_data 0 !sim_pos)
+	else (
+	  let start_pos = start_pos - base_pos in
+	  if start_pos < 0 then 
+	    printf "Field: ...%S\n" (String.sub flow_data 0 !sim_pos)
+	  else 
+	    printf "Field: %S\n" (String.sub flow_data start_pos (!sim_pos - start_pos))
+	);
+	0
       | _ -> wrong_args "token" );
     "bounds" ,
-    (fun (_base_pos, _sim_pos, _flow_data) -> function 
-      | [_start_pos; _end_pos] -> if debug_ca then printf "B"; incr matches; 0
-	(* BROKEN BY SPLICING CODE -- check bounds on start/end pos and current flow_data *)
-	(*	let str = String.sub start_pos end_pos flow_data in *)
-	(*	Printf.eprintf "***Match found in range %d, %d***\n" 
+    (fun (base_pos, _sim_pos, flow_data) -> function 
+      | [start_pos; end_pos] -> 
+	if debug_ca then printf "B"; incr matches; 
+	(*	let token = 
+		if start_pos < base_pos then 
+		"..." ^ String.sub flow_data 0 (end_pos - base_pos + 1)
+		else 
+		String.sub flow_data (start_pos - base_pos) (end_pos - start_pos + 1)
+		in
+		log token;	*)
+	0
+      (* BROKEN BY SPLICING CODE -- check bounds on start/end pos and current flow_data *)
+      (*	let str = String.sub start_pos end_pos flow_data in *)
+      (*	Printf.eprintf "***Match found in range %d, %d***\n" 
 		start_pos end_pos;  *)
-(*      | [_s1;_e] -> 
-	incr zero_size; 
-(*	let s = s1 - base_pos in let e = e - 1 in
-	Printf.printf "base_pos %d s1 %d e %d sim_pos %d\n%!" base_pos s1 e !sim_pos;
-	Printf.printf "zero-size match: %d to %d at %S\n\n%S\n\n" s1 e (String.head flow_data s) (String.tail flow_data s); *)
-	0 *)
+      (*      | [_s1;_e] -> 
+	      incr zero_size; 
+      (*	let s = s1 - base_pos in let e = e - 1 in
+	      Printf.printf "base_pos %d s1 %d e %d sim_pos %d\n%!" base_pos s1 e !sim_pos;
+	      Printf.printf "zero-size match: %d to %d at %S\n\n%S\n\n" s1 e (String.head flow_data s) (String.tail flow_data s); *)
+	      0 *)
       | _ -> wrong_args "bounds" );
     "skip",
     (fun (_base_pos, sim_pos, _flow_data) ->  function 
@@ -93,7 +113,7 @@ let ca_functions = ref
       | _ -> wrong_args "skip_to" );
     "notify" ,
     (fun (_base_pos, _sim_pos, _flow_data) ->  function [n] -> 
-      (*      Printf.eprintf "*** Match found: %d ***\n" n;  *)
+      Printf.printf "*** Match found: %d ***\n" n;
       if debug_ca then printf "N"; incr matches; n 
       | _ -> wrong_args "skip" );
     "cur_byte",
@@ -130,19 +150,21 @@ let ca_functions = ref
 	in
 	hloop 0
       | _ -> wrong_args "gethex");
-    "save", (fun (base_pos, _sim_pos, flow_data) -> function | [start_pos; end_pos] -> 
-      let start_pos = start_pos - base_pos and end_pos = end_pos - base_pos in
-      let str = try String.sub flow_data (start_pos+1) (end_pos - start_pos) |> String.trim |> String.lowercase with _ -> "??" in
-      (try Hashtbl.find saves str |> incr with Not_found -> Hashtbl.add saves str (ref 1));
-      if debug_ca then printf "S"; 
-      incr matches; 0
-      | _ -> wrong_args "save"
-    );
-  ]
+  (*    "save", (fun (base_pos, _sim_pos, flow_data) -> function | [start_pos; end_pos] -> 
+	let start_pos = start_pos - base_pos and end_pos = end_pos - base_pos in
+	let str = try String.sub flow_data (start_pos+1) (end_pos - start_pos) |> String.trim |> String.lowercase with _ -> "??" in
+	(try Hashtbl.find saves str |> incr with Not_found -> Hashtbl.add saves str (ref 1));
+	if debug_ca then printf "S"; 
+	incr matches; 0
+	| _ -> wrong_args "save"
+	);*)
+  |]
 
- let get_f str = 
-    try List.assoc str !ca_functions
+let get_f_id str = 
+    try Array.findi (fun (s,_) -> s=str) !ca_functions
     with Not_found -> 
       failwith ("Unknown function name: " ^ str)
 
-let register_f fn f = ca_functions := (fn,f) :: !ca_functions
+let get_f id = snd (!ca_functions.(id))
+
+let register_f fn f = ca_functions := Array.append !ca_functions [|(fn, f)|]

@@ -11,8 +11,7 @@ let dtap = if debug then fun f x -> f x; x else fun _f x -> x
 
 type qset = int Set.t
 type 'a nfa_label = {n_label: 'a; mutable epsilon: qset}
-type ('a,'b) nfa_state = ('a nfa_label, qset IMap.t, 'b) state
-type ('a,'b) nfa = ('a,'b) nfa_state fa
+type ('a,'b) nfa = ('a nfa_label, qset IMap.t, 'b) fa
 
 let print_ids dfa = iter (fun i -> printf "%d) %d  " i dfa.qs.(i).id) (0 --^ size dfa)
 let print_iset oc s = Set.print ~first:"{" ~sep:"," ~last:"}" Int.print oc s
@@ -73,31 +72,39 @@ let factor_rx =
   else
     factor_rx
 
+(* rules for handling decisions when creating the DFA *)
+let merge_opt merge a b = match a,b with
+  | None, None -> None
+  | Some r, None | None, Some r -> Some r
+  | Some r1, Some r2 -> Some (merge r1 r2)
+
+let opt_ops merge cmp = {dec0=None; merge=merge_opt merge; cmp=Option.compare ~cmp}
+let list_ops cmp = {dec0=[]; merge=(@); cmp=List.make_compare cmp}
+
+
 (** BUILD A NFA FROM A GIVEN REGEXP and some decision handling data *)
-let build_nfa (dec0, of_dec, _, dec_comp) reg =
+let build_nfa dop reg =
   let get_idx = make_counter 0 in
   let qs = ref Vect.empty in
   let new_state ?(label=None) ?(epsilon=Set.empty)
-      ?(map=IMap.empty) ?(dec=dec0) () =
+      ?(map=IMap.empty) ?(pri=0) ?(dec_pri=(-1)) ?(dec=dop.dec0) () =
     let idx = get_idx () in
      (*    if idx mod 100 = 1 then eprintf "N %d @ %.2f\n%!" idx (Sys.time ()); *)
-    let q = { label = {n_label = label; epsilon = epsilon};
-	      map = map; dec = dec; id = idx} in
+    let q = {label = {n_label = label; epsilon = epsilon}; 
+	     dec_pri = dec_pri; pri=pri; map=map; 
+	     dec=dec; id = idx} in
     vect_set_any qs idx q;
     q
   in
-  let dup x = (x,x) in
   let rec loop = function
     | Value v -> let out_q = new_state () in let in_q = new_state ~map:(IMap.set_to_map v (Set.singleton out_q.id)) () in in_q,out_q
-    | Accept id -> new_state ~dec:(of_dec id) () |> dup
+    | Accept (d,p) -> let q = new_state ~dec:d ~dec_pri:p () in q,q
     | Union rl ->
-      let ins,outs =
-	Set.enum rl |> List.of_enum |> List.map loop |> List.split
-      in
-      let in_q = new_state ~epsilon:(List.map (fun x -> x.id) ins|> List.enum |> Set.of_enum) () in
+      let ins, outs = Set.enum rl |> List.of_enum |> List.map loop |> List.split in
+      let in_q = new_state ~epsilon:(List.enum ins |> map (fun i -> i.id) |> Set.of_enum) () in
       let out_q = new_state () in
       let eps = Set.singleton out_q.id in
-      List.iter (fun oi -> oi.label.epsilon <- eps) outs;
+      List.iter (fun o -> o.label.epsilon <- eps) outs;
       in_q, out_q
     | Kleene r ->
       let in1,out1 = loop r in
@@ -105,7 +112,7 @@ let build_nfa (dec0, of_dec, _, dec_comp) reg =
       let in0 = new_state ~epsilon:(Set.singleton in1.id |> Set.add out0.id) () in
       out1.label.epsilon <- (Set.singleton in0.id);
       in0,out0
-    | Concat ([],_) -> new_state () |> dup
+    | Concat ([],_) -> let q = new_state () in q,q
     | Concat (Value v::t,_red) ->
       let in1,out1 = loop (Concat (t,_red)) in
       new_state ~map:(IMap.set_to_map v (Set.singleton in1.id)) (), out1
@@ -115,9 +122,9 @@ let build_nfa (dec0, of_dec, _, dec_comp) reg =
       out0.label.epsilon <- (Set.singleton in1.id);
       in0, out1
   in
-  let q0, _ = reg |> factor_rx ~dec_comp |> loop in
+  let q0, _ = reg |> factor_rx ~dec_comp:dop.cmp |> loop in
   let qs = Vect.map Option.get !qs |> Vect.to_array in
-  ({qs=qs; q0=q0} : ('a,'b) nfa)
+  ({dop=dop;qs=qs; q0=q0} : ('a,'b) nfa)
 
 let merge_iset = Set.union (*(List.rev_append a b) |> List.sort_unique Int.compare *)
 
@@ -131,7 +138,7 @@ let merge_nfa_maps m1 m2 =
 
 type 'a hmap_status = Unmade | In_progress | No_change | Done of (qset IMap.t * qset * 'a)
 
-let simplify_nfa (dec0, _of_dec, dec_merge, _dec_comp) nfa = (* remove in-epsilon-only states *)
+let simplify_nfa nfa = (* remove in-epsilon-only states *)
   let remove = Array.create (size nfa) true in
   let set_unremovable d = remove.(d) <- false in
   let set_targets_unremovable q =
@@ -141,8 +148,8 @@ let simplify_nfa (dec0, _of_dec, dec_merge, _dec_comp) nfa = (* remove in-epsilo
   let merge_hmap i (m,e,d) = match hoisted_maps.(i) with
     | In_progress -> m,e,d
     | No_change -> let q = nfa.qs.(i) in
-		   (merge_nfa_maps m q.map), (merge_iset e q.label.epsilon), (dec_merge d q.dec)
-    | Done (m2,e2,d2) ->  (merge_nfa_maps m m2), (merge_iset e e2), (dec_merge d d2)
+		   (merge_nfa_maps m q.map), (merge_iset e q.label.epsilon), (nfa.dop.merge d q.dec)
+    | Done (m2,e2,d2) ->  (merge_nfa_maps m m2), (merge_iset e e2), (nfa.dop.merge d d2)
     | Unmade -> assert false
   in
   let rec hoist_removed_targets i =
@@ -164,7 +171,7 @@ let simplify_nfa (dec0, _of_dec, dec_merge, _dec_comp) nfa = (* remove in-epsilo
 	  hoisted_maps.(i) <- Done med
 	end
   in
-  let null_q = {id=(-1); map=IMap.empty; dec=dec0;
+  let null_q = {id=(-1); map=IMap.empty; dec=nfa.dop.dec0; pri=0; dec_pri=(-1);
 		label={n_label=nfa.q0.label.n_label; epsilon=Set.empty};}  in
   let q_with_hoisted_map q =
     match hoisted_maps.(q.id),remove.(q.id) with
@@ -206,13 +213,13 @@ let close_transitions nfa =
 let print_nfa_label _oc _l = ()
 let print_nfa_dec oc d = Std.dump d |> String.print oc
 
-let build_dfa ~labels (dec0, _of_dec, dec_merge, _dec_comp as dec_rules) reg =
+let build_dfa ~labels dop reg =
   ignore labels;
-  let nfa = build_nfa dec_rules reg 
-		   |> dtap (printf "NFA0: \n%a" (print_nfa print_nfa_label print_nfa_dec)) 
-		   |> simplify_nfa dec_rules
-		   |> dtap (printf "NFA1: \n%a" (print_nfa print_nfa_label print_nfa_dec)) 
-		   |> close_transitions in
+  let nfa = build_nfa dop reg 
+    |> dtap (printf "NFA0: \n%a" (print_nfa print_nfa_label print_nfa_dec)) 
+    |> simplify_nfa
+    |> dtap (printf "NFA1: \n%a" (print_nfa print_nfa_label print_nfa_dec)) 
+    |> close_transitions in
   if debug then (
     printf "NFA built %.3f (%d states)\n%!" (Sys.time()) (Array.length nfa.qs); 
     printf "NFA2: \n%a" (print_nfa print_nfa_label print_nfa_dec) nfa;
@@ -227,9 +234,9 @@ let build_dfa ~labels (dec0, _of_dec, dec_merge, _dec_comp as dec_rules) reg =
       |> IMap.map (get_id |- Id.to_int)
     in
     let dec =
-      Set.fold (fun n acc -> dec_merge acc nfa.qs.(n).dec) ns dec0
+      Set.fold (fun n acc -> dop.merge acc nfa.qs.(n).dec) ns dop.dec0
     in
-    let q = {label = None; id=id; map=map; dec=dec} in
+    let q = {label=None; pri=0; dec_pri=(-1); id=id; map=map; dec=dec} in
     vect_set_any states id q;
     ()
   in
@@ -237,4 +244,4 @@ let build_dfa ~labels (dec0, _of_dec, dec_merge, _dec_comp as dec_rules) reg =
   let id_map = map_id_set ~comp:set_compare ~min_id:0 make_node in
   let q0 = get_eps_closure nfa nfa.q0.id |> id_map.get_id |> Id.to_int in
   let qs = Vect.map Option.get !states |> Vect.to_array in
-  {qs=qs; q0=qs.(q0)} |> check_ids
+  {dop=dop; qs=qs; q0=qs.(q0)} |> check_ids

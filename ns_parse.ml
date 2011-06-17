@@ -31,9 +31,9 @@ let full_parse (nt,predopt,priopt,rules) =
   let rec expand_term_act acc = function
     | Capture rules, Some func ->
 	let cap_id = "capture" ^ (capture_counter () |> string_of_int) in
-	let get_pos = Function ("pos", get_f "pos", []) in
+	let get_pos = Function ("pos", get_f_id "pos", []) in
 	let start_cap = VarMap.add cap_id get_pos VarMap.empty in
-	let end_exp = Function (func, get_f func, [Variable]) in
+	let end_exp = Function (func, get_f_id func, [Variable]) in
 	let end_cap = VarMap.add cap_id end_exp VarMap.empty in
 	List.fold_left expand_term_act (hook_act start_cap acc) rules
           |> hook_act end_cap
@@ -55,16 +55,16 @@ let print_reg_rule oc rr =
   Printf.fprintf oc "{p:%a; rx:%a acts:%a nt: %a}%!" 
     (List.print Int.print) rr.prio so rr.rx (List.print print_action) rr.act so rr.nt
 
+let print_rrule oc (preds,body) = fprintf oc "%a%a" (print_varmap print_pred) preds print_reg_rule body
 let print_reg_rules oc = function
   | [] -> ()
-  | [r] -> Pair.print (print_varmap print_pred) print_reg_rule oc r
-  | l -> List.print ~first:"\n#  " ~sep:"\n#  " ~last:"\n" (Pair.print (print_varmap print_pred) print_reg_rule) oc l
+  | l -> List.print ~first:"\n#  " ~sep:"\n#  " ~last:"\n" print_rrule oc l
 
 let print_reg_ca oc (ca: regular_grammar) = 
   Map.print String.print print_reg_rules oc ca;
   fprintf oc "Total: %d states\n" (Map.fold (fun _ x -> x+1) ca 0)
 
-let print_iaction oc (i,e) = fprintf oc "(%d) := %a" i (print_a_exp ("(" ^ string_of_int i ^ ")")) e
+let print_iaction oc (i,e) = fprintf oc "(%d) := %a" i (print_a_exp ("#" ^ string_of_int i)) e
 
 let print_ipred oc (i,e) = print_p_exp (string_of_int i) oc e
 
@@ -72,15 +72,16 @@ let print_ipred oc (i,e) = print_p_exp (string_of_int i) oc e
 let print_opt_rule oc iirr =
   let so = Option.print String.print in
   let io = Option.print Int.print in
-  Printf.fprintf oc "{p:%a; rx:%a acts:%a nt: %a}%!" 
-    (List.print Int.print) iirr.prio so iirr.rx (List.print print_iaction) iirr.act io iirr.nt
+  Printf.fprintf oc "p:%a rx:%a acts:%a nt: %a%!" 
+    (List.print ~first:"" ~last:"" ~sep:"." Int.print) iirr.prio 
+    so iirr.rx 
+    (List.print ~first:"{" ~last:"}" ~sep:" " print_iaction) iirr.act 
+    io iirr.nt
   
 let print_rule oc x = Pair.print (List.print print_ipred) print_opt_rule oc x
-
 let print_rules oc = function
   | [] -> ()
-  | [r] -> print_rule oc r
-  | l -> List.print ~first:"\n#  " ~sep:"\n#  " ~last:"\n" print_rule oc l
+  | l -> List.print ~first:"\n#" ~sep:"\n#" ~last:"\n" print_rule oc l
 
 let print_reg_ds_ca oc (ca: regular_grammar_arr) = 
   Array.iteri (Regex_dfa.index_print print_rules oc) ca
@@ -125,7 +126,11 @@ let regularize : grammar -> regular_grammar = fun grammar ->
 	   rx   = None;
 	   act  = [];
 	   nt   = None } 
-(*      | [(Nonterm a, head_act)] -> { prio = prio_map r.priority; rx=Some "//"; act=VarMap.enum head_act |> List.of_enum; nt = Some a } *)
+      | [(Nonterm a, head_act)] -> 
+	{ prio = r.priority; 
+	  rx=Some "//"; 
+	  act=VarMap.enum head_act |> List.of_enum; 
+	  nt = Some a } 
       | x -> print_endline (Std.dump x); raise (Non_regular_rule r) 
 	  
     in
@@ -134,7 +139,8 @@ let regularize : grammar -> regular_grammar = fun grammar ->
   let make_regular_g g = 
     NTMap.enum g.rules |> map (second (List.map make_r)) |> Map.of_enum
   in 
-  grammar |> normalize_grammar |> idle_elimination |> make_regular_g ;; 
+  grammar |> normalize_grammar (*|> idle_elimination*) |> make_regular_g 
+  |> tap (print_reg_ca stdout);; 
 
 let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) = 
   fun start ca ->

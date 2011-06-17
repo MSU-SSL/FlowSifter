@@ -34,7 +34,7 @@ type ('a,'b) t =
   | Concat of ('a,'b) t list
   | Kleene of ('a,'b) t
   | Value of 'a
-  | Accept of 'b
+  | Accept of 'b * int
 
 let epsilon = Concat []
 
@@ -176,7 +176,7 @@ let rec print_regex printa ~root oc = function
   | Kleene (Concat regl) -> List.print ~first:"(" ~sep:"" ~last:")" (print_regex printa ~root) oc regl;  IO.write oc '*'
   | Kleene reg -> print_regex printa ~root oc reg; IO.write oc '*'
   | Value a -> printa oc a
-  | Accept i -> Printf.fprintf oc "{{%d}}" i
+  | Accept (i,p) -> Printf.fprintf oc "{{%d:%d}}" p i
 
 let print_char oc i =
   IO.nwrite oc (Char.escaped (Char.chr i))
@@ -224,6 +224,8 @@ let ascii_any = ISet.add_range 0 255 ISet.empty
 let regex_of_ascii_str ~dec str modifiers = 
   let ignore_case = ref (List.mem `Ignore_case modifiers) in
   let extended = List.mem `Extended modifiers in
+  let pri = try List.find_map (function `Pri x -> Some x | _ -> None) modifiers 
+            with Not_found -> 0 in
   (* TODO: add more options here *)
   let stream = stream_tokenize ~extended str in
   let value_of_escape = function (* TODO: Implement more escape types *)
@@ -280,7 +282,7 @@ let regex_of_ascii_str ~dec str modifiers =
 	  reduce (aux [])
       | _ -> reduce (Concat [Kleene (Value ascii_any); aux []])
   in
-  reduce (Concat [rx; Accept dec])
+  reduce (Concat [rx; Accept (dec,pri)])
  ;;
     
 let first_char rx = 

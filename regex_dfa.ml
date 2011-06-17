@@ -44,7 +44,7 @@ let reduce_pair ~dec_comp merge_d (d1, m1) (d2,m2) =
   and can_calc = Value.observe_int_ref "can_calc" (ref 0) 
 *)
 
-let canonize (nul_d, inj_d, merge_d, dec_comp) rx =
+let canonize (nul_d, merge_d, dec_comp) rx =
   let merge norms = Enum.reduce (reduce_pair ~dec_comp merge_d) norms in
 
   let canonized = ref (Map.create (Minreg.compare ~dec_comp)) in
@@ -53,7 +53,6 @@ let canonize (nul_d, inj_d, merge_d, dec_comp) rx =
     try Map.find rx !canonized (*|> tap (fun _ -> incr can_found)*)
     with Not_found ->
       (* insert a dummy value to prevent loops *)
-      (*      incr can_calc;*)
       canonized := Map.add rx (nul_d, map_base) !canonized;
       let ret = match rx with
 	| Concat (Value x::t, red) ->
@@ -67,7 +66,7 @@ let canonize (nul_d, inj_d, merge_d, dec_comp) rx =
 	| Kleene x -> union2 epsilon (concat [x; Kleene x]) |> canon
 	| Concat (Union u :: t, _) ->
 	  union (Set.map (append t) u) |> canon
-	| Accept i -> inj_d i, map_base
+	| Accept (i,p) -> (i,p), map_base
 	| Concat (Concat _ :: _, _)
 	| Concat ([],_) | Concat (Accept _::_,_) -> assert false
       in
@@ -75,7 +74,6 @@ let canonize (nul_d, inj_d, merge_d, dec_comp) rx =
 	eprintf "#Canonizing: %a\n%!" (Minreg.printp ~dec:false) rx;
 	eprintf "#Result: %a\n%!" print_norm_regexp ret; 
       );
-      (*      last_depth := depth rx; last_width := width rx; *)
       canonized := Map.add rx ret !canonized;
       ret
   in
@@ -88,20 +86,28 @@ let canonize (nul_d, inj_d, merge_d, dec_comp) rx =
 
 open Ean_std
 
-type 'a fa = {
-  qs: 'a array;
-  q0: 'a;
+type 'a dec_ops = {
+  dec0 : 'a;
+  merge: 'a -> 'a -> 'a;
+  cmp: 'a -> 'a -> int;
 }
 
 type ('a,'b, 'c) state = {
-  id    : int;
-  label : 'a;
-  map   : 'b;
-  dec   : 'c;
+  id    : int; (* the index of this state in the state array *)
+  pri   : int; (* the priority of the highest match reachable from this state *)
+  label : 'a; (* a label for this state - used for deferments *)
+  map   : 'b; (* the map to next states *)
+  dec   : 'c; (* a decision type, usually option or list *)
+  dec_pri: int; (* the priority of this decision *)
 }
 
-type 'a dfa_state = ('a, int IMap.t, int list) state
-type 'a dfa = 'a dfa_state fa
+type ('a,'b,'c) fa = {
+  qs: ('a,'b,'c) state array;
+  q0: ('a,'b,'c) state;
+  dop: 'c dec_ops
+}
+
+type 'a dfa = ('a, int IMap.t, int list) fa
 
 let size {qs=qs} = Array.length qs
 let trans {qs=qs} = 
@@ -109,7 +115,10 @@ let trans {qs=qs} =
     IMap.fold_range (fun lo hi _ (rngs,inds) -> rngs+1, inds+hi-lo+1) q.map acc
   in
   Array.fold_left trans_q (0,0) qs
-let map_qs f fa = let qs = Array.map f fa.qs in {qs=qs; q0=qs.(fa.q0.id)}
+let map_qs f fa = 
+  let qs = Array.map f fa.qs in 
+  {qs=qs; q0=qs.(fa.q0.id); dop=fa.dop}
+
 let decs fa = Array.map (fun q -> q.dec) fa.qs
 
 let print_ids dfa = iter (fun i -> printf "%d) %d  " i dfa.qs.(i).id) (0 --^ size dfa)
@@ -170,33 +179,6 @@ let summarize_dfa ~id oc dfa =
 
 (*let max_depth = Value.observe_int_ref "Depth (Max)" (ref 0) *)
 
-let build_dfa ?(labels=false) (_,_,_,dec_comp as dec_rules) reg =
-  assert false; (* Don't use this code, instead use Nfa.build_dfa *)
-  let new_id = ref (fun _ _ -> assert false) in (* hole for recursion *)
-  let id_map = map_id_set ~comp:(Minreg.compare ~dec_comp) ~min_id:0 (fun x id -> !new_id x id) in
-  let states = ref Vect.empty in
-  (*  let depth = Value.observe_int_ref "Depth" (ref 0) in *)
-  let make_node get_id r id =
-    (*    Printf.eprintf "#Node making from regex: '%a'\n(%s)\n%!" (Minreg.printp ~dec:false) r (dump r);  *)
-    let (dec, dt_reg) = canonize dec_rules r in
-    (*    Printf.eprintf "#Node %d made from %a%!\n" id (Minreg.printp ~dec:false) r; *)
-    (*    if id mod 100 = 1 then eprintf "N %d @ %.2f\n%!" id (Sys.time ()); *)
-    (* turn reg IMap.t into state IMap.t *)
-    let map = IMap.map (fun r -> Id.to_int (get_id r)) dt_reg in
-    let q = {label=if labels then r else epsilon; id=id; map=map; dec=dec} in
-    vect_set_any states id q; 
-    () (* don't store any value in the map *) 
-  in
-  new_id := make_node;  (* close recursion *)
-  (* make all the state nodes, magically *)
-  let q0 = Id.to_int (id_map.get_id reg) in  
-  let qs = Vect.map Option.get !states |> Vect.to_array in  
-  (*  eprintf "\n#Built DFA with %d states.\n" (Array.length qs); *)
-  {qs = qs; q0 = qs.(q0)} |> check_ids
-;;
-
-(* let build_dfa ?labels reg = log_f "Building DFA" (build_dfa ?labels) reg *)
-
 let print_int_range oc x y = if y > x then fprintf oc "%d-%d " x y else fprintf oc "%d " x
 
 let reachable {qs=qs; q0=s0} =
@@ -225,11 +207,11 @@ let remove_unreachable dfa =
   let qs = Array.mapi mod_state keep in
   (*  let mod_state i = {dfa.qs.(i) with map = mod_tr dfa.qs.(i).map} in
       let qs = Array.map mod_state keep in *)
-  { qs = qs; q0 = qs.(rep_state.(dfa.q0.id)) } |> check_ids
+  { dfa with qs = qs; q0 = qs.(rep_state.(dfa.q0.id)) } |> check_ids
 
 let remove_unreachable x = log_f "Remove Unreachable" remove_unreachable x
 
-let quotient rep {qs=qs; q0=q0} =
+let quotient rep {qs=qs; q0=q0; dop=dop} =
   let n = Array.length qs in
   (* what elements need to be kept as representatives *)
   let range = Enum.fold (fun a i -> ISet.add (rep i) a) ISet.empty (0--^n) 
@@ -242,7 +224,7 @@ let quotient rep {qs=qs; q0=q0} =
   let mod_tr tr = IMap.map (fun i -> rep_state.(i)) tr in
   let mod_state pos i = {qs.(i) with map = mod_tr qs.(i).map; id = pos} in
   let qs = Array.mapi mod_state range in
-  { qs = qs; q0 = qs.(rep_state.(q0.id)) } |> check_ids
+  {dop=dop; qs = qs; q0 = qs.(rep_state.(q0.id)) } |> check_ids
 
 (* let quotient x = log_f "Quotient" quotient x *)
 
@@ -468,7 +450,9 @@ let tcam_size_q q = opt_itable_of_q q |> Vect.length
 let dfa_tcam_size dfa = 
   Array.enum dfa.qs |> map tcam_size_q |> Enum.sum
 
+(*
 let to_rs_dfa dfa = map_qs opt_itable_of_q dfa
+ *)
 
 let tcam_size dfa =
   let get_map x = x.map in

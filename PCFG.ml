@@ -18,37 +18,47 @@ module Make (Name : Names_t) = struct
 
   type parser_state = int * int ref * string
 
+  type fun_id = int
+
   (* This is an arithimatic expression *)
   type a_exp =
     | Plus of a_exp * a_exp
     | Sub of a_exp * a_exp
     | Multiply of a_exp * a_exp
     | Divide of a_exp * a_exp
-    | Function of string * (parser_state -> int list -> int) * a_exp list
+    | Function of string * fun_id * a_exp list
     | Constant of int  (* This is a specific number used to the define
 			  the transformation of Variable *)
     | Variable (* This reference the uniary variable of the expression *)
+
+  type a_opt =
+    | Slow_a of a_exp
     | Fast_a of (int -> int)
 
   (* This is a predicate expression *)
-  type p_exp =
-      Equal of a_exp * a_exp
-    | Lessthan of a_exp * a_exp
-    | Greaterthan of a_exp * a_exp
-    | LessthanEq of a_exp * a_exp
-    | GreaterthanEq of a_exp * a_exp
-    | Not of p_exp
-    | And of p_exp * p_exp
-    | Or of p_exp * p_exp
+  type 'a_exp p_exp =
+      Equal of 'a_exp * 'a_exp
+    | Lessthan of 'a_exp * 'a_exp
+    | Greaterthan of 'a_exp * 'a_exp
+    | LessthanEq of 'a_exp * 'a_exp
+    | GreaterthanEq of 'a_exp * 'a_exp
+    | Not of 'a_exp p_exp
+    | And of 'a_exp p_exp * 'a_exp p_exp
+    | Or of 'a_exp p_exp * 'a_exp p_exp
     | Const of bool
+
+  type 'a_exp p_opt =
+    | Slow_p of 'a_exp p_exp
     | Fast_p of (int -> bool)
+
+
 
   (* These types represent an expression that is bound to a specific variable *)
   module VarMap = Map.Make(struct type t = Name.var let compare = compare end)
   module VarSet = Set.Make(struct type t = Name.var let compare = compare end)
 
   type actions = a_exp VarMap.t
-  type predicates = p_exp VarMap.t
+  type predicates = (a_exp p_exp) VarMap.t
 
   (* Define the components of a PCFG rule *)
   type productionitem =
@@ -98,10 +108,9 @@ module Make (Name : Names_t) = struct
       |	Sub (l,r)      -> loop l; IO.nwrite oc " - "; loop r
       |	Multiply (l,r) -> loop l; IO.nwrite oc " * "; loop r
       |	Divide (l,r)   -> loop l; IO.nwrite oc " / "; loop r
-      | Function (s,_,es) -> fprintf oc "%s(%a)" s (List.print (print_a_exp var) ~sep:",") es
+      | Function (s,_,es) -> fprintf oc "%s(%a)" s (List.print (print_a_exp var) ~sep:"," ~first:"" ~last:"") es
       | Constant x -> Int.print oc x
       | Variable -> Name.print_var oc var
-      | Fast_a _ -> IO.nwrite oc "(FAST)"
     in
     loop exp
 
@@ -119,62 +128,39 @@ module Make (Name : Names_t) = struct
       |	And (l,r)     -> loop l; IO.nwrite oc " and "; loop r
       | Const true -> IO.nwrite oc "true"
       | Const false -> IO.nwrite oc "false"
-      | Fast_p _ -> IO.nwrite oc "(FAST)"
     in
     loop
 
   (* Evaluates an arthimatic expression where value is bound to the
      implicit variable *)
-  let rec val_a_exp s v = function
+  let rec val_a_exp fs s v = function
     | Variable -> v
     | Constant c -> c
-    | Function (_, f, exp_list) -> f s (List.map (val_a_exp s v) exp_list)
-    | Divide (a,b) -> (val_a_exp s v a) / (val_a_exp s v b)
-    | Multiply (a,b) -> (val_a_exp s v a) * (val_a_exp s v b)
-    | Sub (a,b) -> (val_a_exp s v a) - (val_a_exp s v b)
-    | Plus (a,b) -> (val_a_exp s v a) + (val_a_exp s v b)
+    | Function (_, f_id, exp_list) -> (fs f_id) s (List.map (val_a_exp fs s v) exp_list)
+    | Divide (a,b) -> (val_a_exp fs s v a) / (val_a_exp fs s v b)
+    | Multiply (a,b) -> (val_a_exp fs s v a) * (val_a_exp fs s v b)
+    | Sub (a,b) -> (val_a_exp fs s v a) - (val_a_exp fs s v b)
+    | Plus (a,b) -> (val_a_exp fs s v a) + (val_a_exp fs s v b)
+
+  let val_a_opt fs s v = function
+    | Slow_a e -> val_a_exp fs s v e
     | Fast_a f -> f v
 
     (* This bind value to the implicit variable and evaluates the p_exp*)
-  let rec val_p_exp s v = function
+  let rec val_p_exp fs s v = function
     | Const const -> const
-    | Or (a,b) ->  (val_p_exp s v a) || (val_p_exp s v b)
-    | And (a,b) ->  (val_p_exp s v a) && (val_p_exp s v b)
-    | Not a ->  not (val_p_exp s v a)
-    | Greaterthan (a,b) -> (val_a_exp s v a) >  (val_a_exp s v b)
-    | Lessthan (a,b) -> (val_a_exp s v a) <  (val_a_exp s v b)
-    | GreaterthanEq (a,b) -> (val_a_exp s v a) >=  (val_a_exp s v b)
-    | LessthanEq (a,b) -> (val_a_exp s v a) <=  (val_a_exp s v b)
-    | Equal (a,b) -> (val_a_exp s v a) =  (val_a_exp s v b)
+    | Or (a,b) ->  (val_p_exp fs s v a) || (val_p_exp fs s v b)
+    | And (a,b) ->  (val_p_exp fs s v a) && (val_p_exp fs s v b)
+    | Not a ->  not (val_p_exp fs s v a)
+    | Greaterthan (a,b) -> (val_a_exp fs s v a) >  (val_a_exp fs s v b)
+    | Lessthan (a,b) -> (val_a_exp fs s v a) <  (val_a_exp fs s v b)
+    | GreaterthanEq (a,b) -> (val_a_exp fs s v a) >=  (val_a_exp fs s v b)
+    | LessthanEq (a,b) -> (val_a_exp fs s v a) <=  (val_a_exp fs s v b)
+    | Equal (a,b) -> (val_a_exp fs s v a) =  (val_a_exp fs s v b)
+
+  let val_p_opt fs s v = function
+    | Slow_p e -> val_p_exp fs s v e
     | Fast_p f -> f v
-
-
-  let rec aeq ae1 ae2 = match ae1,ae2 with
-    | Function (s1,_,e1), Function (s2,_,e2) -> 
-      s1 = s2 && List.length e1 = List.length e2 && List.for_all2 aeq e1 e2
-    | Plus(a,b), Plus(c,d)
-    | Sub(a,b), Sub(c,d)
-    | Multiply(a,b), Multiply(c,d)
-    | Divide(a,b), Divide(c,d) 
-      -> aeq a c && aeq b d
-    | Variable, Variable -> true
-    | Constant a, Constant b -> a = b
-    | Fast_a f, Fast_a g -> f == g
-    | _ -> false
-
-  let rec peq p1 p2 = match p1, p2 with
-    | Const c, Const d -> c=d
-    | Or(a,b), Or(c,d) 
-    | And(a,b), And(c,d) -> peq a c && peq b d
-    | Not a, Not b -> peq a b
-    | Greaterthan (a,b), Greaterthan (c,d)
-    | Lessthan (a,b), Lessthan (c,d)
-    | GreaterthanEq (a,b), GreaterthanEq (c,d)
-    | LessthanEq (a,b), LessthanEq (c,d)
-    | Equal (a,b), Equal(c,d) -> aeq a c && aeq b d
-    | Fast_p f, Fast_p g -> f == g
-    | _ -> false
-
 
 (*
   (* Creates a lookup table for a p_exp for a range of variable values, assuming functions return zero *)
@@ -203,13 +189,13 @@ module Make (Name : Names_t) = struct
       
 
   let rec is_clean_a = function
-    | Variable | Constant _ | Fast_a _ -> true
+    | Variable | Constant _ -> true
     | Function _ -> false
     | Divide (a,b) | Multiply (a,b) | Sub (a,b) | Plus (a,b) -> 
       is_clean_a a && is_clean_a b
 
   let rec is_clean_p = function
-    | Const _ | Fast_p _ -> true 
+    | Const _ -> true 
     | Not a -> 
       is_clean_p a
     | Or (a,b) | And (a,b) -> 
@@ -224,12 +210,12 @@ module Make (Name : Names_t) = struct
     | Sub (Variable, Constant 1) -> Fast_a (fun x -> x+1)
     | Plus(Variable, Constant c) -> Fast_a (fun x -> x+c)
     | Sub (Variable, Constant c) -> Fast_a (fun x -> x+c)
-    | a -> a
+    | a -> Slow_a a
 
   let rec freeze_p = function
     | Equal(Variable, Constant 0) -> Fast_p (fun x -> x=0)
     | Greaterthan(Variable, Constant 0) -> Fast_p (fun x -> x>0)
-    | a -> a
+    | a -> Slow_p a
 
   (* Composition functions *)
 
@@ -242,7 +228,6 @@ module Make (Name : Names_t) = struct
       | Multiply (a,b) ->  Multiply (subst a, subst b)
       | Sub (a,b) -> Sub (subst a,subst b)
       | Plus (a,b) -> Plus (subst a, subst b)
-      | Fast_a _ -> assert false (* can't compose with a fast *)
     in
       subst orig_a_expr ;;
 
@@ -261,7 +246,6 @@ module Make (Name : Names_t) = struct
 	| GreaterthanEq (a,b) -> GreaterthanEq (subst a,subst b)
 	| LessthanEq (a,b) ->  LessthanEq (subst a, subst b)
 	| Equal (a,b) ->  Equal (subst a,subst b)
-	| Fast_p _ -> assert false (* can't compose with this *)
 
 
   let gen_compose compose_f sub_map orig_map =

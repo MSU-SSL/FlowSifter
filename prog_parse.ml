@@ -19,12 +19,15 @@ let gen_parser p e =
   and extr = Ns_parse.parse_file_as_extraction e in
   let ca,var_count = Ns_parse.merge_cas ~proto ~extr |> Ns_parse.regularize 
     |> Ns_parse.destring extr.start in
-  let ca = Ns_parse.dechain ca |> Ns_parse.flatten_priorities 
+  let ca = Ns_parse.dechain ca 
+(*    |>tap (Printf.printf "Grammar:\n%a\n" Ns_parse.print_reg_ds_ca)*)
+    |> Ns_parse.flatten_priorities 
     |> Ns_run.optimize_preds in
+  
   fun () -> (* allow creating many parsers *)
-    let vars = Array.make var_count 0 in    
-    let dfa0 = ca.(0) vars (0, ref 0, "") in
-    let q = ref (Ns_run.init_state dfa0 0)
+    let vars = Array.make var_count 0 in (* vars default to 0 *)
+    let dfa0 = Ns_run.init_dfa ca vars in (* initial DFA to run *)
+    let q = ref (Ns_run.init_state dfa0 0) (* current DFA state *)
     and skip_left = ref 0
     and base_pos = ref 0 in
     let rec parse str =
