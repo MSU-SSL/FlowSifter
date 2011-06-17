@@ -9,7 +9,8 @@ all: bench-all
 .PHONY: clean hwrun %.threadlog bench-all runlog.% outliers rectest
 
 clean:
-	rm -f *.a *.o *.cmi *.cmx *.cmo *.cmxa *.annot lib_b/*.o lib_u/*.o ns_lex.ml ns_yac.ml ns_yac.mli
+	rm -f *.a *.o *.cmi *.cmx *.cmo *.cmxa *.annot lib_b/*.o lib_u/*.o ns_lex.ml ns_yac.ml ns_yac.mli 
+	rm -rf _build/
 
 http-baseconn.o: http-baseconn.cc
 	g++ $(CPPFLAGS) -c $^ -o $@
