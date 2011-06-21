@@ -194,7 +194,7 @@ let reachable {qs=qs; q0=s0} =
   in
   loop ISet.empty (ISet.singleton s0.id)
 
-let reachable x = log_f "Reachable" reachable x
+(* let reachable x = log_f "Reachable" reachable x *)
 
 let remove_unreachable dfa = 
   let keep = reachable dfa |> ISet.elements |> Array.of_list in
@@ -209,8 +209,10 @@ let remove_unreachable dfa =
       let qs = Array.map mod_state keep in *)
   { dfa with qs = qs; q0 = qs.(rep_state.(dfa.q0.id)) } |> check_ids
 
-let remove_unreachable x = log_f "Remove Unreachable" remove_unreachable x
+(* let remove_unreachable x = log_f "Remove Unreachable" remove_unreachable x *)
 
+(* Given a function that returns the representative state for a given
+   state, reduce the given DFA to just the representative states *)
 let quotient rep {qs=qs; q0=q0; dop=dop} =
   let n = Array.length qs in
   (* what elements need to be kept as representatives *)
@@ -342,12 +344,6 @@ let minimize ?(dec_comp=Pervasives.(=)) dfa =
   (*  print_diffs rep dfa; *)
   quotient rep dfa
 
-(*let minimize dfa = 
-  let ret = minimize dfa in
-  eprintf "Minimized-dfa: %a" (summarize_dfa ~id:"dfa") ret;
-  ret
-*)
-
 (* runs the dfa on the entire enum - produces the trace of all states
    gone through *)
 let run_dfa_trace dfa enum =
@@ -390,8 +386,7 @@ let to_array dfa =
   map_qs (fun q -> {q with map = to_arr q.map}) dfa
 
 let print_array_dfa print_dec oc dfa =
-  let aprint ~first ~last oc a = 
-    String.print oc first;
+  let aprint oc a = 
     let last_c = ref a.(0) in
     let last_pos = ref 0 in
     for i = 1 to Array.length a - 1 do
@@ -413,12 +408,10 @@ let print_array_dfa print_dec oc dfa =
       ) else (
 	fprintf oc "%C-%C:%d " (Char.chr !last_pos) (Char.chr (i-1)) !last_c;
       );
-    String.print oc last;
   in
   let print_q oc q = 
-    match q.dec with
-      | None -> aprint ~first:"[" ~last:"]" oc q.map 
-      | Some d -> aprint ~first:"<" ~last:">" oc q.map; print_dec oc d;
+    fprintf oc "p%d <%a>" q.pri aprint q.map; 
+    if q.dec_pri >= 0 then fprintf oc "%ap%d"print_dec q.dec q.dec_pri 
   in
   print_fa print_q oc dfa
 
