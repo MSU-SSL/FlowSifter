@@ -71,14 +71,13 @@ let print_ipred oc (i,e) = print_p_exp (string_of_int i) oc e
 
 let print_opt_rule oc iirr =
   let so = Option.print String.print in
-  let io = Option.print Int.print in
-  Printf.fprintf oc "p:%a rx:%a acts:%a nt: %a%!" 
+  Printf.fprintf oc "(%a) %a acts:%a nt: %d%!" 
     (List.print ~first:"" ~last:"" ~sep:"." Int.print) iirr.prio 
     so iirr.rx 
     (List.print ~first:"{" ~last:"}" ~sep:" " print_iaction) iirr.act 
-    io iirr.nt
+    (Option.default (-1) iirr.nt)
   
-let print_rule oc x = Pair.print (List.print print_ipred) print_opt_rule oc x
+let print_rule oc = function [],r -> print_opt_rule oc r | p,r -> fprintf oc "%a::%a" (List.print print_ipred) p print_opt_rule r
 let print_rules oc = function
   | [] -> ()
   | l -> List.print ~first:"\n#" ~sep:"\n#" ~last:"\n" print_rule oc l
@@ -109,28 +108,27 @@ let regularize : grammar -> regular_grammar = fun grammar ->
   let make_r r =  
     let rec head_tail = function
       | [(Term a, head_act); (Nonterm b, tail_act)] ->  
-	  {prio = r.priority; 
-	   rx   = Some a; 
-	   act  = 
-	      act_act_compose head_act tail_act |> VarMap.enum |> List.of_enum;
-	   nt   = Some b } 
+	{ prio = r.priority; 
+	  rx   = Some a; 
+	  act  = act_act_compose head_act tail_act |> VarMap.enum |> List.of_enum;
+	  nt   = Some b } 
       | [(Term a, head_act)] ->
-	  {prio = r.priority;
-	   rx   = Some a;
-	   act  = VarMap.enum head_act |> List.of_enum;
-	   nt   = None}
+	{ prio = r.priority;
+	  rx   = Some a;
+	  act  = VarMap.enum head_act |> List.of_enum;
+	  nt   = None}
       | (Term a, head_act) :: (Term b, bhead_act) :: t -> 
 	head_tail ((Term (merge_rx a b), (act_act_compose head_act bhead_act)) :: t)
       | [] ->
-	  {prio = r.priority;
-	   rx   = None;
-	   act  = [];
-	   nt   = None } 
+	{ prio = r.priority;
+	  rx   = None;
+	  act  = [];
+	  nt   = None } 
       | [(Nonterm a, head_act)] -> 
 	{ prio = r.priority; 
-	  rx=Some "//"; 
-	  act=VarMap.enum head_act |> List.of_enum; 
-	  nt = Some a } 
+	  rx   = None; 
+	  act  = VarMap.enum head_act |> List.of_enum; 
+	  nt   = Some a } 
       | x -> print_endline (Std.dump x); raise (Non_regular_rule r) 
 	  
     in
@@ -139,8 +137,7 @@ let regularize : grammar -> regular_grammar = fun grammar ->
   let make_regular_g g = 
     NTMap.enum g.rules |> map (second (List.map make_r)) |> Map.of_enum
   in 
-  grammar |> normalize_grammar (*|> idle_elimination*) |> make_regular_g 
-  |> tap (print_reg_ca stdout);; 
+  grammar |> normalize_grammar |> idle_elimination |> make_regular_g
 
 let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) = 
   fun start ca ->
