@@ -47,7 +47,7 @@ let make_rx_pair r =
   (r.act,Option.default (-1) r.nt), 
   rx, [`Extended; `Pri r.prio]
 
-let merge_dec (act1,nt1 as a) (act2, nt2 as b) = if nt1 > nt2 then a else b
+let merge_dec (_act1,nt1 as a) (_act2, nt2 as b) = if nt1 > nt2 then a else b
 
 (* Compiles a list of rules into an automaton with decisions of
    (priority, action, nt) *)
@@ -110,8 +110,8 @@ let optimize_preds ca =
   let opt_prod _i rules =
     if List.for_all (fun (p,_) -> List.length p = 0) rules then
       let dfa = List.map snd rules |> compile_ca in
-(*      if Ns_types.debug_ca then 
-	printf "#DFA: %d\n%a\n" _i (Regex_dfa.print_array_dfa (fun oc {item=(_,q)} -> Int.print oc q)) dfa;*)
+      if Ns_types.debug_ca then 
+	printf "#DFA: %d\n%a\n" _i (Regex_dfa.print_array_dfa (fun oc (_,q) -> Int.print oc q)) dfa;
 	(fun _ _ -> dfa)
     else 
       if List.length rules < 20 then (*TODO: PARTITION RULES BY PREDICATE *)
@@ -154,8 +154,8 @@ let rec resume_arr qs input pri decision dec_pos q pos =
     End_of_input (q,pri,decision,dec_pos)
   ) else
     let q_next_id = Array.unsafe_get q.map (Char.code (String.unsafe_get input pos)) in
-    if q_next_id = -1 then (
-      if debug_ca then printf "%C done" input.[pos]; 
+    if debug_ca then printf "%C->%d " input.[pos] q_next_id;
+    if q_next_id = -1 then
       Dec (decision, dec_pos)
 (* 
    ) else if q_next_id = q.id then ( (* TODO: TEST OPTIMIZATION *)
@@ -163,14 +163,14 @@ let rec resume_arr qs input pri decision dec_pos q pos =
       let dec_pos = if q.dec = None then dec_pos else (pos+1) in
       resume_arr qs input pri decision dec_pos q (pos+1)
  *)
-    ) else
+    else
       let q = Array.unsafe_get qs q_next_id in
-      if debug_ca then printf "%C->%d " input.[pos] q_next_id;
+      if debug_ca then printf "(%d)" q.pri;
       let pos = pos+1 in 
       if q.pri < pri then 
 	Dec (decision, dec_pos)
       else
-	if q.dec_pri > pri then
+	if q.dec_pri >= pri then
 	  resume_arr qs input q.dec_pri q.dec pos q pos
 	else
 	  resume_arr qs input pri decision dec_pos q pos
