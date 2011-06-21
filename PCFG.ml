@@ -52,10 +52,10 @@ module Make (Name : Names_t) = struct
     | Fast_p of (int -> bool)
 
 
-
+  module Var = struct type t = Name.var let compare = compare end
   (* These types represent an expression that is bound to a specific variable *)
-  module VarMap = Map.Make(struct type t = Name.var let compare = compare end)
-  module VarSet = Set.Make(struct type t = Name.var let compare = compare end)
+  module VarMap = Map.Make(Var)
+  module VarSet = Set.Make(Var)
 
   type actions = a_exp VarMap.t
   type predicates = (a_exp p_exp) VarMap.t
@@ -80,7 +80,7 @@ module Make (Name : Names_t) = struct
     
   module NT = struct
     type t = Name.nonterm
-    let compare = Pervasives.compare
+    let compare = Name.compare_nonterm
   end
   module NTMap = Map.Make(NT)
   module NTSet = Set.Make(NT)
@@ -98,6 +98,7 @@ module Make (Name : Names_t) = struct
       {
 	start : Name.nonterm;
 	rules : production list NTMap.t
+	  (* Non-terminal -> [productions] *)
       }
 
   type t = grammar
@@ -204,6 +205,8 @@ module Make (Name : Names_t) = struct
     | LessthanEq (a,b) | Lessthan (a,b) 
     | Equal (a,b) -> 
       is_clean_a a && is_clean_a b
+
+  let is_clean act_map = VarMap.for_all (fun _ a -> is_clean_a a) act_map
 
   let rec freeze_a = function
     | Plus(Variable, Constant 1) -> Fast_a (fun x -> x+1)
@@ -462,7 +465,7 @@ module Make (Name : Names_t) = struct
 
   (** Idle rule detection and elimination **)
   let extract_idle = function
-    | [(Nonterm a, b)] -> (a,b)
+    | [(Nonterm a, b)] when is_clean b -> (a,b)
     | _ -> raise Not_idle;;
 
   let modify_last_elem f l =
@@ -495,29 +498,26 @@ module Make (Name : Names_t) = struct
 
   (** new idle_elimination series **)
 
-  (** returns a list of rules and the updated memory **)
+  (** returns a list of rules and updates the memory as needed **)
   let hoist_rule rules rul memory =
-    let hoist (nt_child, act) = 
-      let hoist_r new_rule =
-	let combined_expr =
-	  modify_last_elem (fun (pi,a) -> pi,act_act_compose act a)
-	    new_rule.expression
-	in(* TODO: CHECK PRIORITY OF CREATED RULE *)
-	{ rul with
-	  expression = combined_expr;
-	  predicates = pred_pred_compose rul.predicates
-	    (act_pred_compose act new_rule.predicates);
-	  priority   = new_rule.priority @ rul.priority;
-	}
-      in
-      NTMap.find nt_child rules |> List.map hoist_r 
+    let hoist_r act new_rule =
+      { rul with
+	expression = modify_last_elem (fun (pi,a) -> pi,act_act_compose act a)
+	  new_rule.expression;
+	predicates = pred_pred_compose rul.predicates
+	  (act_pred_compose act new_rule.predicates);
+	priority   = new_rule.priority @ rul.priority;
+      }
     in
     try
-      let nt,_ as item = extract_idle rul.expression in 
-      let nt_set = NTMap.find rul.name memory in
-      if NTSet.mem nt nt_set then [], memory
-      else hoist item, NTMap.add rul.name (NTSet.add nt nt_set) memory
-    with Not_idle -> [rul], memory
+      let nt_child,act = extract_idle rul.expression in 
+      let nt_set = NTMap.find rul.name !memory in
+      if NTSet.mem nt_child nt_set then []
+      else (
+	memory := NTMap.add rul.name (NTSet.add nt_child nt_set) !memory;
+	NTMap.find nt_child rules |> List.map (hoist_r act)
+      )
+    with Not_idle -> [rul]
 
   let add_rule m r = 
     try NTMap.modify r.name (List.cons r) m
@@ -536,8 +536,7 @@ module Make (Name : Names_t) = struct
     while is_idle {grammar with rules = !ret} do
       let rules = !ret in
       let per_rule r = 
-	let new_rules, new_mem = hoist_rule rules r !mem in
-	mem := new_mem;
+	let new_rules = hoist_rule rules r mem in
 	ret := List.fold_left add_rule !ret new_rules
       in
       ret := NTMap.empty;
