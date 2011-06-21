@@ -17,20 +17,25 @@ let () = at_exit (fun () ->
 let gen_parser p e = 
   let proto = Ns_parse.parse_file_as_spec p 
   and extr = Ns_parse.parse_file_as_extraction e in
-  let ca,var_count = Ns_parse.merge_cas ~proto ~extr |> Ns_parse.regularize 
+  let ca,var_count = 
+    Ns_parse.merge_cas ~proto ~extr 
+    |> Ns_parse.regularize 
     |> Ns_parse.destring extr.start in
   let ca = Ns_parse.dechain ca 
 (*    |>tap (Printf.printf "Grammar:\n%a\n" Ns_parse.print_reg_ds_ca)*)
     |> Ns_parse.flatten_priorities 
-    |> Ns_run.optimize_preds in
-  
+    |> Ns_run.optimize_preds 
+  in
+  let vars = Array.make var_count 0 in (* vars default to 0 *)
+  let dfa0 = Ns_run.init_dfa ca vars in (* initial DFA to run *)
   fun () -> (* allow creating many parsers *)
     let vars = Array.make var_count 0 in (* vars default to 0 *)
-    let dfa0 = Ns_run.init_dfa ca vars in (* initial DFA to run *)
     let q = ref (Ns_run.init_state dfa0 0) (* current DFA state *)
     and skip_left = ref 0
     and base_pos = ref 0 in
     let rec parse str =
+      if Ns_types.debug_ca then Printf.printf "skip:%d bpos:%d pkt_len:%d\n" 
+	!skip_left !base_pos (String.length str);
       if !skip_left = 0 then 
 	q := Ns_run.simulate_ca_string 
 	  ~ca ~vars fail_drop skip_left base_pos str !q
@@ -47,6 +52,7 @@ let gen_parser p e =
     in
     parse
 
+(* helper functions for having the same interface as bpac and upac *)
 let new_parser s e = gen_parser s e
 let add_data p _ d = p d
 let get_event_count _p = !Ns_types.matches
