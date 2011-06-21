@@ -65,8 +65,8 @@ ns_yac.cmx: ns_yac.cmi ns_yac.ml
 ns_yac.cmo: ns_yac.cmi ns_yac.ml
 	ocamlfind ocamlc -package $(PACKAGES) $(OCAMLFLAGS) -c ns_yac.ml
 
-pcap.cmo: pcap.ml
-	ocamlfind ocamlc $(OCAMLFLAGS) -c -syntax camlp4o -package $(PACKAGES),bitstring.syntax,bitstring pcap.ml -o pcap.cmo
+pcap_parser.cmo: pcap_parser.ml
+	ocamlfind ocamlc $(OCAMLFLAGS) -c -syntax camlp4o -package $(PACKAGES),bitstring.syntax,bitstring pcap_parser.ml -o pcap_parser.cmo
 
 %.cmx: %.ml
 	ocamlfind ocamlopt -package $(PACKAGES) $(OCAMLFLAGS) -c $^
@@ -76,18 +76,18 @@ pcap.cmo: pcap.ml
 
 OLIBS = #libocamlviz.cmxa 
 
-bench-bpac: bpac.cmxa pcap.cmx bench.cmx tcmalloc_stubs.o
-	ocamlfind ocamlopt -annot -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc bpac.cmxa tcmalloc_stubs.o $(LIBS) $(FLOW) pcap.cmx bench.cmx -o $@
+bench-bpac: bpac.cmxa pcap_parser.cmx bench.cmx tcmalloc_stubs.o
+	ocamlfind ocamlopt -annot -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc bpac.cmxa tcmalloc_stubs.o $(LIBS) $(FLOW) pcap_parser.cmx bench.cmx -o $@
 
-bench-upac: upac.cmxa pcap.cmx bench.cmx tcmalloc_stubs.o
-	ocamlfind ocamlopt -annot -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc upac.cmxa tcmalloc_stubs.o $(LIBS) $(FLOW) pcap.cmx bench.cmx -o $@
+bench-upac: upac.cmxa pcap_parser.cmx bench.cmx tcmalloc_stubs.o
+	ocamlfind ocamlopt -annot -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc upac.cmxa tcmalloc_stubs.o $(LIBS) $(FLOW) pcap_parser.cmx bench.cmx -o $@
 
-pcap.cmx: pcap.ml
-	ocamlfind ocamlopt $(OCAMLFLAGS) -c -syntax camlp4o -package $(PACKAGES),bitstring.syntax,bitstring pcap.ml -o pcap.cmx
+pcap_parser.cmx: pcap_parser.ml
+	ocamlfind ocamlopt $(OCAMLFLAGS) -c -syntax camlp4o -package $(PACKAGES),bitstring.syntax,bitstring pcap_parser.ml -o pcap_parser.cmx
 
-pcap: pcap.ml
-	ocamlbuild -no-hygiene pcap.native
-	mv pcap.native pcap
+pcap_parser: pcap_parser.ml
+	ocamlbuild -no-hygiene pcap_parser.native
+	mv pcap_parser.native pcap_parser
 
 hwrun:
 	ocamlbuild -no-hygiene hwrun.native

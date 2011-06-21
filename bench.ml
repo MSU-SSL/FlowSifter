@@ -92,7 +92,8 @@ let trace_len = ref (-1)
 let sift_p = {
   p_type = `Sift;
   id = "sift"; (*(if pac = "bpac" then "sift-b" else "sift-u");*)
-  new_parser = Prog_parse.new_parser "spec.ca" !extr_ca;
+(*  new_parser = Prog_parse.new_parser "spec.ca" !extr_ca; *)
+  new_parser = Prog_parse.new_parser "dns.pro" "dns.ext";
   delete_parser = Prog_parse.delete_parser;
   add_data = Prog_parse.add_data;
   get_event_count = Prog_parse.get_event_count; 
@@ -331,12 +332,12 @@ let main () =
   let gen_count = !packet_skip + !packet_limit in
   let packet_enum = 
     match !parse_by_flow, !mode with
-      |	true, Pcap ->  List.enum !fns |> Pcap.assemble gen_count
-      | false, Pcap -> List.enum !fns |> Pcap.pre_parse
-      | true, Mux -> List.enum !fns |> Pcap.make_flows
-      | false, Mux ->  List.enum !fns |> Pcap.make_packets_files
-      | true, Gen -> Enum.from gen_pkt |> Enum.take !gen_flows |> Pcap.make_flows
-      | false, Gen -> Enum.from gen_pkt |> Enum.take !gen_flows |> Pcap.make_packets
+      |	true, Pcap ->  List.enum !fns |> Pcap_parser.assemble gen_count
+      | false, Pcap -> List.enum !fns |> Pcap_parser.pre_parse
+      | true, Mux -> List.enum !fns |> Pcap_parser.make_flows
+      | false, Mux ->  List.enum !fns |> Pcap_parser.make_packets_files
+      | true, Gen -> Enum.from gen_pkt |> Enum.take !gen_flows |> Pcap_parser.make_flows
+      | false, Gen -> Enum.from gen_pkt |> Enum.take !gen_flows |> Pcap_parser.make_packets
   in
   let packets = packet_enum |> Enum.skip !packet_skip |> Enum.take !packet_limit |> Array.of_enum in
   trace_len := trace_size packets;
