@@ -43,7 +43,7 @@ type regular_grammar_opt = (int array -> (string -> int list -> int) -> compiled
 
 (****** Parsing functions ******)
 
-let debug_ca = true
+let debug_ca = false
 
 exception Invalid_arg_count of string
 let wrong_args name = raise (Invalid_arg_count name)
@@ -66,8 +66,9 @@ let ca_functions = ref
     "token", 
     (fun (base_pos, sim_pos, flow_data) -> function 
       | [start_pos] -> (* end_pos = pos() - 1 *)
-	if debug_ca then printf "T"; incr matches; 
-	printf "start_pos: %d \tbase_pos: %d \tsim_pos: %d\n" 
+	incr matches; 
+	if debug_ca then printf "T"; 
+	if debug_ca then printf "start_pos: %d \tbase_pos: %d \tsim_pos: %d\n" 
 	  start_pos base_pos !sim_pos;
 	if start_pos = -1 then 
 	  printf "field: ...%s\n" (String.sub flow_data 0 !sim_pos)
@@ -81,8 +82,8 @@ let ca_functions = ref
 	0
       | _ -> wrong_args "token" );
     "bounds" ,
-    (fun (base_pos, _sim_pos, flow_data) -> function 
-      | [start_pos; end_pos] -> 
+    (fun (_base_pos, _sim_pos, _flow_data) -> function 
+      | [_start_pos; _end_pos] -> 
 	if debug_ca then printf "B"; incr matches; 
 	(*	let token = 
 		if start_pos < base_pos then 
