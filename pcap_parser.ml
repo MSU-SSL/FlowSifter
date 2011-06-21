@@ -21,6 +21,7 @@ let kept_packets = ref 0
 let kept_bytes = ref 0 
 let dropped_packets_non_tcp = ref 0
 let dropped_packets_bad_tcp = ref 0
+let dropped_packets_bad_udp = ref 0
 let dropped_packets_v6 = ref 0
 let dropped_packets_eth = ref 0
 let dropped_packets_non_eth = ref 0
@@ -119,6 +120,8 @@ and decode_ip (ts,packet) =
 (*      printf "IP len: %d " length; *)
       if protocol = 6 then  (* TCP decode *)
 	decode_tcp ts sip dip contents
+      else if protocol = 17 then (* UDP decode *)
+	decode_udp ts sip dip contents
       else
 	(incr dropped_packets_non_tcp; None)
     | { 6 : 4;                      (* IPv6 *)
@@ -143,6 +146,17 @@ and decode_tcp ts sip dip packet =
 	Some (ts, (sip,dip,s_port,d_port), Int32.to_int seqno, 
 	      Bitstring.string_of_bitstring payload, (syn,ack,fin))
     | { _ } -> incr dropped_packets_bad_tcp; None
+and decode_udp ts sip dip packet =
+  bitmatch packet with
+      { s_port:16; d_port: 16; 
+	length: 16; _checksum: 16;
+	payload : (length-8)*8 : bitstring } ->
+(*	printf "TCP seqno: %ld\n" seqno; *)
+	incr kept_packets;
+	kept_bytes := !kept_bytes + (Bitstring.bitstring_length payload lsr 3);
+	Some (ts, (sip,dip,s_port,d_port), 0, 
+	      Bitstring.string_of_bitstring payload, (true,false,true))
+    | { _ } -> incr dropped_packets_bad_udp; None
 and decode_packet = function
   | 101l -> decode_ip
   | 1l -> decode_eth
