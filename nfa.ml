@@ -280,12 +280,13 @@ let build_dfa ~labels dop reg =
     let dec =
       Set.fold (fun n acc -> dop.merge acc mdfa.qs.(n).dec) ns dop.dec0
     in
-    let q = {label=(); pri=0; dec_pri=(-1); id=id; map=map; dec=dec} in
+    let p = Set.fold (fun n acc -> max acc mdfa.qs.(n).pri) ns 0 in
+    let dp = Set.fold (fun n acc -> max acc mdfa.qs.(n).dec_pri) ns (-1) in
+    let q = {label=(); pri=p; dec_pri=dp; id=id; map=map; dec=dec} in
     vect_set_any states id q;
     ()
   in
-  let set_compare s1 s2 = Enum.compare Int.compare (Set.enum s1) (Set.enum s2) in
-  let id_map = map_id_set ~comp:set_compare ~min_id:0 make_node in
+  let id_map = map_id_set ~comp:qcmp ~min_id:0 make_node in
   let q0 = id_map.get_id q0 |> Id.to_int in
   let qs = Vect.map Option.get !states |> Vect.to_array in
   {dop=dop; qs=qs; q0=qs.(q0)} |> check_ids
