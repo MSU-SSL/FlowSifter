@@ -188,11 +188,11 @@ let make_nt_approximate grammar nt =
     {name = newterm; 
      predicates = VarMap.add approx_counter pred_is_zero VarMap.empty;
      expression = [];
-     priority = [25] ;};  (* escape rule *)
+     priority = [500] ;};  (* escape rule *)
     {name = newterm; 
      predicates = VarMap.add approx_counter pred_greater_zero VarMap.empty; 
      expression = [(Term absorb, VarMap.empty); (Nonterm newterm, VarMap.empty)];
-     priority = [500] ;} (* absorption rule *)
+     priority = [25] ;} (* absorption rule *)
   ] |> 
     TSet.fold (xrementor newterm act_inc) starts |> 
     TSet.fold (xrementor newterm act_dec) stops 
