@@ -119,6 +119,10 @@ let map_qs f fa =
   let qs = Array.map f fa.qs in 
   {qs=qs; q0=qs.(fa.q0.id); dop=fa.dop}
 
+let map_dec dop f fa =
+  let qs = Array.map f fa.qs in
+  {qs=qs; q0=qs.(fa.q0.id); dop=dop}
+
 let decs fa = Array.map (fun q -> q.dec) fa.qs
 
 let print_ids dfa = iter (fun i -> printf "%d) %d  " i dfa.qs.(i).id) (0 --^ size dfa)
