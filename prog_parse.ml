@@ -26,31 +26,23 @@ let gen_parser p e =
     |> Ns_parse.flatten_priorities 
     |> Ns_run.optimize_preds 
   in
-  let vars = Array.make var_count 0 in (* vars default to 0 *)
-  let dfa0 = Ns_run.init_dfa ca vars in (* initial DFA to run *)
   fun () -> (* allow creating many parsers *)
-    let vars = Array.make var_count 0 in (* vars default to 0 *)
-    let q = ref (Ns_run.init_state dfa0 0) (* current DFA state *)
-    and skip_left = ref 0
-    and base_pos = ref 0 in
-    let rec parse str =
-      if Ns_types.debug_ca then Printf.printf "skip:%d bpos:%d pkt_len:%d\n" 
-	!skip_left !base_pos (String.length str);
-      if !skip_left = 0 then 
-	q := Ns_run.simulate_ca_string 
-	  ~ca ~vars fail_drop skip_left base_pos str !q
-      else (* skip_left > 0 *)
-	let len = String.length str in
-	if !skip_left >= len then ( (* skip the packet entirely *)
-	  skip_left := !skip_left - len; 
-	  base_pos := !base_pos + len; 
-	  incr pkt_skip
-	) else (* parse only part of the packet *)
-	  let str_to_parse = String.tail str !skip_left in
-	  skip_left := 0;
-	  parse str_to_parse
-    in
-    parse
+    let st = {
+      vars = Array.make var_count 0;
+      ca=ca;
+      q=(fun _ -> assert false);
+      base_pos = 0;
+      pos = 0;
+      flow_data = "";
+      fail_drop = 0;
+      rerun_temp = 0;
+      rerun = [];
+    }
+    in (* vars default to 0 *)
+    let Waiting first_act = ca.(0) st in
+    st.q <- first_act;
+    (fun s -> let Waiting next_act = st.q s in st.q <- next_act)
+    
 
 (* helper functions for having the same interface as bpac and upac *)
 let new_parser s e = gen_parser s e
