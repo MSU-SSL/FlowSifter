@@ -144,6 +144,15 @@ let ca_functions = ref
 	st.pos <- st.pos + 1;
 	ret
       | _ -> wrong_args "cur_byte" );
+    "cur_double_byte",
+    (fun st -> function 
+      | [] -> 
+	(* FIXME: problem with the double-byte spanning packets *)
+	if st.pos + 1 > String.length st.flow_data then raise Data_stall;	
+	let ret = (Char.code st.flow_data.[st.pos]) * 256 + (Char.code st.flow_data.[st.pos+1])in
+	st.pos <- st.pos + 2;
+	ret
+      | _ -> wrong_args "cur_double_byte" );
     "getnum",
     (fun st -> function 
       | [] -> 
