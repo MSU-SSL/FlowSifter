@@ -6,3 +6,4 @@
 <*/libbinpac.a>: precious
 <*/libubinpac.a>: precious
 <demo.*>: pkg_pcap
+<gen_extr.*>: pkg_lablgtk2

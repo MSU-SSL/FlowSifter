@@ -1,15 +1,20 @@
 SHELL := /bin/bash
 DEBUG = 
 CPPFLAGS =  -O2 $(DEBUG) -I .
-OCAMLFLAGS = -annot -w Z $(DEBUG) -p
+OCAMLFLAGS = -annot -w Z $(DEBUG)
 PACKAGES = batteries,benchmark
 
-all: bench-all
+all: gen_extr
+
+#all: bench-all
 
 .PHONY: clean hwrun %.threadlog bench-all runlog.% outliers rectest
 
+dist-clean: clean	
+
 clean:
-	rm -f *.a *.o *.cmi *.cmx *.cmo *.cmxa *.annot lib_b/*.o lib_u/*.o ns_lex.ml ns_yac.ml ns_yac.mli 
+	$(RM) *.a *.o *.cmi *.cmx *.cmo *.cmxa *.annot lib_b/*.o lib_u/*.o
+	$(RM) ns_lex.ml ns_yac.ml ns_yac.mli
 	rm -rf _build/
 
 http-baseconn.o: http-baseconn.cc
@@ -96,6 +101,10 @@ hwrun:
 demo: *.ml
 	ocamlbuild demo.native
 
+gen_extr: 
+	$(RM) ns_lex.ml ns_yac.ml ns_yac.mli
+	ocamlbuild -use-ocamlfind gen_extr.native
+
 #join -j 1 -o 1.1 1.2 2.2 null.20-timelog null.50-timelog | join -j 1 -o 1.1 1.2 1.3 2.2 - null.100-timelog | join -j 1 -o 1.1 1.2 1.3 1.4 2.2 - null.150-timelog | join -j 1 -o 1.1 1.2 1.3 1.4 1.5 2.2 - null.250-timelog 
 
 ####
@@ -131,11 +140,10 @@ perf2-all: $(patsubst %, %.perf2, $(MODES))
 
 mldeps: ns_lex.ml ns_yac.ml
 	ocamlfind ocamldep -package bitstring.syntax -syntax camlp4o *.ml > mldeps
-	echo "ns_yac.cmi: PCFG.cmi" >> mldeps
 
 include mldeps
 
-ns_yac.cmi: ns_types.ml
+ns_yac.cmi: ns_types.ml PCFG.cmi
 
 ##########################
 # CREATE BENCHMARK FILES #
