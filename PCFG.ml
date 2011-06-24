@@ -16,8 +16,6 @@ end
 module Make (Name : Names_t) = struct
   (* Two Unary expression a_exp and p_exp have an implicit variable bound to them *)
 
-  type parser_state = int * int ref * string
-
   type fun_id = int
 
   (* This is an arithimatic expression *)
@@ -31,9 +29,9 @@ module Make (Name : Names_t) = struct
 			  the transformation of Variable *)
     | Variable (* This reference the uniary variable of the expression *)
 
-  type a_opt =
+  type 'a a_opt =
     | Slow_a of a_exp
-    | Fast_a of (int -> int)
+    | Fast_a of ('a -> int -> int)
 
   (* This is a predicate expression *)
   type 'a_exp p_exp =
@@ -138,26 +136,26 @@ module Make (Name : Names_t) = struct
     | Variable -> v
     | Constant c -> c
     | Function (_, f_id, exp_list) -> (fs f_id) s (List.map (val_a_exp fs s v) exp_list)
-    | Divide (a,b) -> (val_a_exp fs s v a) / (val_a_exp fs s v b)
-    | Multiply (a,b) -> (val_a_exp fs s v a) * (val_a_exp fs s v b)
-    | Sub (a,b) -> (val_a_exp fs s v a) - (val_a_exp fs s v b)
-    | Plus (a,b) -> (val_a_exp fs s v a) + (val_a_exp fs s v b)
+    | Divide (a,b) -> let l = val_a_exp fs s v a in let r = val_a_exp fs s v b in l / r
+    | Multiply (a,b) -> let l = val_a_exp fs s v a in let r = val_a_exp fs s v b in l * r
+    | Sub (a,b) -> let l = val_a_exp fs s v a in let r = val_a_exp fs s v b in l - r
+    | Plus (a,b) -> let l = val_a_exp fs s v a in let r = val_a_exp fs s v b in l + r
 
   let val_a_opt fs s v = function
     | Slow_a e -> val_a_exp fs s v e
-    | Fast_a f -> f v
+    | Fast_a f -> f s v
 
     (* This bind value to the implicit variable and evaluates the p_exp*)
   let rec val_p_exp fs s v = function
     | Const const -> const
-    | Or (a,b) ->  (val_p_exp fs s v a) || (val_p_exp fs s v b)
-    | And (a,b) ->  (val_p_exp fs s v a) && (val_p_exp fs s v b)
+    | Or (a,b) -> let l = val_p_exp fs s v a in let r = val_p_exp fs s v b in l || r
+    | And (a,b) -> let l = val_p_exp fs s v a in let r = val_p_exp fs s v b in l && r
     | Not a ->  not (val_p_exp fs s v a)
-    | Greaterthan (a,b) -> (val_a_exp fs s v a) >  (val_a_exp fs s v b)
-    | Lessthan (a,b) -> (val_a_exp fs s v a) <  (val_a_exp fs s v b)
-    | GreaterthanEq (a,b) -> (val_a_exp fs s v a) >=  (val_a_exp fs s v b)
-    | LessthanEq (a,b) -> (val_a_exp fs s v a) <=  (val_a_exp fs s v b)
-    | Equal (a,b) -> (val_a_exp fs s v a) =  (val_a_exp fs s v b)
+    | Greaterthan (a,b) -> let l = val_a_exp fs s v a in let r = val_a_exp fs s v b in l > r
+    | Lessthan (a,b) -> let l = val_a_exp fs s v a in let r = val_a_exp fs s v b in l < r
+    | GreaterthanEq (a,b) -> let l = val_a_exp fs s v a in let r = val_a_exp fs s v b in l >= r
+    | LessthanEq (a,b) -> let l = val_a_exp fs s v a in let r = val_a_exp fs s v b in l <= r
+    | Equal (a,b) -> let l = val_a_exp fs s v a in let r = val_a_exp fs s v b in l = r
 
   let val_p_opt fs s v = function
     | Slow_p e -> val_p_exp fs s v e
@@ -208,14 +206,70 @@ module Make (Name : Names_t) = struct
 
   let is_clean act_map = VarMap.for_all (fun _ a -> is_clean_a a) act_map
 
-  let rec freeze_a = function
-    | Plus(Variable, Constant 1) -> Fast_a (fun x -> x+1)
-    | Sub (Variable, Constant 1) -> Fast_a (fun x -> x+1)
-    | Plus(Variable, Constant c) -> Fast_a (fun x -> x+c)
-    | Sub (Variable, Constant c) -> Fast_a (fun x -> x+c)
+
+  let rec constant_propogate_a = function
+    | Plus (x,y) -> (
+      match constant_propogate_a x, constant_propogate_a y with 
+	| Constant 0, x | x, Constant 0 -> x
+	| x,y -> Plus (x,y) )
+    | Sub (x,y) -> (
+      match constant_propogate_a x, constant_propogate_a y with 
+	| Constant 0, x | x, Constant 0 -> x
+	| x,y -> Sub (x,y) )
+    | Multiply (x,y) -> (
+      match constant_propogate_a x, constant_propogate_a y with 
+	| Constant 0, x | x, Constant 0 when is_clean_a x -> Constant 0
+	| Constant 1, x | x, Constant 1 -> x
+	| x,y -> Multiply (x,y) )
+    | Divide (x,y) -> (
+      match constant_propogate_a x, constant_propogate_a y with 
+	| Constant 0, x when is_clean_a x-> Constant 0
+	| _, Constant 0 -> failwith "Divide by zero"
+	| x, Constant 1 -> x
+	| x,y -> Divide (x,y) )
+    | x -> x
+
+  let rec constant_propogate_p = function
+    | Or (a,b) -> (match constant_propogate_p a, constant_propogate_p b with
+	| Const true, x | x, Const true when is_clean_p x -> Const true
+	| Const false, x| x, Const false-> x
+	| x,y -> Or (x,y) )
+    | And (a,b) -> (match constant_propogate_p a, constant_propogate_p b with
+	| Const false,x| x, Const false when is_clean_p x -> Const false
+	| Const true, x| x, Const true -> x
+	| x,y -> And (x,y) )
+    | Equal (a,b) -> (match constant_propogate_a a, constant_propogate_a b with
+	| Constant x, Constant y -> Const (x = y)
+	| x,y -> Equal(x,y) )
+    | GreaterthanEq (a,b) -> (match constant_propogate_a a, constant_propogate_a b with
+	| Constant x, Constant y -> Const (x >= y)
+	| x,y -> GreaterthanEq (x,y) )
+    | LessthanEq (a,b) -> (match constant_propogate_a a, constant_propogate_a b with
+	| Constant x, Constant y -> Const (x <= y)
+	| x,y -> LessthanEq(x,y) )
+    | Greaterthan (a,b) -> (match constant_propogate_a a, constant_propogate_a b with
+	| Constant x, Constant y -> Const (x > y)
+	| x,y -> Greaterthan(x,y) )
+    | Lessthan (a,b) -> (match constant_propogate_a a, constant_propogate_a b with
+	| Constant x, Constant y -> Const (x < y)
+	| x,y -> Lessthan(x,y) )
+    | x -> x
+
+  let optimize_a = constant_propogate_a  
+  let optimize_p = constant_propogate_p
+
+  let freeze_a fs a = optimize_a a |> function
+    | Plus(Variable, Constant 1) -> Fast_a (fun _ x -> x+1)
+    | Sub (Variable, Constant 1) -> Fast_a (fun _ x -> x+1)
+    | Plus(Variable, Constant c) -> Fast_a (fun _ x -> x+c)
+    | Sub (Variable, Constant c) -> Fast_a (fun _ x -> x+c)
+    | Function (_, f_id, []) -> let f = fs f_id in Fast_a (fun s _ -> f s [])
+    | Plus (Multiply(Variable, Constant 256), Function (_, f_id, [])) -> let f = fs f_id in Fast_a (fun s x -> x lsl 8 lor f s [])
+    | Constant 0 -> Fast_a (fun _ _ -> 0)
+    | Constant c -> Fast_a (fun _ _ -> c)
     | a -> Slow_a a
 
-  let rec freeze_p = function
+  let freeze_p p = optimize_p p |> function
     | Equal(Variable, Constant 0) -> Fast_p (fun x -> x=0)
     | Greaterthan(Variable, Constant 0) -> Fast_p (fun x -> x>0)
     | a -> Slow_p a
