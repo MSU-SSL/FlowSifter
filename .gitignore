@@ -4,10 +4,14 @@
 *.cmi
 *.a
 *.cmxa
+bench-upac
 bench-bpac
-bench-null
 *.pdf
 *.png
 *.eps
 _build/
 .backups/
+mldeps
+lib_?/*.h
+lib_?/*.cc
+lib_b/binpac
