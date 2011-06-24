@@ -17,9 +17,12 @@ let get_all_rule_groups (ca:regular_grammar_arr) =
   in
   Array.enum ca |> map groups_of_rlist |> Enum.flatten
 
-let run_act rerun state vars (var, act) =
-  try vars.(var) <- val_a_exp Ns_types.get_f state vars.(var) act
-  with Ns_types.Data_stall -> rerun := (var,act) :: !rerun;
+let run_act st (var, act) =
+  try 
+    let new_val = val_a_opt Ns_types.get_f st st.vars.(var) act in
+    if debug_ca then printf "$%d := %d " var new_val;
+    st.vars.(var) <- new_val
+  with Ns_types.Data_stall -> st.rerun <- (var,act) :: st.rerun;
 
 type ca_data = (int * a_exp) list * int
 
@@ -52,16 +55,28 @@ let merge_dec (_act1,nt1 as a) (_act2, nt2 as b) = if nt1 > nt2 then a else b
 (* Compiles a list of rules into an automaton with decisions of
    (priority, action, nt) *)
 let compile_ca rules =
+  let freeze_acts acts = List.map (fun (v,a) -> v, freeze_a get_f a) acts in
+  let optimize_state_acts {Regex_dfa.id=id;pri=pri;label=label; map=map; dec=(acts, q_next); dec_pri=dec_pri} =
+    {Regex_dfa.id=id; pri=pri; label=label; map=map; dec=(freeze_acts acts, q_next); dec_pri=dec_pri}
+  in
   let dec_ops = {Regex_dfa.dec0 = ([],-1); merge = merge_dec; cmp = compare} in
+  let new_dops = {Regex_dfa.dec0 = ([], -1); merge = merge_dec; cmp = compare} in 
 (*  printf "Making dfa of \n%a\n%!" (List.print print_reg_rule) rules;*)
-  List.enum rules 
-  |> Enum.map make_rx_pair
-  |> Pcregex.rx_of_dec_strings ~anchor:true
-  |> Minreg.of_reg
-  |> Nfa.build_dfa ~labels:false dec_ops
-  |> Regex_dfa.minimize
-  |> Regex_dfa.to_array
-
+  match rules with
+    | [{rx=None; act=act; nt=nt}] ->
+      `Ca (freeze_acts act, Option.default (-1) nt)
+    | _ -> 
+      `Dfa (List.enum rules 
+      |> Enum.map make_rx_pair
+      |> Pcregex.rx_of_dec_strings ~anchor:true
+      |> Minreg.of_reg
+      |> Nfa.build_dfa ~labels:false dec_ops
+      |> Regex_dfa.minimize
+      |> Regex_dfa.to_array
+      |> Regex_dfa.map_dec new_dops optimize_state_acts
+      )
+	  
+    
 let fill_cache cached_compile ca = 
   Enum.iter (cached_compile |- ignore) (get_all_rule_groups ca)
 
@@ -75,8 +90,8 @@ let get_rules_bits_aux var_sat pr_list =
   let bitvect a (p,_) = if pred_satisfied p then (a lsl 1) + 1 else a lsl 1 in
   List.fold_left bitvect 0 pr_list
 
-let get_rules_bits state pr_list vars =
-  let var_satisfied (v,p) = val_p_exp Ns_types.get_f state vars.(v) p in
+let get_rules_bits state pr_list =
+  let var_satisfied (v,p) = val_p_exp Ns_types.get_f state state.vars.(v) p in
   get_rules_bits_aux var_satisfied pr_list 
 
 let get_rules_bits_uni state pr_list i =
@@ -89,11 +104,12 @@ let is_univariate_predicate rs =
   let test (p,_) = List.for_all (fun (v,pexp) -> is_v v && is_clean_p pexp) p in
   if List.for_all test rs then !v else None
 
+(*
 let get_rules_v i rules =
-  let var_satisfied (_,p) = val_p_exp Ns_types.get_f null_env i p in
+  let var_satisfied (_,p) = val_p_opt Ns_types.get_f null_env i p in
   let pred_satisfied pred = List.for_all var_satisfied pred in
   List.filter_map (fun (p,e) -> if pred_satisfied p then Some e else None) rules
-
+*)
 let rec get_comb_aux i = function
   | [] -> []
   | (_p,rs)::t when i land 1 = 1 -> rs :: get_comb_aux (i lsr 1) t
@@ -103,35 +119,12 @@ let get_comb i rs = get_comb_aux i (List.rev rs)
 
 (*let rules_p = Point.create "rules"*)
 
-let var_max = 255
+(*let var_max = 255*)
+let print_iact_opt oc (i,e) = match e with 
+  | Fast_a _ -> fprintf oc "$%d := Fast" i
+  | Slow_a e -> fprintf oc "$%d := %a" i (print_a_exp ("$" ^ string_of_int i)) e
 
-(** Removes predicate checks at runtime for non-terminals with no predicates *)
-let optimize_preds ca =
-  let opt_prod _i rules =
-    if List.for_all (fun (p,_) -> List.length p = 0) rules then
-      let dfa = List.map snd rules |> compile_ca in
-      if Ns_types.debug_ca then 
-	printf "#DFA: %d\n%a\n" _i (Regex_dfa.print_array_dfa (fun oc (_,q) -> Int.print oc q)) dfa;
-	(fun _ _ -> dfa)
-    else 
-      if List.length rules < 20 then (*TODO: PARTITION RULES BY PREDICATE *)
-	let cas = Array.init (1 lsl (List.length rules)) 
-	  (fun i -> get_comb i rules |> compile_ca)
-	in
-	match is_univariate_predicate rules with
-	    Some v -> 
-	      let get_rs i = cas.(get_rules_bits_uni null_env rules i) in
-	      let rule_map = Array.init (var_max+1) get_rs in
-	      (fun vars _ -> rule_map.(vars.(v) land var_max))
-	  | None ->  
-	    (fun vars parse_state ->
-	      cas.(get_rules_bits parse_state rules vars) )
-      else (
-	printf "Cannot optimize rules, too many rules:\n%a\n%!" (List.print ~sep:"\n" print_reg_rule) (List.map snd rules);
-	exit 1;
-      )
-  in
-  Array.mapi opt_prod ca
+
 
 let print_vars oc m = 
   Array.print Int.print oc m
@@ -139,7 +132,6 @@ let print_vars oc m =
 let sim_p = Point.create "sim"
 let sim_t = Time.create "sim"
 *)
-let parsed_bytes = ref 0
 
 exception Parse_complete
 
@@ -184,74 +176,83 @@ let () =
 *)
 let null_state = -1
 
-type ca_next = (int * a_exp) list * int
-type state = (unit, int array, ca_next) Regex_dfa.state
-
-type ca_resume = 
-  | Done 
-  | Dfa of state array * state * int * ca_next * int * string
-  | Ca of (int * a_exp) list * int
-
-let init_dfa ca vars = ca.(0) vars (0, ref 0, "")
-
-let init_state dfa pos =
-  let q0 = dfa.q0 in
-  Dfa (dfa.qs, q0, q0.dec_pri, q0.dec, pos, "")
-
-let ca_trans = ref 0 
-
+(*let init_state dfa pos = match dfa with 
+  | `Dfa dfa -> let q0 = dfa.q0 in Dfa (dfa.qs, q0, q0.dec_pri, q0.dec, pos, "")
+  | `Ca (acts, q_next) -> Ca (acts, q_next)
+*)
 (* let () = at_exit (fun () -> printf "#CA Transitions: %d\n" !ca_trans)  *)
 
-let rec simulate_ca_string ~ca ~vars fail_drop skip_left base_pos flow_data =
-  let flow_len = String.length flow_data in
-  let pos = ref 0 in
-  let rerun = ref [] in
-  let rec run_d2fa qs q pri item ri tail_data =
-    if !pos >= flow_len then ( (* skipped past end of current packet *)
-      skip_left := !pos - flow_len; 
-      let ri_pos = !base_pos + ri in
-      base_pos := !base_pos + flow_len;
-      Dfa (qs, q, pri, item, ri_pos, "")
-    ) else if !pos < 0 then ( (* handle DFA backtrack into previous packet *)
-      (* TODO: optimize backtracking? *)
-      let new_ri = ri + !base_pos in
-      base_pos := !base_pos + !pos;
-      simulate_ca_string ~ca ~vars fail_drop skip_left base_pos 
-	(tail_data ^ flow_data) (Dfa (qs, q, pri, item, new_ri, ""))
-    ) else
-      let dfa_result = resume_arr qs flow_data pri item ri q !pos in
+let bookkeep st s = st.pos <- 0; st.flow_data <- s
+
+let rec skip_to_pos resume st s =
+  let flow_len = String.length s in  
+  if st.base_pos + flow_len <= st.pos then (
+    st.base_pos <- st.base_pos + flow_len;
+    Waiting (skip_to_pos resume st)
+  ) else (* parse part of the packet *)
+    resume (String.tail s (st.pos - st.base_pos))
+
+let rec done_f st s = st.fail_drop <- st.fail_drop + String.length s; Waiting (done_f st)
+
+let rec run_d2fa qs q pri item ri tail_data st =
+  let flow_len = String.length st.flow_data in
+  if st.pos >= flow_len then ( (* skipped past end of current packet *)
+    st.base_pos <- st.base_pos + flow_len;
+    let resume = (fun s -> bookkeep st s; run_d2fa qs q pri item (ri - flow_len) "" st) in
+    if st.pos > flow_len then Waiting (skip_to_pos resume st) else Waiting resume
+  ) else if st.pos < 0 then ( (* handle DFA backtrack into previous packet *)
+    (* TODO: optimize backtracking? *)
+    st.base_pos <- st.base_pos + st.pos;
+    run_d2fa qs q pri item (ri - st.pos) "" {st with flow_data = tail_data ^ st.flow_data} 
+  ) else
+      let dfa_result = resume_arr qs st.flow_data pri item ri q st.pos in
       match dfa_result with
 	| Dec ((acts,q_next),pos_new) -> 
-	  parsed_bytes := !parsed_bytes + (pos_new - !pos);
-	  pos := pos_new;
-	  run_ca acts q_next; (* Run the CA *)
+	  st.pos <- pos_new;
+	  run_ca acts q_next st; (* Run the CA *)
 	| End_of_input (q_final, pri, item, ri) -> 
-	  parsed_bytes := !parsed_bytes + (String.length flow_data - !pos);
 	  let tail_out = 
-	    if ri < 0 then tail_data ^ flow_data 
-	    else String.tail flow_data ri 
+	    if ri < 0 then tail_data ^ st.flow_data 
+	    else String.tail st.flow_data ri 
 	  in
-	  let ri_pos = !base_pos + ri in
-	  base_pos := !base_pos + flow_len;
-	  Dfa (qs,q_final,pri,item, ri_pos,tail_out)
-  and run_ca acts q_next =
-    if debug_ca then printf "\nCA: %d @ pos %d(%d)" 
-      q_next (!pos + !base_pos) !pos;
-    incr ca_trans; 
-    let ca_state = (!base_pos, pos, flow_data) in
-    if acts <> [] then List.iter (run_act rerun ca_state vars) acts;
-    if !rerun <> [] then Ca (!rerun, q_next)
-    else if q_next = null_state then (
-      fail_drop := !fail_drop + (flow_len - !pos);
-      Done
-    ) else
-      let dfa = ca.(q_next) vars ca_state in
-      let q0 = dfa.q0 in
-      run_d2fa dfa.qs q0 q0.dec_pri q0.dec !pos ""
-  in
-  function
-    | Dfa (qs, q, pri, item, ri, tail_data) ->
-      run_d2fa qs q pri item (ri - !base_pos) tail_data
-    | Ca (runme,q_next) -> run_ca runme q_next
-    | Done -> fail_drop := !fail_drop + flow_len; Done
+	  st.base_pos <- st.base_pos + flow_len;
+	  Waiting (fun s -> bookkeep st s; run_d2fa qs q_final pri item (ri - flow_len) tail_out st)
+and run_ca acts q_next st =
+  let flow_len = String.length st.flow_data in
+  if debug_ca then printf "\nCA: %d @ pos %d(%d)" q_next (st.pos + st.base_pos) st.pos;
+  if acts <> [] then List.iter (run_act st) acts;
+  if st.rerun <> [] then Waiting (fun s -> bookkeep st s; run_ca st.rerun q_next st)
+  else if q_next = null_state then (
+    st.fail_drop <- st.fail_drop + (flow_len - st.pos);
+    Waiting (done_f st)
+  ) else if st.pos >= flow_len then Waiting (fun s -> bookkeep st s; run_ca [] q_next st)
+    else st.ca.(q_next) st
 
+(** Removes predicate checks at runtime for non-terminals with no predicates *)
+let optimize_preds ca =
+  let link_run_fs i = function
+    | `Dfa dfa ->
+      if Ns_types.debug_ca then 
+	printf "#DFA: %d\n%a\n" i (Regex_dfa.print_array_dfa (fun oc (_,q) -> Int.print oc q)) dfa;
+      let q0 = dfa.q0 in
+      (fun st -> run_d2fa dfa.qs q0 q0.dec_pri q0.dec st.pos "" st)
+    | `Ca (acts, next_ca) -> 
+      if Ns_types.debug_ca then
+	printf "NRX: %a %d\n" (List.print print_iact_opt) acts next_ca;
+      (run_ca acts next_ca)
+  in
+  let opt_prod _i rules =
+    if List.for_all (fun (p,_) -> List.length p = 0) rules then
+      List.map snd rules |> compile_ca |> link_run_fs _i
+    else 
+      if List.length rules < 20 then (*TODO: PARTITION RULES BY PREDICATE *)
+	let cas = Array.init (1 lsl (List.length rules)) 
+	  (fun i -> get_comb i rules |> compile_ca |> link_run_fs _i)
+	in
+	(fun st -> cas.(get_rules_bits st rules) st)
+      else (
+	printf "Cannot optimize rules, too many rules:\n%a\n%!" (List.print ~sep:"\n" print_reg_rule) (List.map snd rules);
+	exit 1;
+      )
+  in
+  Array.mapi opt_prod ca
