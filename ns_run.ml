@@ -218,15 +218,18 @@ let rec run_d2fa qs q pri item ri tail_data st =
 	  st.base_pos <- st.base_pos + flow_len;
 	  Waiting (fun s -> bookkeep st s; run_d2fa qs q_final pri item (ri - flow_len) tail_out st)
 and run_ca acts q_next st =
-  let flow_len = String.length st.flow_data in
   if debug_ca then printf "\nCA: %d @ pos %d(%d)" q_next (st.pos + st.base_pos) st.pos;
   if acts <> [] then List.iter (run_act st) acts;
-  if st.rerun <> [] then Waiting (fun s -> bookkeep st s; run_ca st.rerun q_next st)
-  else if q_next = null_state then (
-    st.fail_drop <- st.fail_drop + (flow_len - st.pos);
+  if st.rerun <> [] then (* need more input to satisfy functions *)
+    Waiting (fun s -> bookkeep st s; run_ca st.rerun q_next st)
+  else if q_next = null_state then ( (* CA has no next state to go to *)
+    st.fail_drop <- st.fail_drop + (String.length st.flow_data - st.pos);
     Waiting (done_f st)
-  ) else if st.pos >= flow_len then Waiting (fun s -> bookkeep st s; run_ca [] q_next st)
-    else st.ca.(q_next) st
+  ) else 
+    if st.pos >= String.length st.flow_data then (* No more data to process, need more *)
+      Waiting (fun s -> bookkeep st s; run_ca [] q_next st)
+    else 
+      st.ca.(q_next) st
 
 (** Removes predicate checks at runtime for non-terminals with no predicates *)
 let optimize_preds ca =
@@ -238,16 +241,16 @@ let optimize_preds ca =
       (fun st -> run_d2fa dfa.qs q0 q0.dec_pri q0.dec st.pos "" st)
     | `Ca (acts, next_ca) -> 
       if Ns_types.debug_ca then
-	printf "NRX: %a %d\n" (List.print print_iact_opt) acts next_ca;
+	printf "#CA: %a %d\n" (List.print print_iact_opt) acts next_ca;
       (run_ca acts next_ca)
   in
-  let opt_prod _i rules =
+  let opt_prod idx rules =
     if List.for_all (fun (p,_) -> List.length p = 0) rules then
-      List.map snd rules |> compile_ca |> link_run_fs _i
+      List.map snd rules |> compile_ca |> link_run_fs idx
     else 
       if List.length rules < 20 then (*TODO: PARTITION RULES BY PREDICATE *)
 	let cas = Array.init (1 lsl (List.length rules)) 
-	  (fun i -> get_comb i rules |> compile_ca |> link_run_fs _i)
+	  (fun ci -> get_comb ci rules |> compile_ca |> link_run_fs idx)
 	in
 	(fun st -> cas.(get_rules_bits st rules) st)
       else (
