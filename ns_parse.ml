@@ -64,26 +64,29 @@ let print_reg_ca oc (ca: regular_grammar) =
   Map.print String.print print_reg_rules oc ca;
   fprintf oc "Total: %d states\n" (Map.fold (fun _ x -> x+1) ca 0)
 
-let print_iaction oc (i,e) = fprintf oc "(%d) := %a" i (print_a_exp ("#" ^ string_of_int i)) e
-
-let print_ipred oc (i,e) = print_p_exp (string_of_int i) oc e
+let print_iaction oc (i,e) = fprintf oc "$%d := %a" i (print_a_exp ("$" ^ string_of_int i)) e
+let print_iact_opt oc (i,e) = match e with 
+  | Fast_a _ -> fprintf oc "$%d := Fast" i
+  | Slow_a e -> fprintf oc "$%d := %a" i (print_a_exp ("$" ^ string_of_int i)) e
+let print_ipred oc (i,e) = print_p_exp ("$" ^ string_of_int i) oc e
 
 
 let print_opt_rule oc iirr =
-  let so = Option.print String.print in
-  Printf.fprintf oc "(%a) %a acts:%a nt: %d%!" 
-    (List.print ~first:"" ~last:"" ~sep:"." Int.print) iirr.prio 
-    so iirr.rx 
-    (List.print ~first:"{" ~last:"}" ~sep:" " print_iaction) iirr.act 
+  Printf.fprintf oc "%s %a #%d" 
+(*    (List.print ~first:"" ~last:"" ~sep:"." Int.print) iirr.prio *)
+    (Option.default "" iirr.rx)
+    (List.print ~first:"[" ~last:"]" ~sep:"; " print_iaction) iirr.act 
     (Option.default (-1) iirr.nt)
   
-let print_rule oc = function [],r -> print_opt_rule oc r | p,r -> fprintf oc "%a::%a" (List.print print_ipred) p print_opt_rule r
-let print_rules oc = function
-  | [] -> ()
-  | l -> List.print ~first:"\n#" ~sep:"\n#" ~last:"\n" print_rule oc l
+let print_rule i oc = function 
+  | [],r -> fprintf oc "#%2d -> %a\n" i print_opt_rule r 
+  | p,r -> fprintf oc "#%2d %a -> %a\n" i (List.print print_ipred) p print_opt_rule r
+let print_rules i oc lst = 
+  let lst = List.sort ~cmp:(fun (_,a) (_,b) -> compare a.prio b.prio) lst in
+  List.print ~first:"" ~sep:"" ~last:"" (print_rule i) oc lst
 
 let print_reg_ds_ca oc (ca: regular_grammar_arr) = 
-  Array.iteri (Regex_dfa.index_print print_rules oc) ca
+  Array.iteri (fun i rs -> print_rules i oc rs) ca
 
 exception Non_regular_rule of production
 
