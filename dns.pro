@@ -1,8 +1,24 @@
-DNS -> ;
-DNS -> RR DNS ;
+DNS -> ID FLAGS QC AC NSC ARC QS AS NSS ARS;
+ID -> /../ [qc:=0; ac:=0; nsc:=0; arc:=0];
+FLAGS -> /../ ;
+QC -> EP [qc := (cur_byte() * 256) + cur_byte()];
+AC -> EP [ac := (cur_byte() * 256) + cur_byte()];
+NSC -> EP [nsc := (cur_byte() * 256) + cur_byte()];
+ARC -> EP [arc := (cur_byte() * 256) + cur_byte()];
 
-RR -> NAME TYPE[cnt:=0] CLASS[cnt:=0] TTL[cnt:=0] RDLENGTH[cnt:=0] RDATA ;
+QS [qc==0] -> ;
+QS [qc>0] -> NAME [cnt:=0; qc:=qc - 1] TYPE [cnt:=0] CLASS QS;
 
+AS [ac==0] -> ;
+AS [ac>0] -> RR [ac:=ac - 1] AS;
+
+NSS [nsc==0] -> ;
+NSS [nsc>0] -> RR [nsc:=nsc - 1] NSS;
+
+ARS [arc==0] -> ;
+ARS [arc>0] -> RR [arc:=arc - 1] ARS;
+
+RR -> NAME TYPE [cnt:=0] CLASS [cnt:=0] TTL [cnt:=0] RDLENGTH RDATA AS;
 NAME -> OCTET[cnt:=0] LABEL ;
 
 LABEL [cnt==0] -> ;
@@ -21,5 +37,5 @@ RDLENGTH -> OCTET OCTET ;
 
 RDATA -> VSTR ;
 
-OCTET -> EP[cnt:=(cnt*256) + cur_byte()] /./ ;
+OCTET -> EP[cnt:=(cnt*256) + cur_byte()] ;
 EP    -> ;
