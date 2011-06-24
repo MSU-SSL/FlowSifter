@@ -1,11 +1,11 @@
-HTTP1 -> // HTTP_START1 [bodychunked := 0; bodylength := 0] 
+HTTP1 -> HTTP_START1 [bodychunked := 0; bodylength := 0] 
       	 HEADERS1 CRLF BODY HTTP1;
 HTTP1 -> ;
 
 #Response
 HTTP_START1 -> VERSION SP STATUS SP TEXT CRLF;
 #Request
-HTTP_START1 99 -> token(TOKEN) SP token(URL) SP VERSION CRLF;
+HTTP_START1 99 -> TOKEN SP token(URL) SP VERSION CRLF;
 
 HEADERS1 -> HEADER1 CRLF HEADERS1 ;
 HEADERS1 -> ;
