@@ -191,9 +191,9 @@ let run pr =
       else tsize /. (time -. !null_t)
     in
     let pct_parsed = match pr.p_type with `Null -> 0. | `Pac -> 100. 
-      | `Sift -> (!Ns_run.parsed_bytes / (!rep_cnt + 2) * 100) /! !trace_len in
+      | `Sift -> (1 (*!Ns_run.parsed_bytes*) / (!rep_cnt + 2) * 100) /! !trace_len in
     let dropped = match pr.p_type with `Null -> 100. | `Pac -> 0. 
-      | `Sift -> (!Prog_parse.fail_drop / (!rep_cnt + 2) * 100) /! !trace_len in
+      | `Sift -> (1 (*!Prog_parse.fail_drop*) / (!rep_cnt + 2) * 100) /! !trace_len in
     if !check_mem_per_packet then printf "#";
     printf "%s\t%s\t%d\t%4.3f\t" !run_id pr.id round time;
     printf "%d\t%.2f\t%d\t%d\t%d\t%.1f\t%.1f\n%!" 
@@ -202,28 +202,36 @@ let run pr =
 
   let get_dir (_,_,sp,_dp) = if sp = 80 then Downflow else Upflow in
 
-  let act_packet (flow, data, fin, _off) =
-    let p = 
-      try Hashtbl.find ht flow 
-      with Not_found -> 
-	incr conc_flows;
-	pr.new_parser () |> tap (Hashtbl.add ht flow) 
-    in
+  let act_packet (flow, data, fin, off) =
     incr packet_ctr;
     if Ns_types.debug_ca && !main <> Diff then 
-      Printf.printf "\nP%a:\n%s\n" print_flow flow (clean_unprintable data);
-(*    print_string (if get_dir flow = Downflow then "D" else "U"); *)
-    pr.add_data p (get_dir flow) data;
+      Printf.printf "\nP%a:\n%S\n" print_flow flow data;
+    ( 
+      match fin, off with
+	| false, 0 -> (* new conn, first packet *)
+	  let p = pr.new_parser () in
+	  Hashtbl.add ht flow p;
+	  pr.add_data p (get_dir flow) data;
+	| false, _ -> (* middle packet *)
+	  let p = Hashtbl.find ht flow in
+	  pr.add_data p (get_dir flow) data;
+	| true, 0 -> (* singleton flow *)
+	  let p = pr.new_parser () in
+	  pr.add_data p (get_dir flow) data;
+	  pr.delete_parser p;
+	| true, _ -> (* final packet *)
+	  let p = Hashtbl.find ht flow in
+	  pr.add_data p (get_dir flow) data;
+	  Hashtbl.remove ht flow;
+	  pr.delete_parser p;
+    );
     if !check_mem_per_packet && !mem0 > 0 then (
       printf "%s %s %d %d %d\n" !run_id pr.id !packet_ctr !conc_flows (mem ());
     );
     let events = pr.get_event_count () in
     ediff := events - !last_events;
     last_events := events;
-    if fin then (
-      decr conc_flows;
-      Hashtbl.remove ht flow; pr.delete_parser p;
-    )
+
   in	
   reset_parsers, post_round, act_packet
 ;;
