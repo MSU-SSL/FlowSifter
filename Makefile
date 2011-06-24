@@ -1,7 +1,7 @@
 SHELL := /bin/bash
-DEBUG = -g
+DEBUG = 
 CPPFLAGS =  -O2 $(DEBUG) -I .
-OCAMLFLAGS = -annot -w Z $(DEBUG)
+OCAMLFLAGS = -annot -w Z $(DEBUG) -p
 PACKAGES = batteries,benchmark
 
 all: bench-all
@@ -77,10 +77,10 @@ pcap_parser.cmo: pcap_parser.ml
 OLIBS = #libocamlviz.cmxa 
 
 bench-bpac: bpac.cmxa pcap_parser.cmx bench.cmx tcmalloc_stubs.o
-	ocamlfind ocamlopt -annot -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc bpac.cmxa tcmalloc_stubs.o $(LIBS) $(FLOW) pcap_parser.cmx bench.cmx -o $@
+	ocamlfind ocamlopt $(OCAMLFLAGS) -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc bpac.cmxa tcmalloc_stubs.o $(LIBS) $(FLOW) pcap_parser.cmx bench.cmx -o $@
 
 bench-upac: upac.cmxa pcap_parser.cmx bench.cmx tcmalloc_stubs.o
-	ocamlfind ocamlopt -annot -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc upac.cmxa tcmalloc_stubs.o $(LIBS) $(FLOW) pcap_parser.cmx bench.cmx -o $@
+	ocamlfind ocamlopt $(OCAMLFLAGS) -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc upac.cmxa tcmalloc_stubs.o $(LIBS) $(FLOW) pcap_parser.cmx bench.cmx -o $@
 
 pcap_parser.cmx: pcap_parser.ml
 	ocamlfind ocamlopt $(OCAMLFLAGS) -c -syntax camlp4o -package $(PACKAGES),bitstring.syntax,bitstring pcap_parser.ml -o pcap_parser.cmx
@@ -89,7 +89,7 @@ pcap_parser: pcap_parser.ml
 	ocamlbuild -no-hygiene pcap_parser.native
 	mv pcap_parser.native pcap_parser
 
-hwrun:
+hwrun: 
 	ocamlbuild -no-hygiene hwrun.native
 	mv hwrun.native hwrun
 
@@ -129,8 +129,9 @@ perf-all: $(patsubst %, %.perf, $(MODES))
 perf2-all: $(patsubst %, %.perf2, $(MODES))
 
 
-mldeps: 
-	ocamlfind ocamldep -package bitstring.syntax -syntax camlp4o *.ml *.mll *.mly > mldeps
+mldeps: ns_lex.ml ns_yac.ml
+	ocamlfind ocamldep -package bitstring.syntax -syntax camlp4o *.ml > mldeps
+	echo "ns_yac.cmi: PCFG.cmi" >> mldeps
 
 include mldeps
 
