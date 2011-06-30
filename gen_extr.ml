@@ -5,7 +5,7 @@ open Ns_types
 open ParsedPCFG
 open Printf
 
-let in_file = "spec.ca"
+let in_files = ["http.pro"; "dns.pro"]
 (* TODO: out_file *)
 let window_width = 500 and window_height = 700
 
@@ -20,9 +20,11 @@ let children_of_nonterm g r =
   let _nts_in_prod {expression=e} = List.filter_map nts_in_exp e in
   NTMap.find r g.rules (*|> List.map nts_in_prod*) (*|> List.filter ((<>) [])*)
 
+let uniquify_ht = Hashtbl.create 17
 let uniquify =
-  let ht = Hashtbl.create 17 in
-  fun s -> try s ^ string_of_int (Hashtbl.find ht s |> Ref.post_incr) with Not_found -> Hashtbl.add ht s (ref 1); s
+  fun s -> 
+    try s ^ string_of_int (Hashtbl.find uniquify_ht s |> Ref.post_incr) 
+    with Not_found -> Hashtbl.add uniquify_ht s (ref 1); s
 
 let add_child (ts:GTree.tree_store) ?parent prod =
   let row = ts#append ?parent () in
@@ -52,11 +54,6 @@ let add_children g (ts:GTree.tree_store) i =
 	  | [prod] -> List.iter (add_child ts ~parent:i) prod.expression
 	  | choices -> List.iteri (add_choice ts i) choices
 
-let make_model g = 
-  let ts = GTree.tree_store cols in
-  add_child ts (Nonterm g.start,VarMap.empty);
-  ts
-
 let iter_children (m: GTree.tree_store) i f = 
   for pos = 0 to m#iter_n_children (Some i) - 1 do
     f (m#iter_children ~nth:pos (Some i))
@@ -70,10 +67,7 @@ let iter_tree (m: GTree.tree_store) f =
   let rec act i = f i; iter_children m i act in
   iter_children m root act
 
-let create_view_and_model ~packing g =
-  let model = make_model g in
-  Option.may (add_children g model) model#get_iter_first;
-
+let create_view ~packing (model : GTree.tree_store) =
   let view = GTree.view ~packing () in
 
   let col = GTree.view_column ~title:"Field Name"
@@ -91,14 +85,9 @@ let create_view_and_model ~packing g =
   let col = GTree.view_column ~title:"Extract"
     ~renderer:(renderer_check_box, ["active", col_enabled]) () in
   view#append_column col |> ignore;
-  let populate i = if not (model#iter_has_child i) then add_children g model i in
-  let populate_children i = iter_children model i populate in
-  view#connect#row_expanded ~callback:(fun i _p -> populate_children i) |> ignore;
-
   view#set_model (Some (model#coerce));
-
   view#selection#set_mode `NONE;
-  model, view
+  view
 
 type 'a gram_tree = N of 'a * 'a gram_tree list list
 
@@ -168,20 +157,54 @@ let all_done (m: GTree.tree_store) g () =
 
   let tree_list = m#get_iter_first |> Option.get |> gen_tree in
 (*  let new_root = (N(("EXTR", false, (Nonterm "EXTR", VarMap.empty)), [t])) in *)
-  print_tree (List.hd tree_list);
+  (try print_tree (List.hd tree_list) with _ -> ());
   GMain.Main.quit ()
+
+let create_combobox ~packing files =
+  let model, column = GTree.store_of_list string files in
+  let combo = GEdit.combo_box ~model ~packing () in
+  combo#set_active 1;
+  combo
+  
+let populate_model model g = 
+  add_child model (Nonterm g.start,VarMap.empty);
+  Option.may (add_children g model) model#get_iter_first
 
 let main () = 
   (* init gtk *)
   GMain.Main.init () |> ignore;
   (* parse input grammar *)
-  let g = Ns_parse.parse_file_as_spec in_file in
+  let g = ref (Ns_parse.parse_file_as_spec (List.hd in_files)) in
   (* the main window *)
   let window = GWindow.window ~allow_shrink:true ~allow_grow:true ~resizable:true ~width:window_width ~height:window_height () in
+  let box1 = GPack.vbox ~packing:window#add () in
+  let combo, (combo_store,combo_column) = 
+    GEdit.combo_box_text ~packing:(box1#pack ~expand:false ~fill:false) ~strings:in_files () 
+  in
+
+  (* create and populate the model *)
+  let model = GTree.tree_store cols in
+  populate_model model !g;
+
+  (* update the treeview based on filename *)
+  combo#connect#changed (fun () -> 
+    let fn = combo_store#get ~row:(combo#active_iter |> Option.get) ~column:combo_column in 
+    g := Ns_parse.parse_file_as_spec fn; 
+    model#clear (); 
+    Hashtbl.clear uniquify_ht;
+    populate_model model !g;
+  ) |> ignore;
+  combo#set_active 0;
+
   (* create the treeview in the window *)
-  let model, _view = create_view_and_model ~packing:window#add g in
+  let view = create_view ~packing:box1#add model in
+  let populate i = if not (model#iter_has_child i) then add_children !g model i in
+  let populate_children i = iter_children model i populate in
+  view#connect#row_expanded ~callback:(fun i _p -> populate_children i) |> ignore;
+
+
   (* make sure we call all_done when the window is closed *)
-  window#connect#destroy ~callback:(all_done model g) |> ignore;
+  window#connect#destroy ~callback:(all_done model !g) |> ignore;
   (* show the window and start gtk event loop *)
   window#show ();
   GMain.Main.main ()
