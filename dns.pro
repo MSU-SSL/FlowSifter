@@ -1,6 +1,6 @@
 DNS -> ID FLAGS QC AC NSC ARC QS AS NSS ARS;
-ID -> /../ [qc:=0; ac:=0; nsc:=0; arc:=0];
-FLAGS -> /../ ;
+ID -> /../ ;
+FLAGS -> /../ [qc:=0; ac:=0; nsc:=0; arc:=0];
 QC -> EP [qc := (cur_byte() * 256) + cur_byte()];
 AC -> EP [ac := (cur_byte() * 256) + cur_byte()];
 NSC -> EP [nsc := (cur_byte() * 256) + cur_byte()];
@@ -37,5 +37,6 @@ RDLENGTH -> OCTET OCTET ;
 
 RDATA -> VSTR ;
 
+#needs to be this form for proper inlining
 OCTET -> EP[cnt:=(cnt*256) + cur_byte()] ;
 EP    -> ;
