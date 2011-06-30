@@ -1,4 +1,4 @@
-<*>: pkg_batteries, use_menhir, annot, debug, pkg_bitstring
+<*>: pkg_batteries, use_menhir, annot, debug, pkg_bitstring, warn_error_Z
 #, ocamlviz
 <bench.*>: dflow, syntax_camlp4o, pkg_camlp4.macro
 <{pcap_parser,hwrun}.*>: syntax_camlp4o, pkg_bitstring.syntax
