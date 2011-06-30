@@ -17,8 +17,9 @@ module StringParams = struct
 end
 
 module ParsedPCFG = PCFG.Make(StringParams)
+open ParsedPCFG
 
-type spec_t = ParsedPCFG.production list
+type spec_t = production list
 
 type term_tok = Regex of string | Nt of string | Capture of term list
 and term = term_tok * action option
@@ -26,7 +27,6 @@ and term = term_tok * action option
 type str_rule = non_terminal * predicate option * priority option * term list
 type str_spec_t = str_rule list
 
-open ParsedPCFG
 
 type ('a, 'b, 'pri) regular_rule = {prio : 'pri; rx : string option;
 		     act: ('a * a_exp) list; nt : 'b option}
