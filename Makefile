@@ -102,7 +102,6 @@ demo: *.ml
 	ocamlbuild demo.native
 
 gen_extr: 
-	$(RM) ns_lex.ml ns_yac.ml ns_yac.mli
 	ocamlbuild -use-ocamlfind gen_extr.native
 
 #join -j 1 -o 1.1 1.2 2.2 null.20-timelog null.50-timelog | join -j 1 -o 1.1 1.2 1.3 2.2 - null.100-timelog | join -j 1 -o 1.1 1.2 1.3 1.4 2.2 - null.150-timelog | join -j 1 -o 1.1 1.2 1.3 1.4 1.5 2.2 - null.250-timelog 
@@ -138,7 +137,8 @@ perf-all: $(patsubst %, %.perf, $(MODES))
 perf2-all: $(patsubst %, %.perf2, $(MODES))
 
 
-mldeps: ns_lex.ml ns_yac.ml
+mldeps: 
+	$(MAKE) ns_lex.ml ns_yac.ml
 	ocamlfind ocamldep -package bitstring.syntax -syntax camlp4o *.ml > mldeps
 
 include mldeps
