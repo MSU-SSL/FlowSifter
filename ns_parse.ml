@@ -1,4 +1,4 @@
-open Batteries_uni
+open Batteries
 open Printf
 open Ns_types
 open Simplify
@@ -82,7 +82,7 @@ let print_rule i oc = function
   | [],r -> fprintf oc "#%2d -> %a\n" i print_opt_rule r 
   | p,r -> fprintf oc "#%2d %a -> %a\n" i (List.print print_ipred) p print_opt_rule r
 let print_rules i oc lst = 
-  let lst = List.sort ~cmp:(fun (_,a) (_,b) -> compare a.prio b.prio) lst in
+  let lst = List.sort (fun (_,a) (_,b) -> compare a.prio b.prio) lst in
   List.print ~first:"" ~sep:"" ~last:"" (print_rule i) oc lst
 
 let print_reg_ds_ca oc (ca: regular_grammar_arr) = 
@@ -169,8 +169,8 @@ let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) =
 
 let compose_preds p1 p2 =
   let pred_order (v1,_exp) (v2,_exp2) = Int.compare v1 v2 in
-  let p1 = List.sort ~cmp:pred_order p1 in
-  let p2 = List.sort ~cmp:pred_order p2 in
+  let p1 = List.sort pred_order p1 in
+  let p2 = List.sort pred_order p2 in
   let rec merge = function
     | [], x | x, [] -> x
     | (v1,_ as a)::t1, ((v2,_)::_ as b) when v1 < v2 -> a::(merge (t1,b))
@@ -254,7 +254,7 @@ let parse_spec_file fn =
       Lexing.from_channel (open_in fn)
         |> Ns_yac.spec Ns_lex.token
 	|> List.map full_parse
-    with x -> printf "Failed to parse %s\n" fn; raise x
+    with x -> printf "Failed to parse:\n%s\n" fn; raise x
   in
   let start =
     match rules with [] -> failwith "Empty grammar"

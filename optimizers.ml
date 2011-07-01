@@ -1,6 +1,6 @@
 open Ean_std
 
-open Batteries_uni
+open Batteries
 open Printf
 
 module D = Decider

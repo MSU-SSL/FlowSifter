@@ -4,7 +4,7 @@ CPPFLAGS =  -O2 $(DEBUG) -I .
 OCAMLFLAGS = -annot -w Z $(DEBUG)
 PACKAGES = batteries,benchmark
 
-all: gen_extr
+all: FlowSifter
 
 #all: bench-all
 
@@ -102,7 +102,10 @@ demo: *.ml
 	ocamlbuild demo.native
 
 gen_extr: 
-	ocamlbuild -use-ocamlfind gen_extr.native
+	ocamlbuild -j 0 -use-ocamlfind gen_extr.native
+
+FlowSifter: gen_extr
+	cp _build/gen_extr.native dist/FlowSifter
 
 #join -j 1 -o 1.1 1.2 2.2 null.20-timelog null.50-timelog | join -j 1 -o 1.1 1.2 1.3 2.2 - null.100-timelog | join -j 1 -o 1.1 1.2 1.3 1.4 2.2 - null.150-timelog | join -j 1 -o 1.1 1.2 1.3 1.4 1.5 2.2 - null.250-timelog 
 

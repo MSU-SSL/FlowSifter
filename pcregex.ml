@@ -1,4 +1,4 @@
-open Batteries_uni
+open Batteries
 
 (** This module parses semi-Perl compatable Regular Expressions 
   *  

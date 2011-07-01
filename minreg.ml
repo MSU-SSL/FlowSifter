@@ -1,7 +1,7 @@
 (* Minimizing regex library - identical to pcregex's regex type,
    except has a boolean of whether that subtree is reduced *)
 
-open Batteries_uni
+open Batteries
 open Printf
 
 (* BEGIN MIN_REGEX *)

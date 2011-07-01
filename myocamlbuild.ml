@@ -190,6 +190,7 @@ let _ = dispatch begin function
       Batteries.after_rules ();
       Ocamlviz.after_rules ();
       flag ["ocaml"; "native"; "compile"; "ccgpp"] (S[A"-cc"; A"g++"]);
+      flag ["ocaml"; "native"; "link"; "static_link"] (S[A"-ccopt"; A"-static"]);
   | _ -> ()
 end
 

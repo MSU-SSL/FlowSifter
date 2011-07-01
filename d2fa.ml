@@ -1,4 +1,4 @@
-open Batteries_uni
+open Batteries
 open Printf
 
 open Ocamlviz
@@ -426,3 +426,25 @@ let resume dfa q0 input offset =
       | Invalid_argument _ -> `End_of_input q.id
   in
   next_state q0 offset
+    
+(*
+type 'a btree = L of 'a | N of 'a btree * 'a btree
+    
+let shadow_encode d2fa =
+  let h = Array.fold_left (fun acc q -> Heap.insert acc (1,L q)) 
+    Heap.empty d2fa.qs 
+  in
+  let rec process h = 
+    if Heap.size h < 2 then 
+      Heap.find_min h
+    else
+      let (w1,t1) = Heap.find_min h in
+      let h = Heap.del_min h in
+      let (w2,t2) = Heap.find_min h in
+      let h = Heap.del_min h in
+      let h = Heap.insert h (1+Int.max w1 w2, N (t1,t2)) in
+      process h
+  in
+  let (k,t) = process h in
+  *)
+  
