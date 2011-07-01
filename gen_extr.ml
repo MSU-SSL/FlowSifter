@@ -1,4 +1,4 @@
-open Batteries_uni
+open Batteries
 open Future
 open Gobject.Data
 open Ns_types
@@ -6,6 +6,7 @@ open ParsedPCFG
 open Printf
 
 let in_files = ["http.pro"; "dns.pro"]
+let filters = ["tcp port 80"; "udp port 53"]
 (* TODO: out_file *)
 let window_width = 500 and window_height = 700
 
@@ -118,7 +119,8 @@ let rec print_body prod_list tree_nodes oc = match prod_list, tree_nodes with
     IO.write oc ' ';
     print_body pt t oc
 
-let all_done (m: GTree.tree_store) g () = 
+let all_done (m: GTree.tree_store) g fn_pos () = 
+  GMain.Main.quit ();
   let rec gen_tree i =
     let p = m#get ~row:i ~column:col_prod |> Option.get in
     match p with
@@ -133,32 +135,39 @@ let all_done (m: GTree.tree_store) g () =
 	if List.filter ((<>) []) child_nodes = [] && not e then [] else
 	  [N ((n,e,p),child_nodes)]
   in
-  let rec print_tree (N((n,_,p), rs)) =
+  let rec print_tree oc (N((n,_,p), rs)) =
     match p with
       (* don't have to print rules for terminals *)
       | Term n,_ -> (*Log.printf "T:%s\n%!" n*) ()
       (* print any rules for this non-terminal *)
       | Nonterm n_orig,_ -> 
 	let prods = NTMap.find n_orig g.rules in
-	let print_rule prod tree_nodes =
-	  
-	  printf "%a:X%s -> %t\n" 
-	    (print_varmap print_pred) prod.predicates 
-	    n 
+	let print_rule prod tree_nodes =	  
+	  if not (VarMap.is_empty prod.predicates) then (
+	    fprintf oc "%a:" (print_varmap print_pred) prod.predicates;	  
+	  );
+	  fprintf oc "X%s -> %t;\n" n 
 	    (print_body prod.expression tree_nodes)
 	in
-	Log.printf "NT:%s(%s)\nexprs:%a\ntree_nodes:%a\n%!" n n_orig
-	  (List.print print_production) prods 
-	  (print_tree_node |> List.print |> List.print) rs;
+	(*	Log.printf "NT:%s(%s)\nexprs:%a\ntree_nodes:%a\n%!" n n_orig
+		(List.print print_production) prods 
+		(print_tree_node |> List.print |> List.print) rs; *)
 	if List.filter ((<>) []) rs <> [] then 
 	  List.iter2 print_rule prods rs;
-	List.iter (List.iter print_tree) rs
+	List.iter (List.iter (print_tree oc)) rs
   in
 
-  let tree_list = m#get_iter_first |> Option.get |> gen_tree in
-(*  let new_root = (N(("EXTR", false, (Nonterm "EXTR", VarMap.empty)), [t])) in *)
-  (try print_tree (List.hd tree_list) with _ -> ());
-  GMain.Main.quit ()
+  let oc,extr_file = File.open_temporary_out ~prefix:"extr" () in
+  (match m#get_iter_first |> Option.get |> gen_tree with
+    | [] -> failwith "No fields to extract, aborting"
+    | [t] -> print_tree oc t
+    | _ -> assert false (* can't have multiple toplevel items, only one start symbol is possible *)
+  );
+  IO.close_out oc;
+  let proto_grammar = List.nth in_files fn_pos in
+  let _filter = List.nth filters fn_pos in
+  let new_parser = Prog_parse.new_parser proto_grammar extr_file in
+  Demo.pcap_act "" new_parser
 
 let create_combobox ~packing files =
   let model, column = GTree.store_of_list string files in
@@ -177,10 +186,11 @@ let main () =
   let g = ref (Ns_parse.parse_file_as_spec (List.hd in_files)) in
   (* the main window *)
   let window = GWindow.window ~allow_shrink:true ~allow_grow:true ~resizable:true ~width:window_width ~height:window_height () in
-  let box1 = GPack.vbox ~packing:window#add () in
+  let box1 = GPack.vbox ~packing:window#add ~spacing:3 () in
   let combo, (combo_store,combo_column) = 
     GEdit.combo_box_text ~packing:(box1#pack ~expand:false ~fill:false) ~strings:in_files () 
   in
+  let get_fn () = combo_store#get ~row:(combo#active_iter |> Option.get) ~column:combo_column in 
 
   (* create and populate the model *)
   let model = GTree.tree_store cols in
@@ -188,7 +198,7 @@ let main () =
 
   (* update the treeview based on filename *)
   combo#connect#changed (fun () -> 
-    let fn = combo_store#get ~row:(combo#active_iter |> Option.get) ~column:combo_column in 
+    let fn = get_fn() in
     g := Ns_parse.parse_file_as_spec fn; 
     model#clear (); 
     Hashtbl.clear uniquify_ht;
@@ -201,10 +211,8 @@ let main () =
   let populate i = if not (model#iter_has_child i) then add_children !g model i in
   let populate_children i = iter_children model i populate in
   view#connect#row_expanded ~callback:(fun i _p -> populate_children i) |> ignore;
-
-
   (* make sure we call all_done when the window is closed *)
-  window#connect#destroy ~callback:(all_done model !g) |> ignore;
+  window#connect#destroy ~callback:(all_done model !g combo#active) |> ignore;
   (* show the window and start gtk event loop *)
   window#show ();
   GMain.Main.main ()
