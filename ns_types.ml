@@ -21,7 +21,7 @@ open ParsedPCFG
 
 type spec_t = production list
 
-type term_tok = Regex of string | Nt of string | Capture of term list
+type term_tok = Regex of string | Nt of string | Capture of term list * string
 and term = term_tok * action option
 
 type str_rule = non_terminal * predicate option * priority option * term list

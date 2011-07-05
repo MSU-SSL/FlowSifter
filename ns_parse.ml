@@ -29,15 +29,14 @@ let full_parse (nt,predopt,priopt,rules) =
   let pri = match priopt with None -> default_priority | Some p -> [p] in
   let preds = match predopt with None -> VarMap.empty | Some str -> parse_preds str in
   let rec expand_term_act acc = function
-    | Capture rules, Some func ->
+    | Capture (rules, func), act ->
 	let cap_id = "capture" ^ (capture_counter () |> string_of_int) in
 	let get_pos = Function ("pos", get_f_id "pos", []) in
 	let start_cap = VarMap.add cap_id get_pos VarMap.empty in
 	let end_exp = Function (func, get_f_id func, [Variable]) in
-	let end_cap = VarMap.add cap_id end_exp VarMap.empty in
+	let end_cap = VarMap.add cap_id end_exp (parse_acts act) in
 	List.fold_left expand_term_act (hook_act start_cap acc) rules
           |> hook_act end_cap
-    | Capture _, None -> failwith "Cannot have a capture without a function to send it to"
     | Nt x, act -> (Nonterm x, parse_acts act) :: acc
     | Regex x, act -> (Term x, parse_acts act) :: acc
   in

@@ -46,7 +46,7 @@ ns_rule:
 term:
   | REGEX BRACK? { (Regex $1, $2) }
   | NT BRACK? { (Nt $1, $2) }
-  | NT LPAREN term+ RPAREN { (Capture $3, Some $1) }
+  | NT LPAREN term+ RPAREN BRACK? { (Capture ($3,$1), $5) }
   | error { printf "ERROR(line %d): couldn't parse term\n%!" ($startpos.pos_lnum); exit 1 }
 
 
