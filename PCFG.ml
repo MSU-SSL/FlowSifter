@@ -117,7 +117,7 @@ module Make (Name : Names_t) = struct
   let rec print_p_exp var oc =
     let print_a = print_a_exp var in
     let rec loop = function
-      |	Equal (l,r) -> fprintf oc "%a = %a" print_a l print_a r
+      |	Equal (l,r) -> fprintf oc "%a == %a" print_a l print_a r
       |	Lessthan (l,r) -> fprintf oc "%a < %a" print_a l print_a r
       |	Greaterthan (l,r) -> fprintf oc "%a > %a" print_a l print_a r
       |	LessthanEq (l,r) -> fprintf oc "%a <= %a" print_a l print_a r
