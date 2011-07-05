@@ -2,7 +2,7 @@ open Pcap
 open Batteries
 open Printf
 
-let debug = true
+let debug = false
 
 let is_printable c = c = '\n' || (Char.code c >= 32 && Char.code c <= 126) 
 let clean_unprintable s = String.map (fun x -> if is_printable x then x else '.') s 
@@ -22,6 +22,7 @@ let flow_lift new_parser (_ts, flow, _seq_no, data, (_syn, _ack, fin)) =
   in
   let ev_pre = !Ns_types.matches in
   p data;
+  flush stdout;
   if fin then Hashtbl.remove flow_table flow;
   if debug && (is_new || !Ns_types.matches <> ev_pre) then Printf.printf "\nP%a:\n%s\n" print_flow flow (clean_unprintable data);
   if debug then eprintf "Flows: %d\n%!" (Hashtbl.length flow_table)
@@ -47,7 +48,7 @@ let pcap_capture filter handler =
   printf "Opening interface %s ...\n%!" dev;
   let openlive = pcap_open_live dev 16636 1 0 in
   if filter <> "" then (
-    printf "Filtering only port 80\n%!";
+    printf "Filtering only %s\n%!" filter;
     let ok,my_ip,mask = pcap_lookupnet dev in
     if ok <> 0 then failwith "Couldn't lookup net info on dev";
     let ok,filter = pcap_compile openlive filter 0 my_ip in
