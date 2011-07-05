@@ -9,6 +9,7 @@ let in_files = ["http.pro"; "dns.pro"]
 let filters = ["tcp port 80"; "udp port 53"]
 (* TODO: out_file *)
 let window_width = 500 and window_height = 700
+let filter_enabled = ref false
 
 let cols = new GTree.column_list
 let col_name = cols#add string
@@ -107,7 +108,7 @@ let rec print_body prod_list tree_nodes oc = match prod_list, tree_nodes with
 (*    Log.printf "Empty prod list, tree nodes: \n%a\n" (List.print print_tree_node) tree_nodes *)
   | (Nonterm n_orig,acts as ph)::pt, (N((n,e,p),ns))::tt when p == ph -> 
     let n = if List.filter ((<>) []) ns = [] then n_orig else "X" ^ n in
-    if e then fprintf oc "bounds( %s )" n
+    if e then fprintf oc "token( %s ) " n
     else IO.nwrite oc n;
     print_varmap print_action oc acts;
     IO.write oc ' ';
@@ -119,55 +120,49 @@ let rec print_body prod_list tree_nodes oc = match prod_list, tree_nodes with
     IO.write oc ' ';
     print_body pt t oc
 
-let all_done (m: GTree.tree_store) g fn_pos () = 
-  GMain.Main.quit ();
-  let rec gen_tree i =
-    let p = m#get ~row:i ~column:col_prod |> Option.get in
-    match p with
-      | (Term _, _) -> []
-      | (Nonterm _,_) -> 
-	let ch = m#get ~row:i ~column:col_choice in
-	let children = children_of_iter m i in
-	let rules = if ch then List.map (children_of_iter m) children else [children] in
-	let child_nodes = List.map (List.map gen_tree |- List.flatten) rules (*|> List.filter ((<>) [])*) in
-	let n = m#get ~row:i ~column:col_name in 
-	let e = m#get ~row:i ~column:col_enabled in
-	if List.filter ((<>) []) child_nodes = [] && not e then [] else
-	  [N ((n,e,p),child_nodes)]
-  in
-  let rec print_tree oc (N((n,_,p), rs)) =
-    match p with
+let rec gen_tree (m: GTree.tree_store) i =
+  let p = m#get ~row:i ~column:col_prod |> Option.get in
+  match p with
+    | (Term _, _) -> []
+    | (Nonterm _,_) -> 
+      let ch = m#get ~row:i ~column:col_choice in
+      let children = children_of_iter m i in
+      let rules = 
+	if ch then List.map (children_of_iter m) children else [children] 
+      in
+      let child_nodes = List.map (List.map (gen_tree m) |- List.flatten) rules
+      in
+      let n = m#get ~row:i ~column:col_name in 
+      let e = m#get ~row:i ~column:col_enabled in
+      if List.filter ((<>) []) child_nodes = [] && not e then [] else
+	[N ((n,e,p),child_nodes)]
+
+let gen_tree m = m#get_iter_first |> Option.get |> gen_tree m
+
+let rec print_tree g oc (N((n,_,p), rs)) =
+  match p with
       (* don't have to print rules for terminals *)
-      | Term n,_ -> (*Log.printf "T:%s\n%!" n*) ()
+    | Term _,_ -> (*Log.printf "T:%s\n%!" n*) ()
       (* print any rules for this non-terminal *)
-      | Nonterm n_orig,_ -> 
+    | Nonterm n_orig,_ -> 
+      try 
 	let prods = NTMap.find n_orig g.rules in
 	let print_rule prod tree_nodes =	  
+	  fprintf oc "X%s " n;
 	  if not (VarMap.is_empty prod.predicates) then (
-	    fprintf oc "%a:" (print_varmap print_pred) prod.predicates;	  
+	    fprintf oc "%a " (print_varmap print_pred) prod.predicates;	  
 	  );
-	  fprintf oc "X%s -> %t;\n" n 
+	  fprintf oc "-> %t;\n"
 	    (print_body prod.expression tree_nodes)
 	in
-	(*	Log.printf "NT:%s(%s)\nexprs:%a\ntree_nodes:%a\n%!" n n_orig
+	  (*	Log.printf "NT:%s(%s)\nexprs:%a\ntree_nodes:%a\n%!" n n_orig
 		(List.print print_production) prods 
 		(print_tree_node |> List.print |> List.print) rs; *)
 	if List.filter ((<>) []) rs <> [] then 
 	  List.iter2 print_rule prods rs;
-	List.iter (List.iter (print_tree oc)) rs
-  in
-
-  let oc,extr_file = File.open_temporary_out ~prefix:"extr" () in
-  (match m#get_iter_first |> Option.get |> gen_tree with
-    | [] -> failwith "No fields to extract, aborting"
-    | [t] -> print_tree oc t
-    | _ -> assert false (* can't have multiple toplevel items, only one start symbol is possible *)
-  );
-  IO.close_out oc;
-  let proto_grammar = List.nth in_files fn_pos in
-  let _filter = List.nth filters fn_pos in
-  let new_parser = Prog_parse.new_parser proto_grammar extr_file in
-  Demo.pcap_act "" new_parser
+	List.iter (List.iter (print_tree g oc)) rs
+      with Not_found -> 
+	failwith (sprintf "Could not find nonterminal %s\n" n_orig)
 
 let create_combobox ~packing files =
   let model, column = GTree.store_of_list string files in
@@ -211,10 +206,30 @@ let main () =
   let populate i = if not (model#iter_has_child i) then add_children !g model i in
   let populate_children i = iter_children model i populate in
   view#connect#row_expanded ~callback:(fun i _p -> populate_children i) |> ignore;
+  let fn_pos = ref 0 in
   (* make sure we call all_done when the window is closed *)
-  window#connect#destroy ~callback:(all_done model !g combo#active) |> ignore;
+  window#event#connect#delete ~callback:(fun _ -> fn_pos := combo#active; false) |> ignore;
+  window#connect#destroy ~callback:(fun () -> GMain.Main.quit () ) |> ignore;
   (* show the window and start gtk event loop *)
   window#show ();
-  GMain.Main.main ()
+  GMain.Main.main ();
+  (* finished with graphical selection of fields to extract *)
+  let oc = IO.output_string () in
+  (match gen_tree model with
+    | [] -> failwith "No fields to extract, aborting"
+    | [(N((root,e,_),_) as t)] -> 
+      if e then fprintf oc "EXTR -> token ( X%s );\n" root; 
+      print_tree !g oc t
+    | _ -> assert false (* can't have multiple toplevel items, only one start symbol is possible *)
+  );
+  let extr = IO.close_out oc in
+  printf "Grammar produced: \n%s\n%!" extr;
+  let extr_file = File.with_temporary_out ~prefix:"extr" (fun oc fn -> IO.nwrite oc extr; fn) in
+  let proto_file = List.nth in_files !fn_pos in
+  let filter = if !filter_enabled then List.nth filters !fn_pos else "" in
+  printf "Generating parser from %s and %s\n%!" proto_file extr_file;
+  let new_parser = Prog_parse.new_parser proto_file extr_file in
+  printf "Done simplifying parser, starting capture\n%!";
+  Demo.pcap_act filter new_parser
 
 let () = main ()
