@@ -18,7 +18,7 @@ open Printf
 let debug = false
 
 let kept_packets = ref 0
-let kept_bytes = ref 0 
+let kept_bytes = ref 0
 let dropped_packets_non_tcp = ref 0
 let dropped_packets_bad_tcp = ref 0
 let dropped_packets_bad_udp = ref 0
@@ -27,7 +27,7 @@ let dropped_packets_eth = ref 0
 let dropped_packets_non_eth = ref 0
 
 (*
-let () = at_exit (fun () ->  
+let () = at_exit (fun () ->
   Printf.printf "#Dropped packets (non-tcp, bad-tcp, ipv6, eth, non-eth): %d, %d, %d, %d, %d\n" !dropped_packets_non_tcp !dropped_packets_bad_tcp !dropped_packets_v6 !dropped_packets_eth !dropped_packets_non_eth;
   Printf.printf "#Kept packets: %d of %d bytes\n" !kept_packets !kept_bytes
 )
@@ -35,14 +35,14 @@ let () = at_exit (fun () ->
 
 let rec main () =
   if Array.length Sys.argv <= 1 then failwith "libpcap dumpfile";
-  let endian, file_header, network, (bits: Bitstring.bitstring) = 
+  let endian, file_header, network, (bits: Bitstring.bitstring) =
     Bitstring.bitstring_of_file Sys.argv.(1) |> libpcap_header in
 
   (* Read the packets and print them out. *)
   BatEnum.from_loop bits (libpcap_packet endian file_header)
   |> BatEnum.filter_map (decode_packet network)
   |> BatEnum.iter print_packet
-      
+
 and print_packet (_,_,_,p,(_,_,fin)) = printf "%d:%B " (String.length p) fin
 (* Determine the endianness (at runtime) from the magic number. *)
 and endian_of = function
@@ -90,10 +90,10 @@ and decode_eth (ts,pkt_data) =
 	packet : -1 : bitstring                         (* payload *)
       } -> (
       try decode_ip (ts,packet)
-      with Failure _ -> 
+      with Failure _ ->
 (*	printf "%x:%x:%x:%x:%x:%x < %x:%x:%x:%x:%x:%x "
           d0 d1 d2 d3 d4 d5 s0 s1 s2 s3 s4 s5; *)
-        incr dropped_packets_eth; 
+        incr dropped_packets_eth;
 	None
     )
     | { _d0 : 8; _d1 : 8; _d2 : 8; _d3 : 8; _d4 : 8; _d5 : 8; (* ether dest *)
@@ -102,10 +102,10 @@ and decode_eth (ts,pkt_data) =
 	packet : -1 : bitstring                         (* payload *)
       } -> (
       try decode_ip (ts,packet)
-      with Failure _ -> 
+      with Failure _ ->
 (*	printf "%x:%x:%x:%x:%x:%x < %x:%x:%x:%x:%x:%x "
           d0 d1 d2 d3 d4 d5 s0 s1 s2 s3 s4 s5; *)
-        incr dropped_packets_eth; 
+        incr dropped_packets_eth;
 	None
     )
     | { _ } ->
@@ -134,8 +134,8 @@ and decode_ip (ts,packet) =
     | { _ } -> failwith "Not IPv4 or IPv6"
 and decode_tcp ts sip dip packet =
   bitmatch packet with
-      { s_port:16; d_port: 16; seqno: 32; _ackno: 32; 
-	d_off: 4; _misc: 6; 
+      { s_port:16; d_port: 16; seqno: 32; _ackno: 32;
+	d_off: 4; _misc: 6;
 	_urg:1; ack:1; _psh:1; _rst:1; syn: 1; fin: 1;
 	_window: 16; _checksum: 16; _urg_ptr: 16;
 	_: (d_off-5)*32: bitstring;
@@ -143,18 +143,18 @@ and decode_tcp ts sip dip packet =
 (*	printf "TCP seqno: %ld\n" seqno; *)
 	incr kept_packets;
 	kept_bytes := !kept_bytes + (Bitstring.bitstring_length payload lsr 3);
-	Some (ts, (sip,dip,s_port,d_port), Int32.to_int seqno, 
+	Some (ts, (sip,dip,s_port,d_port), Int32.to_int seqno,
 	      Bitstring.string_of_bitstring payload, (syn,ack,fin))
     | { _ } -> incr dropped_packets_bad_tcp; None
 and decode_udp ts sip dip packet =
   bitmatch packet with
-      { s_port:16; d_port: 16; 
+      { s_port:16; d_port: 16;
 	length: 16; _checksum: 16;
 	payload : (length-8)*8 : bitstring } ->
 (*	printf "TCP seqno: %ld\n" seqno; *)
 	incr kept_packets;
 	kept_bytes := !kept_bytes + (Bitstring.bitstring_length payload lsr 3);
-	Some (ts, (sip,dip,s_port,d_port), 0, 
+	Some (ts, (sip,dip,s_port,d_port), 0,
 	      Bitstring.string_of_bitstring payload, (true,false,true))
     | { _ } -> incr dropped_packets_bad_udp; None
 and decode_packet = function
@@ -167,7 +167,7 @@ let packet (ts:int32) contents = (ts, Bitstring.bitstring_of_string contents)
 (* let () = main () *)
 
 let to_pkt_stream str =
-  let endian, file_header, network, bits = 
+  let endian, file_header, network, bits =
     Bitstring.bitstring_of_string str |> libpcap_header in
   (* Read the packets and Enum them out. *)
   BatEnum.from_loop bits (libpcap_packet endian file_header)
@@ -182,7 +182,7 @@ module SList = struct
   let rec remove_until cutoff = function
     | (off,d)::t when off + String.length d < cutoff -> remove_until cutoff t
     | l -> l
-  let rec add_pkt_aux offset data = function 
+  let rec add_pkt_aux offset data = function
     | (off,_)::_ as l when offset < off -> (offset,data) :: (remove_until (off+String.length data) l)
       (* drop the new packet if it overlaps completely an old one *)
     | (o,d)::_ as l when o + String.length d >= offset + String.length data -> l
@@ -193,15 +193,15 @@ module SList = struct
     let b = if String.length data > 0 then add_pkt_aux offset data t.buf else t.buf in
     let ts = max ts t.ts in
     if offset < 0 then (if debug then eprintf "O"; {ts=ts; exp=e-offset; buf=shift_offset offset b}) else {ts=ts;exp=e;buf=b}
-  let rec blit_data str low (o,d) = 
+  let rec blit_data str low (o,d) =
     if debug then eprintf "Bl:%dB@%d " (String.length d) o;
     String.blit d 0 str (o-low) (String.length d)
-  let get_all t = 
+  let get_all t =
     match t.buf with
       |	[] -> if debug then eprintf "E"; ""
       | (min_offset,_)::_ ->
 	let max_end = List.fold_left (fun e (o,d) -> max e (o+String.length d)) 0 t.buf in
-	if debug then eprintf "Flow len computed: %d expected: %d, Packet (offset,len)s: %a\n" max_end t.exp (Int.print |> Pair.print2 |> List.print) (List.map (second String.length) t.buf);	
+	if debug then eprintf "Flow len computed: %d expected: %d, Packet (offset,len)s: %a\n" max_end t.exp (Int.print |> Tuple2.printn |> List.print) (List.map (Tuple2.map2 String.length) t.buf);
 (*	if max_end <> t.exp then assert false; *)
 	let len = max_end - min_offset in
 (*	if len > 50_000_000 then assert false; *)
@@ -238,13 +238,13 @@ let read_file_as_str ?(verbose=false) fn =
   ret
 
 (* get a single flow of packets from an enum of filenames *)
-let packets_of_files fns = 
-  fns /@ read_file_as_str /@ to_pkt_stream 
+let packets_of_files fns =
+  fns /@ read_file_as_str /@ to_pkt_stream
   |> Enum.reduce (Enum.merge (fun (ts1,_,_,_,_) (ts2,_,_,_,_) -> ts1 < ts2))
 
-let trace_size_v v = 
-  Vect.fold_left (fun acc (_,x,_,_) -> acc + String.length x) 0 v 
-let trace_size a = 
+let trace_size_v v =
+  Vect.fold_left (fun acc (_,x,_,_) -> acc + String.length x) 0 v
+let trace_size a =
   Array.fold_left (fun acc (_,x,_,_) -> acc + String.length x) 0 a
 
 let max_conc = ref 0
@@ -262,12 +262,12 @@ let ht2 = Hashtbl.create 50000
 let assemble count fns =
   let flows = ref Vect.empty in
   let push_flow x = if has_content x then push_v flows x else if debug then eprintf "E" in
-  let act_pkt (ts,(_sip,_dip,_sp,_dp as flow), seq_no, data, (_syn,_ack,fin)) = 
-    if Vect.length !flows < count then 
-    (*    if seq_no < 0 || seq_no > 1 lsl 25 then printf "Seq_No: %d, skipping\n%!" seq_no 
+  let act_pkt (ts,(_sip,_dip,_sp,_dp as flow), seq_no, data, (_syn,_ack,fin)) =
+    if Vect.length !flows < count then
+    (*    if seq_no < 0 || seq_no > 1 lsl 25 then printf "Seq_No: %d, skipping\n%!" seq_no
 	  else *)
-    let buffer, init_seq_no = 
-      try Hashtbl.find ht2 flow 
+    let buffer, init_seq_no =
+      try Hashtbl.find ht2 flow
       with Not_found -> count_new_flow (); (ref PB.empty, ref seq_no) |> tap (Hashtbl.add ht2 flow)
     in
     let rel_seq_no = seq_no - !init_seq_no in
@@ -302,11 +302,11 @@ let assemble count fns =
 
 
 (*** FILTER DUPLICATE/OUT-OF-ORDER PACKETS ***)
-let parseable = 
+let parseable =
   let ht = Hashtbl.create 1000 in
   fun (ts, flow, offset, data, (_syn,_ack,fin)) ->
-    let exp,buf = 
-      try Hashtbl.find ht flow 
+    let exp,buf =
+      try Hashtbl.find ht flow
       with Not_found -> count_new_flow(); (ref (offset+1), ref PB.empty) |> tap (Hashtbl.add ht flow)
     in
     let dlen = String.length data in
@@ -314,11 +314,11 @@ let parseable =
     if not should_parse && offset > !exp then buf := PB.add_pkt !buf data offset ts;
     if should_parse then exp := !exp + dlen;
     let data = ref data in
-    while PB.avail_offset !buf <= !exp do 
+    while PB.avail_offset !buf <= !exp do
       let (o,d),t = PB.get_one !buf in
       let dlen = String.length d in
       buf := t;
-      if o < !exp then 
+      if o < !exp then
 	if o + dlen < !exp then
 	  (* take the tail of the packet *)
 	  ( data := !data ^ (String.tail d (!exp - o)); exp := !exp + (dlen - (!exp - o)); )
@@ -333,9 +333,9 @@ let pre_parse fns = packets_of_files fns /@ parseable (* very stateful check of 
 
 (***  INPUT FROM AN ENUM OF FILES - ONE FLOW PER FILE ***)
 
-let make_flows fns = 
+let make_flows fns =
   max_conc := 1; flow_count := Enum.count fns;
-  fns |> Enum.map (read_file_as_str ~verbose:false) 
+  fns |> Enum.map (read_file_as_str ~verbose:false)
     |> Enum.map (fun s -> ((0l,0l,1,unique()),s,true,0)) (* forge the fin flag, flow id and offset *)
 (*|> (fun v -> v, trace_size v)
     |> tap (fun (_,l) -> printf "#Flows read from file (len: %a max_conc: %d flows: %d)\n" Ean_std.print_size_B l 1 !flow_count;)
@@ -345,7 +345,7 @@ let make_packets flows =
   let flow_ids = Enum.range 0 /@ (fun i -> (0l,0l,0,i)) in
   let flows = Enum.combine (flow_ids, flows) in
   let ret = ref Vect.empty in
-  let send_byte_count () = 
+  let send_byte_count () =
     match Random.int 5 with
 	0 -> 0
       | 1 -> Random.int 50
@@ -354,10 +354,10 @@ let make_packets flows =
       | 4 -> 1000 + Random.int 500
       | _ -> 1500
   in
-  let split_rand (id,s) = 
-    let c = send_byte_count () in 
+  let split_rand (id,s) =
+    let c = send_byte_count () in
     let h,t = String.head s c, String.tail s c in
-    if t = "" then 
+    if t = "" then
       (id,h,true,-1), None
     else
       (id,h,false,-1), Some (id, t)
@@ -365,7 +365,7 @@ let make_packets flows =
   let rec loop ifp =
     if Enum.is_empty flows && Enum.is_empty ifp then () else (
       Enum.get flows |> Option.may (Enum.push ifp);
-      let l = Enum.count ifp in 
+      let l = Enum.count ifp in
       if l > !max_conc then max_conc := l;
       let send, keep = ifp |> Enum.map split_rand |> Enum.uncombine in
       Random.shuffle send |> Array.iter (push_v ret);
@@ -374,16 +374,15 @@ let make_packets flows =
   in
   loop (Enum.empty ());
   Vect.enum !ret
-      
-(*    |> tap (fun (_v,l) -> 
-      printf "#Flows packetized (len: %a max_conc: %d flows: %d packets:%d)\n" 
+
+(*    |> tap (fun (_v,l) ->
+      printf "#Flows packetized (len: %a max_conc: %d flows: %d packets:%d)\n"
 	Ean_std.print_size_B l !max_conc !flow_count (Vect.length _v);
 (*      Vect.print (fun oc (fid,data,fin) -> fprintf oc "%d (%B): %S\n\n" fid fin data) stdout v; *)
     )*)
 
-let make_packets_files fns = 
+let make_packets_files fns =
   let flows = fns |> Enum.map (read_file_as_str ~verbose:false) in
   make_packets flows
 
 (** ENUM OF FILES -> ENUM OF DEST IPs**)
-

@@ -1,5 +1,4 @@
 open Batteries
-open Future
 open Gobject.Data
 open Ns_types
 open ParsedPCFG
@@ -17,28 +16,28 @@ let col_enabled = cols#add boolean
 let col_choice = cols#add boolean
 let col_prod = cols#add caml_option
 
-let children_of_nonterm g r = 
+let children_of_nonterm g r =
   let nts_in_exp = function (Nonterm s, _) -> Some s | _ -> None in
   let _nts_in_prod {expression=e} = List.filter_map nts_in_exp e in
   NTMap.find r g.rules (*|> List.map nts_in_prod*) (*|> List.filter ((<>) [])*)
 
 let uniquify_ht = Hashtbl.create 17
 let uniquify =
-  fun s -> 
-    try s ^ string_of_int (Hashtbl.find uniquify_ht s |> Ref.post_incr) 
+  fun s ->
+    try s ^ string_of_int (Hashtbl.find uniquify_ht s |> Ref.post_incr)
     with Not_found -> Hashtbl.add uniquify_ht s (ref 1); s
 
 let add_child (ts:GTree.tree_store) ?parent prod =
   let row = ts#append ?parent () in
   ts#set ~row ~column:col_enabled false;
   ts#set ~row ~column:col_prod (Some prod);
-  match prod with 
+  match prod with
     | (Term rx,_) ->
       ts#set ~row ~column:col_name rx
-    | (Nonterm n,_) -> 
+    | (Nonterm n,_) ->
       ts#set ~row ~column:col_name (uniquify n)
-    
-let add_choice (ts:GTree.tree_store) par i p = 
+
+let add_choice (ts:GTree.tree_store) par i p =
   ts#set ~row:par ~column:col_choice true;
   let choice_i = ts#append ~parent:par () in
   ts#set ~row:choice_i ~column:col_prod None;
@@ -47,21 +46,21 @@ let add_choice (ts:GTree.tree_store) par i p =
 
 (* Add one level of children *)
 let add_children g (ts:GTree.tree_store) i =
-  match ts#get ~row:i ~column:col_prod with 
+  match ts#get ~row:i ~column:col_prod with
     | None -> ()
     | Some (Term rx,_) -> () (* can't expand a terminal *)
     | Some (Nonterm name, _) ->
 	match NTMap.find name g.rules with
-	  | [] -> () 
+	  | [] -> ()
 	  | [prod] -> List.iter (add_child ts ~parent:i) prod.expression
 	  | choices -> List.iteri (add_choice ts i) choices
 
-let iter_children (m: GTree.tree_store) i f = 
+let iter_children (m: GTree.tree_store) i f =
   for pos = 0 to m#iter_n_children (Some i) - 1 do
     f (m#iter_children ~nth:pos (Some i))
   done
 
-let children_of_iter m i = 
+let children_of_iter m i =
   let acc = ref [] in iter_children m i (fun c -> acc := c :: !acc); List.rev !acc
 
 let iter_tree (m: GTree.tree_store) f =
@@ -77,7 +76,7 @@ let create_view ~packing (model : GTree.tree_store) =
   view#append_column col |> ignore;
 
   let renderer_check_box = GTree.cell_renderer_toggle [`ACTIVATABLE true] in
-  let toggle_box gtk_tree_path = 
+  let toggle_box gtk_tree_path =
     let modelIter = model#get_iter gtk_tree_path in
     let existing_val = model#get ~row:modelIter ~column:col_enabled in
     model#set ~row:modelIter ~column:col_enabled (not existing_val);
@@ -93,20 +92,20 @@ let create_view ~packing (model : GTree.tree_store) =
 
 type 'a gram_tree = N of 'a * 'a gram_tree list list
 
-let print_tree_node oc (N((n,e,_),_)) = 
-  if e then 
+let print_tree_node oc (N((n,e,_),_)) =
+  if e then
     fprintf oc "bounds( %s )" n
   else
     IO.nwrite oc n
 
-let print_rule oc prods = 
+let print_rule oc prods =
   List.print ~first:"" ~last:"" ~sep:" " print_tree_node oc prods
 
 let rec print_body prod_list tree_nodes oc = match prod_list, tree_nodes with
   | [], [] -> ()
   | [], _::_ -> assert false
 (*    Log.printf "Empty prod list, tree nodes: \n%a\n" (List.print print_tree_node) tree_nodes *)
-  | (Nonterm n_orig,acts as ph)::pt, (N((n,e,p),ns))::tt when p == ph -> 
+  | (Nonterm n_orig,acts as ph)::pt, (N((n,e,p),ns))::tt when p == ph ->
     let n = if List.filter ((<>) []) ns = [] then n_orig else "X" ^ n in
     if e then fprintf oc "token( %s ) " n
     else IO.nwrite oc n;
@@ -115,7 +114,7 @@ let rec print_body prod_list tree_nodes oc = match prod_list, tree_nodes with
     print_body pt tt oc
   | (Term n,acts)::pt, t
   | (Nonterm n, acts)::pt, t ->
-    IO.nwrite oc n; 
+    IO.nwrite oc n;
     print_varmap print_action oc acts;
     IO.write oc ' ';
     print_body pt t oc
@@ -124,15 +123,15 @@ let rec gen_tree (m: GTree.tree_store) i =
   let p = m#get ~row:i ~column:col_prod |> Option.get in
   match p with
     | (Term _, _) -> []
-    | (Nonterm _,_) -> 
+    | (Nonterm _,_) ->
       let ch = m#get ~row:i ~column:col_choice in
       let children = children_of_iter m i in
-      let rules = 
-	if ch then List.map (children_of_iter m) children else [children] 
+      let rules =
+	if ch then List.map (children_of_iter m) children else [children]
       in
       let child_nodes = List.map (List.map (gen_tree m) |- List.flatten) rules
       in
-      let n = m#get ~row:i ~column:col_name in 
+      let n = m#get ~row:i ~column:col_name in
       let e = m#get ~row:i ~column:col_enabled in
       if List.filter ((<>) []) child_nodes = [] && not e then [] else
 	[N ((n,e,p),child_nodes)]
@@ -144,24 +143,24 @@ let rec print_tree g oc (N((n,_,p), rs)) =
       (* don't have to print rules for terminals *)
     | Term _,_ -> (*Log.printf "T:%s\n%!" n*) ()
       (* print any rules for this non-terminal *)
-    | Nonterm n_orig,_ -> 
-      try 
+    | Nonterm n_orig,_ ->
+      try
 	let prods = NTMap.find n_orig g.rules in
-	let print_rule prod tree_nodes =	  
+	let print_rule prod tree_nodes =
 	  fprintf oc "X%s " n;
 	  if not (VarMap.is_empty prod.predicates) then (
-	    fprintf oc "%a " (print_varmap print_pred) prod.predicates;	  
+	    fprintf oc "%a " (print_varmap print_pred) prod.predicates;
 	  );
 	  fprintf oc "-> %t;\n"
 	    (print_body prod.expression tree_nodes)
 	in
 	  (*	Log.printf "NT:%s(%s)\nexprs:%a\ntree_nodes:%a\n%!" n n_orig
-		(List.print print_production) prods 
+		(List.print print_production) prods
 		(print_tree_node |> List.print |> List.print) rs; *)
-	if List.filter ((<>) []) rs <> [] then 
+	if List.filter ((<>) []) rs <> [] then
 	  List.iter2 print_rule prods rs;
 	List.iter (List.iter (print_tree g oc)) rs
-      with Not_found -> 
+      with Not_found ->
 	failwith (sprintf "Could not find nonterminal %s\n" n_orig)
 
 let create_combobox ~packing files =
@@ -169,12 +168,12 @@ let create_combobox ~packing files =
   let combo = GEdit.combo_box ~model ~packing () in
   combo#set_active 1;
   combo
-  
-let populate_model model g = 
+
+let populate_model model g =
   add_child model (Nonterm g.start,VarMap.empty);
   Option.may (add_children g model) model#get_iter_first
 
-let main () = 
+let main () =
   (* init gtk *)
   GMain.Main.init () |> ignore;
   (* parse input grammar *)
@@ -182,20 +181,20 @@ let main () =
   (* the main window *)
   let window = GWindow.window ~allow_shrink:true ~allow_grow:true ~resizable:true ~width:window_width ~height:window_height () in
   let box1 = GPack.vbox ~packing:window#add ~spacing:3 () in
-  let combo, (combo_store,combo_column) = 
-    GEdit.combo_box_text ~packing:(box1#pack ~expand:false ~fill:false) ~strings:in_files () 
+  let combo, (combo_store,combo_column) =
+    GEdit.combo_box_text ~packing:(box1#pack ~expand:false ~fill:false) ~strings:in_files ()
   in
-  let get_fn () = combo_store#get ~row:(combo#active_iter |> Option.get) ~column:combo_column in 
+  let get_fn () = combo_store#get ~row:(combo#active_iter |> Option.get) ~column:combo_column in
 
   (* create and populate the model *)
   let model = GTree.tree_store cols in
   populate_model model !g;
 
   (* update the treeview based on filename *)
-  combo#connect#changed (fun () -> 
+  combo#connect#changed (fun () ->
     let fn = get_fn() in
-    g := Ns_parse.parse_file_as_spec fn; 
-    model#clear (); 
+    g := Ns_parse.parse_file_as_spec fn;
+    model#clear ();
     Hashtbl.clear uniquify_ht;
     populate_model model !g;
   ) |> ignore;
@@ -217,8 +216,8 @@ let main () =
   let oc = IO.output_string () in
   (match gen_tree model with
     | [] -> failwith "No fields to extract, aborting"
-    | [(N((root,e,_),_) as t)] -> 
-      if e then fprintf oc "EXTR -> token ( X%s );\n" root; 
+    | [(N((root,e,_),_) as t)] ->
+      if e then fprintf oc "EXTR -> token ( X%s );\n" root;
       print_tree !g oc t
     | _ -> assert false (* can't have multiple toplevel items, only one start symbol is possible *)
   );

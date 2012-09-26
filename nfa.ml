@@ -36,7 +36,7 @@ let print_mdfa write_label write_dec oc nfa =
 
 let print_nfa write_label write_dec oc nfa =
   let write_label oc {n_label=nlabel; epsilon=eps} =
-    if Set.is_empty eps then 
+    if Set.is_empty eps then
       write_label oc nlabel
     else
       fprintf oc "%a eps: %a" write_label nlabel print_iset eps
@@ -78,8 +78,8 @@ let factor_rx ~dec_comp = function
   | x -> x
 
 let factor_rx =
-  if debug then 
-    fun ~dec_comp x -> 
+  if debug then
+    fun ~dec_comp x ->
       printf " Pre_factor: %a\n" (Minreg.printp ~dec:true) x;
       factor_rx ~dec_comp x |> tap (printf "Post_factor: %a\n" (Minreg.printp ~dec:true))
   else
@@ -92,7 +92,7 @@ let merge_opt merge a b = match a,b with
   | Some r1, Some r2 -> Some (merge r1 r2)
 
 let opt_ops merge cmp = {dec0=None; merge=merge_opt merge; cmp=Option.compare ~cmp}
-let list_ops cmp = {dec0=[]; merge=(@); cmp=List.make_compare cmp}
+let list_ops cmp = {dec0=[]; merge=(@); cmp=List.compare cmp}
 
 
 (** BUILD A NFA FROM A GIVEN REGEXP and some decision handling data *)
@@ -100,17 +100,20 @@ let build_nfa dop reg =
   let get_idx = make_counter 0 in
   let qs = ref Vect.empty in
   let new_state ?(label=None) ?(epsilon=Set.empty)
-      ?(map=IMap.empty) ?(pri=0) ?(dec_pri=(-1)) ?(dec=dop.dec0) () =
+      ?(map=IMap.empty ~eq:(=)) ?(pri=0) ?(dec_pri=(-1)) ?(dec=dop.dec0) () =
     let idx = get_idx () in
      (*    if idx mod 100 = 1 then eprintf "N %d @ %.2f\n%!" idx (Sys.time ()); *)
-    let q = {label = {n_label = label; epsilon = epsilon}; 
-	     dec_pri = dec_pri; pri=pri; map=map; 
+    let q = {label = {n_label = label; epsilon = epsilon};
+	     dec_pri = dec_pri; pri=pri; map=map;
 	     dec=dec; id = idx} in
     vect_set_any qs idx q;
     q
   in
   let rec loop = function
-    | Value v -> let out_q = new_state () in let in_q = new_state ~map:(IMap.set_to_map v (Set.singleton out_q.id)) () in in_q,out_q
+    | Value v ->
+      let out_q = new_state () in
+      let in_q = new_state ~map:(IMap.set_to_map ~eq:Set.equal v (Set.singleton out_q.id)) () in
+      in_q,out_q
     | Accept (d,p) -> let q = new_state ~dec:d ~dec_pri:p () in q,q
     | Union rl ->
       let ins, outs = Set.enum rl |> List.of_enum |> List.map loop |> List.split in
@@ -140,12 +143,7 @@ let build_nfa dop reg =
   ({dop=dop;qs=qs; q0=q0} : ('a,'b) nfa)
 
 let merge_nfa_maps m1 m2 =
-  let merge_dst d1o d2o = match d1o,d2o with
-      None, Some d | Some d, None -> Some d
-    | Some d1, Some d2 -> Some (Set.union d1 d2)
-    | None, None -> assert false
-  in
-  IMap.union merge_dst m1 m2 |> IMap.map ~eq:qeq identity
+  IMap.union Set.union m1 m2 |> IMap.map ~eq:qeq identity
 
 type 'a hmap_status = Unmade | In_progress | Done of 'a
 
@@ -157,7 +155,7 @@ let simplify_nfa nfa = (* remove in-epsilon-only states, hoisting their transiti
   let merge q q2 =
     let map = merge_nfa_maps q.map q2.map in
     let epsilon = Set.union q.label.epsilon q2.label.epsilon in
-    let dec, dec_pri = 
+    let dec, dec_pri =
       if q.dec_pri < q2.dec_pri then q2.dec, q2.dec_pri
       else if q.dec_pri > q2.dec_pri then q.dec, q.dec_pri
       else (* q.dec_pri = q2.dec_pri *) nfa.dop.merge q.dec q2.dec, q.dec_pri
@@ -183,7 +181,8 @@ let simplify_nfa nfa = (* remove in-epsilon-only states, hoisting their transiti
       hoisted_maps.(i) <- Done q
     )
   in
-  let null_q = {id=(-1); map=IMap.empty; dec=nfa.dop.dec0; pri=0; dec_pri=(-1);
+  let null_q = {id=(-1); map=IMap.empty ~eq:Set.equal; dec=nfa.dop.dec0;
+		pri=0; dec_pri=(-1);
 		label={n_label=nfa.q0.label.n_label; epsilon=Set.empty};}  in
   let q_with_hoisted_map q =
     match hoisted_maps.(q.id),remove.(q.id) with
@@ -218,20 +217,20 @@ let get_eps_closure nfa n_id =
 let close_transitions : ('a, 'b) nfa -> ('a, 'b) multi_dfa = fun nfa ->
   let q_with_closed_map q =
     let mod_dsts dsts = Set.enum dsts |> map (get_eps_closure nfa) |> Enum.reduce Set.union in
-    {id=q.id; pri=q.pri; label = q.label.n_label; map = IMap.map ~eq:qeq mod_dsts q.map; 
+    {id=q.id; pri=q.pri; label = q.label.n_label; map = IMap.map ~eq:qeq mod_dsts q.map;
      dec=q.dec; dec_pri = q.dec_pri}
   in
   map_qs q_with_closed_map nfa, get_eps_closure nfa nfa.q0.id
 
 let print_nfa_label _oc _l = ()
-let print_nfa_dec oc d = Std.dump d |> String.print oc
+let print_nfa_dec oc d = dump d |> String.print oc
 
 let propogate_priorities mdfa =
-  let rev_map = ref MultiPMap.empty in
+  let rev_map = ref MultiMap.empty in
   let pri_roots = ref Set.empty in
-  let add_tr ~src ~dst = rev_map := MultiPMap.add dst src !rev_map in
-  let add_rev_transitions q = 
-    let id = q.id in 
+  let add_tr ~src ~dst = rev_map := MultiMap.add dst src !rev_map in
+  let add_rev_transitions q =
+    let id = q.id in
     IMap.iter_range (fun _ _ dests -> Set.iter (fun dst -> add_tr ~src:id ~dst) dests) q.map;
     if q.dec_pri > 0 then pri_roots := Set.add id !pri_roots;
   in
@@ -239,13 +238,13 @@ let propogate_priorities mdfa =
   Array.iter add_rev_transitions mdfa.qs;
   let rev_map = !rev_map in
   let new_pri = ref !pri_roots in
-  let propogate_pri i = 
-    let pri = mdfa.qs.(i).pri in 
-    let set_pri j = 
-      let q = mdfa.qs.(j) in 
+  let propogate_pri i =
+    let pri = mdfa.qs.(i).pri in
+    let set_pri j =
+      let q = mdfa.qs.(j) in
       if q.pri < pri then (pri_roots := Set.add j !pri_roots; q.pri <- pri)
     in
-    MultiPMap.find i rev_map |> PSet.iter set_pri
+    MultiMap.find i rev_map |> Set.iter set_pri
   in
   (* initial transfer of dec_pri -> pri *)
   Set.iter (fun i -> mdfa.qs.(i).pri <- mdfa.qs.(i).dec_pri) !pri_roots;
@@ -258,23 +257,23 @@ let propogate_priorities mdfa =
 
 let build_dfa ~labels dop reg =
   ignore labels;
-  let mdfa,q0 = build_nfa dop reg 
-    |> dtap (printf "NFA0: \n%a" (print_nfa print_nfa_label print_nfa_dec)) 
+  let mdfa,q0 = build_nfa dop reg
+    |> dtap (printf "NFA0: \n%a" (print_nfa print_nfa_label print_nfa_dec))
     |> simplify_nfa
     |> dtap (printf "NFA1: \n%a" (print_nfa print_nfa_label print_nfa_dec))
     |> close_transitions in
   propogate_priorities mdfa;
   if debug then (
-    printf "NFA built %.3f (%d states)\n%!" (Sys.time()) (Array.enum mdfa.qs // (fun q -> q.id <> -1) |> Enum.count); 
+    printf "NFA built %.3f (%d states)\n%!" (Sys.time()) (Array.enum mdfa.qs // (fun q -> q.id <> -1) |> Enum.count);
     printf "NFA2: \n%a" (print_mdfa print_nfa_label print_nfa_dec) mdfa;
-    printf "q0: %d\n" mdfa.q0.id;  
+    printf "q0: %d\n" mdfa.q0.id;
   );
   let states = ref Vect.empty in
   let make_node get_id ns id =
     (* get the transitions for that character from the nfa *)
 (*    if id mod 100 = 1 then eprintf "N %d @ %.2f\n%!" id (Sys.time ()); *)
     let map =
-      Set.fold (fun n acc -> merge_nfa_maps acc mdfa.qs.(n).map) ns IMap.empty
+      Set.fold (fun n acc -> merge_nfa_maps acc mdfa.qs.(n).map) ns (IMap.empty ~eq:Set.equal)
       |> IMap.map (get_id |- Id.to_int)
     in
     let dec =

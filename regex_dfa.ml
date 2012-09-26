@@ -7,21 +7,17 @@ let bits_per_char = 8
 let num_chars = (1 lsl bits_per_char)
 let max_commonality = num_chars
 
-let map_base = IMap.empty
+let map_base () = IMap.empty ~eq:(=)
 
 let map_of_val s v = IMap.set_to_map s v
 
 type 'a norm_regex = int list * 'a Minreg.t IMap.t
 
 (* takes norm_regex enum and returns a single norm_regex *)
-let merge2 ~dec_comp e1 e2 = 
+let merge2 ~dec_comp e1 e2 =
   (*  eprintf "Merging %a with %a\n%!" (Option.print Minreg.printp) e1 (Option.print Minreg.printp) e2; *)
-  match (e1,e2) with
-    | None, None -> assert false
-    | None, Some x | Some x, None -> Some x
-    | Some e1, Some e2 when Minreg.compare ~dec_comp e1 e2 = 0 -> Some e1
-    | Some e1, Some e2 -> 
-      Some (reduce_union e1 e2)
+  if Minreg.compare ~dec_comp e1 e2 = 0 then e1
+  else reduce_union e1 e2
 
 let merge_dlists d1 d2 = if d1 = [] then d2 else if d2 = [] then d1 else
     List.rev_append d1 d2 |> List.sort_unique Pervasives.compare
@@ -30,34 +26,34 @@ let merging_dec_lists = ([],(fun i -> [i]), merge_dlists)
 
 let merging_dec_sets = ([], ISet.singleton, ISet.union)
 (*
-  let last_depth = Value.observe_int_ref "cur-depth canonized" (ref 0) 
-  and last_width = Value.observe_int_ref "cur-width canonized" (ref 0) 
+  let last_depth = Value.observe_int_ref "cur-depth canonized" (ref 0)
+  and last_width = Value.observe_int_ref "cur-width canonized" (ref 0)
 *)
-let reduce_pair ~dec_comp merge_d (d1, m1) (d2,m2) = 
+let reduce_pair ~dec_comp merge_d (d1, m1) (d2,m2) =
   if IMap.is_empty m1 && IMap.is_empty m2 then
     (merge_d d1 d2), m1
   else
-    (merge_d d1 d2), (IMap.union (merge2 ~dec_comp) m1 m2) 
+    (merge_d d1 d2), (IMap.union (merge2 ~dec_comp) m1 m2)
 
 (*
-  let can_found = Value.observe_int_ref "can_found" (ref 0) 
-  and can_calc = Value.observe_int_ref "can_calc" (ref 0) 
+  let can_found = Value.observe_int_ref "can_found" (ref 0)
+  and can_calc = Value.observe_int_ref "can_calc" (ref 0)
 *)
 
-let canonize (nul_d, merge_d, dec_comp) rx =
+let canonize (type t0) (nul_d, merge_d, dec_comp) rx =
   let merge norms = Enum.reduce (reduce_pair ~dec_comp merge_d) norms in
-
-  let canonized = ref (Map.create (Minreg.compare ~dec_comp)) in
+  let module MRMap = Map.Make(struct type t = t0 Minreg.t let compare = Minreg.compare ~dec_comp end) in
+  let canonized = ref MRMap.empty in
 
   let rec canon rx =
-    try Map.find rx !canonized (*|> tap (fun _ -> incr can_found)*)
+    try MRMap.find rx !canonized (*|> tap (fun _ -> incr can_found)*)
     with Not_found ->
       (* insert a dummy value to prevent loops *)
-      canonized := Map.add rx (nul_d, map_base) !canonized;
+      canonized := MRMap.add rx (nul_d, map_base ()) !canonized;
       let ret = match rx with
 	| Concat (Value x::t, red) ->
 	  nul_d, map_of_val x (Concat (t,red))
-	| Union x when Set.is_empty x -> nul_d, map_base
+	| Union x when Set.is_empty x -> nul_d, map_base ()
 	| Union x -> merge (Set.enum x |> map canon |> tap Enum.force)
 	| Concat ((Kleene x) :: t, red) ->
 	  let tl = Concat (t,red) in
@@ -66,15 +62,15 @@ let canonize (nul_d, merge_d, dec_comp) rx =
 	| Kleene x -> union2 epsilon (concat [x; Kleene x]) |> canon
 	| Concat (Union u :: t, _) ->
 	  union (Set.map (append t) u) |> canon
-	| Accept (i,p) -> (i,p), map_base
+	| Accept (i,p) -> (i,p), map_base ()
 	| Concat (Concat _ :: _, _)
 	| Concat ([],_) | Concat (Accept _::_,_) -> assert false
       in
       if false then (
 	eprintf "#Canonizing: %a\n%!" (Minreg.printp ~dec:false) rx;
-	eprintf "#Result: %a\n%!" print_norm_regexp ret; 
+	eprintf "#Result: %a\n%!" print_norm_regexp ret;
       );
-      canonized := Map.add rx ret !canonized;
+      canonized := MRMap.add rx ret !canonized;
       ret
   in
   reduce rx |> canon
@@ -110,13 +106,13 @@ type ('a,'b,'c) fa = {
 type 'a dfa = ('a, int IMap.t, int list) fa
 
 let size {qs=qs} = Array.length qs
-let trans {qs=qs} = 
-  let trans_q acc q = 
+let trans {qs=qs} =
+  let trans_q acc q =
     IMap.fold_range (fun lo hi _ (rngs,inds) -> rngs+1, inds+hi-lo+1) q.map acc
   in
   Array.fold_left trans_q (0,0) qs
-let map_qs f fa = 
-  let qs = Array.map f fa.qs in 
+let map_qs f fa =
+  let qs = Array.map f fa.qs in
   {qs=qs; q0=qs.(fa.q0.id); dop=fa.dop}
 
 let map_dec dop f fa =
@@ -133,9 +129,9 @@ let index_print print_v oc i v = fprintf oc "#%d) %a\n" i print_v v
 
 let print_fa ?(ids=true) print_q oc {qs=qs; q0=_q0} =
   (*  IO.nwrite oc "#States:\n"; *)
-  if ids then 
+  if ids then
     Array.iteri (index_print print_q oc) qs
-  else 
+  else
     Array.print ~first:"" ~last:"" ~sep:"\n" print_q oc qs;
   (*  Printf.fprintf oc "#Start: %a\n" print_q q0; *)
   ()
@@ -143,7 +139,7 @@ let print_fa ?(ids=true) print_q oc {qs=qs; q0=_q0} =
 let print_tmap oc v = IMap.iter_range (print_range Int.print oc) v
 
 let print_dfa write_label ?(write_dec=(List.print Int.print)) oc dfa =
-  let print_q oc {label=label;map=map;dec=dec} = 
+  let print_q oc {label=label;map=map;dec=dec} =
     fprintf oc "%a\n#%a %a\n" write_label label print_tmap map write_dec dec;
   in
   print_fa print_q oc dfa
@@ -156,12 +152,12 @@ let print_dot_dfa ~id ~print_dec oc dfa =
     fprintf oc "%s%d [label=\"%dx%d " id i i q_id;
     print_dec oc dec;
     fprintf oc "\"];\n";
-    let trans = 
-      IMap.fold_range (fun lo hi q acc -> MultiPMap.add q (lo,hi) acc) 
-	map (MultiPMap.create Int.compare Pair.compare) in
-    MultiPMap.iter (fun q lhset -> 
+    let trans =
+      IMap.fold_range (fun lo hi q acc -> MultiPMap.add q (lo,hi) acc)
+	map (MultiPMap.create Int.compare Tuple2.compare) in
+    MultiPMap.iter (fun q lhset ->
       fprintf oc "%s%d -> %s%d [label=\"" id i id q;
-      PSet.print ~first:"" ~last:"" ~sep:" " print_rng oc lhset;
+      Set.PSet.print ~first:"" ~last:"" ~sep:" " print_rng oc lhset;
       fprintf oc "\"];") trans;
     fprintf oc "\n"
   in
@@ -172,12 +168,12 @@ let print_dfa _ ~id oc d = print_dot_dfa ~print_dec ~id oc d
 
 let count_qs f qs = Array.enum qs |> map f |> Enum.sum
 
-let summarize_dfa ~id oc dfa = 
+let summarize_dfa ~id oc dfa =
   let tr_count = count_qs (fun q -> IMap.enum q.map |> Enum.count) dfa.qs in
   fprintf oc "#DFA %s: %d states, %d transition ranges\n" id (Array.length dfa.qs) tr_count;
-  (*  
+  (*
       let finals = Array.fold_left (fun a q -> if q.dec = [] then a else q.dec :: a) [] dfa.qs in
-      List.print ~last:"]\n" (List.print Int.print) oc finals; 
+      List.print ~last:"]\n" (List.print Int.print) oc finals;
   *)
   ()
 
@@ -200,13 +196,13 @@ let reachable {qs=qs; q0=s0} =
 
 (* let reachable x = log_f "Reachable" reachable x *)
 
-let remove_unreachable dfa = 
+let remove_unreachable dfa =
   let keep = reachable dfa |> ISet.elements |> Array.of_list in
   (*   printf "#Reachable states: %d\n%!" (Array.length keep); *)
   let n = Array.length dfa.qs in
   let rep_state = Array.make n (-1) in
   Array.iteri (fun i r -> rep_state.(r) <- i) keep;
-  let mod_tr tr = IMap.fold_range (fun lo hi q acc -> if rep_state.(q) = -1 then assert false else IMap.add_range lo hi rep_state.(q) acc) tr IMap.empty in
+  let mod_tr tr = IMap.fold_range (fun lo hi q acc -> if rep_state.(q) = -1 then assert false else IMap.add_range lo hi rep_state.(q) acc) tr (IMap.empty ~eq:(=)) in
   let mod_state pos i = {dfa.qs.(i) with map = mod_tr dfa.qs.(i).map; id = pos} in
   let qs = Array.mapi mod_state keep in
   (*  let mod_state i = {dfa.qs.(i) with map = mod_tr dfa.qs.(i).map} in
@@ -220,7 +216,7 @@ let remove_unreachable dfa =
 let quotient rep {qs=qs; q0=q0; dop=dop} =
   let n = Array.length qs in
   (* what elements need to be kept as representatives *)
-  let range = Enum.fold (fun a i -> ISet.add (rep i) a) ISet.empty (0--^n) 
+  let range = Enum.fold (fun a i -> ISet.add (rep i) a) ISet.empty (0--^n)
 	      |> ISet.elements |> Array.of_list in
   let rep_state = Array.make n (-1) in
   (* range states get mapped to their position *)
@@ -236,41 +232,41 @@ let quotient rep {qs=qs; q0=q0; dop=dop} =
 
 let print_matrix m2 =
   printf "     ";
-  Array.iteri (fun i _ -> printf "%3d " i) m2; 
+  Array.iteri (fun i _ -> printf "%3d " i) m2;
   printf "\n";
-  Array.iteri (fun i r -> 
-    printf "%3d) " i; 
+  Array.iteri (fun i r ->
+    printf "%3d) " i;
     Array.iter (fun v -> printf "%3d " v) r;
     printf "\n";
   ) m2
 
 let print_bmatrix n m =
-  Enum.iter (fun i -> 
-    printf "#%2d) " i; 
-    Enum.iter (fun j -> print_string (if BitSet.is_set m (i*n+j) then "1" else "0")) (0--^n);
+  Enum.iter (fun i ->
+    printf "#%2d) " i;
+    Enum.iter (fun j -> print_string (if BitSet.mem m (i*n+j) then "1" else "0")) (0--^n);
     printf "\n";
   ) (0--^n)
 
 let commonality ?(eq = (=)) q1 q2 =
-  let same_dec lo hi d1 d2 acc = 
-    match d1, d2 with 
-	Some q1, Some q2 when eq q1 q2 -> acc+(hi-lo+1) 
-      | _ -> acc 
+  let same_dec lo hi d1 d2 acc =
+    match d1, d2 with
+	Some q1, Some q2 when eq q1 q2 -> acc+(hi-lo+1)
+      | _ -> acc
   in
   IMap.fold2_range same_dec q1.map q2.map 0
 
 let difference ?(eq = (=)) q1 q2 =
-  let diff_dec lo hi d1 d2 acc = 
-    match d1,d2 with 
-	Some q1, Some q2 when eq q1 q2 -> acc 
+  let diff_dec lo hi d1 d2 acc =
+    match d1,d2 with
+	Some q1, Some q2 when eq q1 q2 -> acc
       | None, None -> assert false
-      | _ -> acc + (hi-lo+1) 
+      | _ -> acc + (hi-lo+1)
   in
   IMap.fold2_range diff_dec q1.map q2.map 0
 
 let is_same ?(eq = (=)) q1 q2 =
-  let diff_dec _lo _hi d1 d2 = 
-    match d1,d2 with 
+  let diff_dec _lo _hi d1 d2 =
+    match d1,d2 with
 	Some q1, Some q2 when eq q1 q2 -> true
       | None, None -> assert false
       | _ -> false
@@ -284,16 +280,16 @@ let dist_test ~dec_comp dfa =
 
   (* POSSIBLE OPTIMIZATION FOR DEPENDENCIES
      let edge_in = Array.make n [] in
-     Array.iteri (fun i qi -> IMap.iter_range 
-     (fun _ _ j -> 
+     Array.iteri (fun i qi -> IMap.iter_range
+     (fun _ _ j ->
      edge_in.(j) <- i :: edge_in.(j)
      ) qi.map) dfa.qs;
   *)
-  
+
   (* SOME CODE IN THIS FUNCTION FROM fjavac project *)
   let m = BitSet.create_full (n*n) in
   let pos i j = i * n + j in
-  let eq i j = BitSet.is_set m (pos i j) in
+  let eq i j = BitSet.mem m (pos i j) in
   let set_not_eq i j = BitSet.unset m (pos i j); BitSet.unset m (pos j i) in
 
   for i = 0 to n-1 do
@@ -322,8 +318,8 @@ let dist_test ~dec_comp dfa =
 
 (* let dist_test x = log_f "Dist Test" dist_test x *)
 
-let print_diffs rep dfa = 
-  let print_d i q = 
+let print_diffs rep dfa =
+  let print_d i q =
     let j = rep i in
     if j <> i then begin
       printf "#Node %d replaced by %d:\n" i j;
@@ -334,26 +330,26 @@ let print_diffs rep dfa =
       printf "#%d: " j; Minreg.print stdout dfa.qs.(j).label; print_newline();
       print_tmap stdout dfa.qs.(j).map; print_newline();
       print_tmap stdout (IMap.map rep dfa.qs.(j).map); print_newline();
-      print_newline(); 
+      print_newline();
     end
   in
   Array.iteri print_d dfa.qs
-    
+
 let minimize ?(dec_comp=Pervasives.(=)) dfa =
   let dfa = remove_unreachable dfa in
   let m = dist_test ~dec_comp dfa in (* returns a matrix of state equivalences *)
   (* first state equal to each state *)
   let n = Array.length dfa.qs in
-  let rep i = Enum.find (fun j -> BitSet.is_set m (i*n+j)) (0--^n) in
+  let rep i = Enum.find (fun j -> BitSet.mem m (i*n+j)) (0--^n) in
   (*  print_diffs rep dfa; *)
   quotient rep dfa
 
 (* runs the dfa on the entire enum - produces the trace of all states
    gone through *)
 let run_dfa_trace dfa enum =
-  let next_q q c = 
-    match q with None -> None | Some q -> 
-      try Some(IMap.find (Char.code c) dfa.qs.(q).map) with Not_found -> None 
+  let next_q q c =
+    match q with None -> None | Some q ->
+      try Some(IMap.find (Char.code c) dfa.qs.(q).map) with Not_found -> None
   in
   scanl next_q (Some dfa.q0.id) enum
 
@@ -362,40 +358,40 @@ let get_dec dfa qid = Option.map (fun q -> dfa.qs.(q).dec) qid
 
 let run_dfa_dec dfa e = run_dfa_trace dfa e |> Enum.reduce (fun _ b -> b) |> get_dec dfa
 
-let run_dfa_stream dfa enum = 
+let run_dfa_stream dfa enum =
   let rec next_q qi =
     match dfa.qs.(qi).dec with
       | Some dec -> dec
       | None -> match Enum.get enum with
 	  None -> failwith "End of stream reached without match"
-	  | Some (_,c) -> 
+	  | Some (_,c) ->
 	    try IMap.find (Char.code c) dfa.qs.(qi).map |> next_q
-	    with Not_found -> 
+	    with Not_found ->
 	      failwith (sprintf "Character %c has no transition at state %d" c qi)
   in
-  next_q dfa.q0.id 
+  next_q dfa.q0.id
 
 let print_trace oc dfa trace =
   let last = Enum.reduce (fun _ y -> y) (Enum.clone trace) in
   let qopt_to_str = function None -> "X" | Some q -> string_of_int q in
   let qopt_to_dec_l = function None -> [] | Some q -> dfa.qs.(q).dec in
-  fprintf oc "%a: %a\n" 
+  fprintf oc "%a: %a\n"
     (Enum.print (fun oc qo -> IO.nwrite oc (qopt_to_str qo))) trace
     (List.print Int.print) (qopt_to_dec_l last);
   ()
 
-let to_array dfa = 
-  let to_arr m = 
+let to_array dfa =
+  let to_arr m =
     Array.init 256 (fun i -> try IMap.find i m with Not_found -> -1) in
   map_qs (fun q -> {q with map = to_arr q.map}) dfa
 
 let print_array_dfa print_dec oc dfa =
-  let aprint oc a = 
+  let aprint oc a =
     let last_c = ref a.(0) in
     let last_pos = ref 0 in
     for i = 1 to Array.length a - 1 do
       if a.(i) <> !last_c then begin
-	if !last_c <> -1 then 
+	if !last_c <> -1 then
 	  if !last_pos = i-1 then (
 	    fprintf oc "%C:%d " (Char.chr !last_pos) !last_c;
 	  ) else (
@@ -406,16 +402,16 @@ let print_array_dfa print_dec oc dfa =
       end
     done;
     let i = Array.length a in
-    if !last_c <> -1 then 
+    if !last_c <> -1 then
       if !last_pos = i-1 then (
 	fprintf oc "%C:%d " (Char.chr !last_pos) !last_c;
       ) else (
 	fprintf oc "%C-%C:%d " (Char.chr !last_pos) (Char.chr (i-1)) !last_c;
       );
   in
-  let print_q oc q = 
-    fprintf oc "p%d <%a>" q.pri aprint q.map; 
-    if q.dec_pri >= 0 then fprintf oc "%ap%d"print_dec q.dec q.dec_pri 
+  let print_q oc q =
+    fprintf oc "p%d <%a>" q.pri aprint q.map;
+    if q.dec_pri >= 0 then fprintf oc "%ap%d"print_dec q.dec q.dec_pri
   in
   print_fa print_q oc dfa
 
@@ -429,7 +425,7 @@ let tcam_of_rs rs = Tcam.of_fw_ruleset [bits_per_char] rs
 let opt_table_of_q q = Optimizers.raz_dec q.map |> tcam_of_rs |> Optimizers.bitweave
 let opt_itable_of_q q = table_of_q q |> (fun rs -> rs.RS.rs) |> tcam_of_rs |> Optimizers.bitweave
 
-let boosted_table_of_q ?(boost_stride=7) q = 
+let boosted_table_of_q ?(boost_stride=7) q =
   let m = q.map and id = q.id in
   if IMap.is_empty m then failwith "Cannot boost empty table" else
     let add_transition lo hi q acc = if q <> id then Vect.append {pred=[lo,hi];dec=q} acc else acc in
@@ -438,13 +434,13 @@ let boosted_table_of_q ?(boost_stride=7) q =
     let default = {pred = Enum.repeat ~times:boost_stride range |> List.of_enum;
 		   dec = id} in
     let prepend_star_fields rv _ = Vect.map (fun x -> {x with pred=range::x.pred}) rv in
-    Enum.repeat ~times:boost_stride one_step_map 
+    Enum.repeat ~times:boost_stride one_step_map
 	      |> Enum.scan prepend_star_fields
 	      |> Enum.reduce RS.join |> Vect.append default
 
 let tcam_size_q q = opt_itable_of_q q |> Vect.length
 
-let dfa_tcam_size dfa = 
+let dfa_tcam_size dfa =
   Array.enum dfa.qs |> map tcam_size_q |> Enum.sum
 
 (*
@@ -454,4 +450,3 @@ let to_rs_dfa dfa = map_qs opt_itable_of_q dfa
 let tcam_size dfa =
   let get_map x = x.map in
   Array.enum dfa.qs |> map (get_map |- Optimizers.raz_dec |- Vect.length) |> Enum.reduce (+)
-

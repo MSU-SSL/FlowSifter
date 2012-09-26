@@ -15,9 +15,9 @@ open RS.Rule
 type 'a t = NT of 'a t Decider.t | T of 'a
 type 'a fdd = 'a t
 
-let empty = NT (D.empty)
+let empty () = NT (D.empty ())
 
-let rec enum = function 
+let rec enum = function
     T c -> Enum.singleton {pred=[]; dec=c}
   | NT d -> D.enum d |> Enum.map (fun (min,max,ch) -> enum ch |> Enum.map (fun r -> {r with pred=(min,max)::r.pred})) |> Enum.concat
 
@@ -29,7 +29,7 @@ let compare_1d_aux = function
 
 let compare_1d t1 t2 = compare_1d_aux (t1,t2)
 
-let compare t1 t2 = 
+let compare t1 t2 =
   Enum.compare Pervasives.compare (enum t1) (enum t2)
 
 let equal t1 t2 = compare t1 t2 = 0
@@ -63,33 +63,33 @@ let rec var_match_str fdd flow_data n = match fdd with
       let fdd' = flow_data.[n] |> Char.code |> D.lookup m in
       var_match_str fdd' flow_data (n+1)
 
-let walk 
-    ?(f_pre=(fun _ _->())) ?(f_post=(fun _ _->())) 
+let walk
+    ?(f_pre=(fun _ _->())) ?(f_post=(fun _ _->()))
     ~f_node_rng ~f_leaf fdd =
   let queue = Queue.create () in
   let node_map = map_id (fun _ n _id -> Queue.add n queue) in
   let subtree a b d = f_node_rng a b (node_map.get_id d) d in
-  let act n = 
+  let act n =
     let id = node_map.get_id n in
     f_pre n id;
     (* enqueues unvisited child nodes *)
     (match n with T c -> f_leaf c | NT d -> D.iter subtree d );
     f_post n id
-  in	 
-  let rec loop () = 
-    try act (Queue.take queue); loop () 
+  in
+  let rec loop () =
+    try act (Queue.take queue); loop ()
     with Queue.Empty -> () in
   let _ = node_map.get_id fdd in (* prime the work queue *)
   loop ()
 
 let node_sets fdd =
-  let rec loop n acc = match n with 
-      NT d -> PSet.fold loop (D.decs d) acc
-    | T d -> PSet.add d acc
+  let rec loop n acc = match n with
+    | NT d -> Set.fold loop (D.decs d) acc
+    | T d -> Set.add d acc
   in
-  loop fdd PSet.empty
+  loop fdd Set.empty
 
-let pipe_stats str fdd = 
+let pipe_stats str fdd =
   let nodes = ref 0 and leaves = ref 0 in
   let f_leaf _ = incr leaves and f_node_rng _ _ _ _ = incr nodes in
   walk ~f_leaf ~f_node_rng fdd;
@@ -97,11 +97,11 @@ let pipe_stats str fdd =
   fdd
 
 let print print_dec chan fdd =
-  enum fdd |> Enum.print ~sep:"\n" (print_rule (List.print (Pair.print2 Int.print)) print_dec) chan
+  enum fdd |> Enum.print ~sep:"\n" (print_rule (List.print (Tuple2.printn Int.print)) print_dec) chan
 (*
 let dec_dump d =
-  if Obj.is_block (Obj.repr d) then 
-    let os = IO.output_string () in 
+  if Obj.is_block (Obj.repr d) then
+    let os = IO.output_string () in
     fdump2 os hex_string_of_int (Obj.magic d);
     IO.close_out os
   else
@@ -111,31 +111,31 @@ let dec_dump d =
 
 let compact x = x
 
-let reduce = function 
-    T _ as e -> e 
+let reduce = function
+    T _ as e -> e
   | root -> (* nonterminal compaction *)
-      let unique_add ht n = 
+      let unique_add ht n =
 	try Hashtbl_param.find ht n
 	with Not_found -> Hashtbl_param.add ht n n; n
       in
       let rec make_umap ht_lev =
 	(* get all children as hash_set *)
 	let ht_chi = Hashtbl_param.create hash compare_1d 1024 in
-	let add_child _node = function T _ -> assert false 
+	let add_child _node = function T _ -> assert false
 	  | NT d -> D.iter (fun _ _ c -> ignore(unique_add ht_chi c)) d in
 	Hashtbl_param.iter add_child ht_lev;
 	(* reduce the children *)
-	let ht_chi = 
-	  match Hashtbl_param.choose ht_chi with 
+	let ht_chi =
+	  match Hashtbl_param.choose ht_chi with
 	      (T _, _) -> ht_chi (* children are terminal *)
 	    | (NT _,_) -> make_umap ht_chi (* need to reduce children *)
 	in
 	(* reduce the current level *)
-	let ht_ulev = Hashtbl_param.create hash compare_1d 
+	let ht_ulev = Hashtbl_param.create hash compare_1d
 	  (Hashtbl_param.length ht_lev * 2) in
 	let add_reduced _n = function T _ -> assert false
-	  | NT d -> 
-	      let reduced_child_node = (* repoint to reduced children *) 
+	  | NT d ->
+	      let reduced_child_node = (* repoint to reduced children *)
 		let d' = D.map (fun c -> Hashtbl_param.find ht_chi c) d in
 		NT d' in
 	      unique_add ht_ulev reduced_child_node
@@ -154,17 +154,17 @@ let reduce x = log_f "Reducing" reduce x
 
 (*
 let reduce_timer = Time.create "FDD.reduce"
-let reduce x = 
-  Time.start reduce_timer; 
-  let ret = reduce x in 
-  Time.stop reduce_timer; 
+let reduce x =
+  Time.start reduce_timer;
+  let ret = reduce x in
+  Time.stop reduce_timer;
   ret
 *)
 (* prints the fdd to the given channel *)
-let fdump stringify chan fdd = 
-  let f_leaf color = 
+let fdump stringify chan fdd =
+  let f_leaf color =
     Printf.fprintf chan "%a " stringify color
-  and f_node_rng min max id _d = 
+  and f_node_rng min max id _d =
     Printf.fprintf chan "(%X-%X):T%d " min max (Id.to_int id)
   and f_pre _n id = Printf.fprintf chan "Table %i -- " (Id.to_int id);
   and f_post _n _id = Printf.fprintf chan "\n"
@@ -173,21 +173,21 @@ let fdump stringify chan fdd =
   walk ~f_pre ~f_post ~f_node_rng ~f_leaf fdd;
   Printf.fprintf chan "-------------------------\n"
 
-let decisions fdd = 
-  let out = ref (PSet.create Pervasives.compare) in
-  let f_leaf c = out := PSet.add c !out 
+let decisions fdd =
+  let out = ref Set.empty in
+  let f_leaf c = out := Set.add c !out
   and f_node_rng _min _max _id _d = () in
   walk ~f_leaf ~f_node_rng fdd;
-  PSet.enum !out
+  Set.enum !out
 
 let rec slice nrange fdd =
   match (nrange, fdd) with
       ([], T d) -> T d
-    | ((lo,hi) :: t, NT d) -> 
+    | ((lo,hi) :: t, NT d) ->
 	NT(D.sub lo hi d |> D.map (slice t))
     | _, _ -> assert false
 
-let make_empty default range = 
+let make_empty default range =
   let rec make_aux = function
     | [] -> T default
     | (low,hi)::t -> NT (D.make_default low hi (make_aux t))
@@ -202,15 +202,15 @@ let insert_range merge {pred=pred; dec=act} fdd =
   let rec insert_aux = function (* pred, fdd *)
       [], T d -> T (merge (Some d) act)
     | [], NT _ -> T (merge None act)
-    | (low,hi)::t, ((T _) as n)-> 
-	(* insert a non-terminal *) 
+    | (low,hi)::t, ((T _) as n)->
+	(* insert a non-terminal *)
 	let child = insert_aux (t, n)
 	and as_d = D.default n in
-	NT (D.add low hi child as_d) 
-    | (low,hi)::t, NT d -> 
+	NT (D.add low hi child as_d)
+    | (low,hi)::t, NT d ->
 	(* modify the nonterminal *)
 	let sub_fdd = D.sub low hi d
-	and add_child low hi child acc = 
+	and add_child low hi child acc =
 	  D.add low hi (insert_aux (t,child)) acc in
 	NT (D.fold add_child sub_fdd d)
   in
@@ -220,32 +220,32 @@ let insert_entry merge {pred=entry; dec=act} fdd =
   let rec insert_aux = function (* pred, fdd *)
       [], T d -> T (merge (Some d) act)
     | [], NT _ -> T (merge None act)
-    | f::t, ((T _) as n)-> 
-	(* insert a non-terminal *) 
+    | f::t, ((T _) as n)->
+	(* insert a non-terminal *)
 	let child = insert_aux (t, n)
 	and as_d = D.default n in
 	let add_rng acc (low,hi) = D.add low hi child acc in
-	NT (Tcam.Entry.enum_ranges_f f |> fold add_rng as_d) 
-    | f::t, NT d -> 
+	NT (Tcam.Entry.enum_ranges_f f |> fold add_rng as_d)
+    | f::t, NT d ->
 	(* modify the nonterminal *)
-	let add_rng acc (low,hi) = 
+	let add_rng acc (low,hi) =
 	  let sub_fdd = D.sub low hi d
-	  and add_child low hi child acc = 
+	  and add_child low hi child acc =
 	    D.add low hi (insert_aux (t,child)) acc in
 	  IMap.fold_range add_child sub_fdd acc
 	in
 	NT (Tcam.Entry.enum_ranges_f f |> fold add_rng d)
   in
   insert_aux (entry,fdd)
-  
-      
+
+
 
 let insert fdd rul = insert_range (fun _ x -> x) rul fdd
 
 let permute_list il l = List.map (List.at l) il
-let make_rv ?perm ~default rv = 
-  let permute r = 
-    match perm with 
+let make_rv ?perm ~default rv =
+  let permute r =
+    match perm with
 	None -> r
       | Some p -> {r with pred = permute_list p r.pred}
   in
@@ -283,7 +283,7 @@ let make_allmatch inserter rules =
 (*BROKEN IMap Union code
   let find_cuts d1 d2 =
     Enum.merge (<) (D.enum_cuts d1) (D.enum_cuts d2) |> Enum.uniq in
-  let union_nodes comb d1 d2 = 
+  let union_nodes comb d1 d2 =
     let aux (d,last) cut =
       if cut = max_int then (d,max_int) else
 	let c1 = try Some(D.lookup d1 cut) with Not_found -> None
@@ -301,18 +301,10 @@ let make_allmatch inserter rules =
 
 
 (** MERGE TWO FDDs *)
-let union ?min_key ?max_key f_dec fdd1 fdd2 = 
-  let union_nodes f d1 d2 = 
-    let merge ao bo = match (ao,bo) with
-	Some fdd1, Some fdd2 -> Some (f fdd1 fdd2)
-      | Some fdd, None | None, Some fdd -> Some fdd
-      | None, None -> None
-    in
-    IMap.union merge d1 d2
-  in
+let union ?min_key ?max_key f_dec fdd1 fdd2 =
   let rec traverse n1 n2 = match (n1,n2) with
-      T d1, T d2 -> T (f_dec d1 d2)
-    | NT d1 , NT d2 -> NT (union_nodes traverse d1 d2)
+    | T d1, T d2 -> T (f_dec d1 d2)
+    | NT d1 , NT d2 -> NT (IMap.union traverse d1 d2)
     | NT _, T a -> traverse n1 (NT (D.default ?min_key ?max_key (T a)))
     | T a, NT _ -> traverse (NT (D.default ?min_key ?max_key (T a))) n2
   in
@@ -332,11 +324,11 @@ let union f t1 t2 =
   ret
 *)
 
-let packet_to_range ?(perm=[0;1;2;3;4]) p = 
+let packet_to_range ?(perm=[0;1;2;3;4]) p =
   let a = [|p.proto; p.src; p.dst; p.sp; p.dp|] in
   List.map (fun i -> a.(i)) perm
 let decide_p ?perm p t = decide ((packet_to_range ?perm p),t)
 
-let of_enum e = Enum.fold insert empty e
+let of_enum e = Enum.fold insert (empty ()) e
 
 let filter_dec p fdd = enum fdd |> Enum.filter (fun r -> p r.dec) |> of_enum

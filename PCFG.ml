@@ -75,7 +75,7 @@ module Make (Name : Names_t) = struct
       }
 
   let default_priority = [50]
-    
+
   module NT = struct
     type t = Name.nonterm
     let compare = Name.compare_nonterm
@@ -185,23 +185,23 @@ module Make (Name : Names_t) = struct
     in
     bool_interval 0 p_table.(0) []
 *)
-      
+
 
   let rec is_clean_a = function
     | Variable | Constant _ -> true
     | Function _ -> false
-    | Divide (a,b) | Multiply (a,b) | Sub (a,b) | Plus (a,b) -> 
+    | Divide (a,b) | Multiply (a,b) | Sub (a,b) | Plus (a,b) ->
       is_clean_a a && is_clean_a b
 
   let rec is_clean_p = function
-    | Const _ -> true 
-    | Not a -> 
+    | Const _ -> true
+    | Not a ->
       is_clean_p a
-    | Or (a,b) | And (a,b) -> 
+    | Or (a,b) | And (a,b) ->
       is_clean_p a && is_clean_p b
     | Greaterthan (a,b) | GreaterthanEq (a,b)
-    | LessthanEq (a,b) | Lessthan (a,b) 
-    | Equal (a,b) -> 
+    | LessthanEq (a,b) | Lessthan (a,b)
+    | Equal (a,b) ->
       is_clean_a a && is_clean_a b
 
   let is_clean act_map = VarMap.for_all (fun _ a -> is_clean_a a) act_map
@@ -209,20 +209,20 @@ module Make (Name : Names_t) = struct
 
   let rec constant_propogate_a = function
     | Plus (x,y) -> (
-      match constant_propogate_a x, constant_propogate_a y with 
+      match constant_propogate_a x, constant_propogate_a y with
 	| Constant 0, x | x, Constant 0 -> x
 	| x,y -> Plus (x,y) )
     | Sub (x,y) -> (
-      match constant_propogate_a x, constant_propogate_a y with 
+      match constant_propogate_a x, constant_propogate_a y with
 	| Constant 0, x | x, Constant 0 -> x
 	| x,y -> Sub (x,y) )
     | Multiply (x,y) -> (
-      match constant_propogate_a x, constant_propogate_a y with 
+      match constant_propogate_a x, constant_propogate_a y with
 	| Constant 0, x | x, Constant 0 when is_clean_a x -> Constant 0
 	| Constant 1, x | x, Constant 1 -> x
 	| x,y -> Multiply (x,y) )
     | Divide (x,y) -> (
-      match constant_propogate_a x, constant_propogate_a y with 
+      match constant_propogate_a x, constant_propogate_a y with
 	| Constant 0, x when is_clean_a x-> Constant 0
 	| _, Constant 0 -> failwith "Divide by zero"
 	| x, Constant 1 -> x
@@ -255,7 +255,7 @@ module Make (Name : Names_t) = struct
 	| x,y -> Lessthan(x,y) )
     | x -> x
 
-  let optimize_a = constant_propogate_a  
+  let optimize_a = constant_propogate_a
   let optimize_p = constant_propogate_p
 
   let freeze_a fs a = optimize_a a |> function
@@ -355,7 +355,7 @@ module Make (Name : Names_t) = struct
       Nonterm nt -> Name.print_nonterm oc nt
     | Term t -> Name.print_term oc t
 
-  let print_varmap print_one oc vm = 
+  let print_varmap print_one oc vm =
     if not (VarMap.is_empty vm) then
       VarMap.enum vm |>
 	  Enum.print ~first:"[" ~last:"]" ~sep:"; " print_one oc
@@ -374,7 +374,7 @@ module Make (Name : Names_t) = struct
     IO.nwrite oc " -> ";
     print_exp oc p.expression
 
-  let print_rules oc r  = 
+  let print_rules oc r  =
     Printf.printf "[\n" ;
     NTMap.iter (fun k ps ->
 		  fprintf oc "Key: %a --\n    " Name.print_nonterm k;
@@ -436,7 +436,7 @@ module Make (Name : Names_t) = struct
   (** returns the subgrammar that starts at nt *)
   let subgrammar grammar nt =
     let c = closure grammar nt in
-    let rules = NTMap.filteri (fun k _ -> NTSet.mem k c) grammar.rules in
+    let rules = NTMap.filter (fun k _ -> NTSet.mem k c) grammar.rules in
     { start = nt; rules = rules }
   ;;
 
@@ -455,11 +455,11 @@ module Make (Name : Names_t) = struct
 			   }
     in
       { start = map_f grammar.start;
-	rules = NTMap.fold 
-	  (fun k v acc -> 
+	rules = NTMap.fold
+	  (fun k v acc ->
 	     NTMap.add (map_f k) (List.map rename_prod v) acc
-	  ) 
-	  grammar.rules 
+	  )
+	  grammar.rules
 	  NTMap.empty
       } ;;
 
@@ -469,7 +469,7 @@ module Make (Name : Names_t) = struct
   (** prune grammars of unreachable nonterminals **)
   let prune grammar closure_set =
     let test x _a = NTSet.mem x closure_set in
-    {grammar with rules = NTMap.filteri test grammar.rules} ;;
+    {grammar with rules = NTMap.filter test grammar.rules} ;;
 
   let prune_grammar g = closure g g.start |> prune g ;;
 
@@ -483,7 +483,7 @@ module Make (Name : Names_t) = struct
   let is_terminal_expr expr = List.for_all is_terminal expr ;;
 
   (** returns  true if production is syntactically regular *)
-  let  is_regular p = 
+  let  is_regular p =
     let rec aux = function
 	[]  -> true
       | [_] -> true
@@ -491,7 +491,7 @@ module Make (Name : Names_t) = struct
       | (Term _a,_) :: b -> aux b
       | _ -> false
     in
-    aux p.expression 
+    aux p.expression
 	(*|> tap (fun x -> if x then Printf.printf "true " else Printf.printf "false ")*)
   ;;
 
@@ -505,7 +505,7 @@ module Make (Name : Names_t) = struct
     in
     aux p.expression
 
-  let is_nt_only_final_rules nt rules = 
+  let is_nt_only_final_rules nt rules =
     NTMap.find nt rules |> List.for_all (is_nt_only_final nt) ;;
 
   (** return true if grammar starting at nt is syntactically regular *)
@@ -541,13 +541,13 @@ module Make (Name : Names_t) = struct
 
   let idle_closure g nt = closure_gen idle_nonterminals g.rules nt
 
- 
+
   let is_idle grammar =
-    let is_rule_idle r = 
+    let is_rule_idle r =
       try ignore(extract_idle r.expression); true
       with Not_idle -> false
-    in 
-    NTMap.enum grammar.rules 
+    in
+    NTMap.enum grammar.rules
     |> Enum.exists (fun (_k,v) -> List.exists is_rule_idle v);;
 
   (** new idle_elimination series **)
@@ -564,7 +564,7 @@ module Make (Name : Names_t) = struct
       }
     in
     try
-      let nt_child,act = extract_idle rul.expression in 
+      let nt_child,act = extract_idle rul.expression in
       let nt_set = NTMap.find rul.name !memory in
       if NTSet.mem nt_child nt_set then []
       else (
@@ -573,15 +573,15 @@ module Make (Name : Names_t) = struct
       )
     with Not_idle -> [rul]
 
-  let add_rule m r = 
+  let add_rule m r =
     try NTMap.modify r.name (List.cons r) m
     with Not_found -> NTMap.add r.name [r] m
 
   (** the new idle_elimination **)
 
   let idle_elimination grammar =
-    (* initial output -- 
-       definitely no idle rules here, 
+    (* initial output --
+       definitely no idle rules here,
        so while loop will be run once *)
     let ret = ref grammar.rules in
     (* make initial memory *)
@@ -589,7 +589,7 @@ module Make (Name : Names_t) = struct
 
     while is_idle {grammar with rules = !ret} do
       let rules = !ret in
-      let per_rule r = 
+      let per_rule r =
 	let new_rules = hoist_rule rules r mem in
 	ret := List.fold_left add_rule !ret new_rules
       in
@@ -598,8 +598,8 @@ module Make (Name : Names_t) = struct
     done;
     prune_grammar {grammar with rules = !ret}
 
-    
-      
+
+
 
   (** finding starting and stopping terminals **)
 
@@ -622,8 +622,8 @@ module Make (Name : Names_t) = struct
   let start_or_stop grammar_start get_expr =
     let rec start_main grammar memory_acc =
       let rec start_express (acc,memory) express =
-	let recurse_case x = 
-	  start_main 
+	let recurse_case x =
+	  start_main
 	    (subgrammar grammar x)
 	    (NTMap.add grammar.start TSet.empty memory) (* prevent infty *)
 	in
@@ -640,14 +640,14 @@ module Make (Name : Names_t) = struct
 	       recurse_case x
       in (*start_express *)
       try (* get from memoized values *)
-	(NTMap.find grammar.start memory_acc, memory_acc) 
+	(NTMap.find grammar.start memory_acc, memory_acc)
       with Not_found -> (* build solution *)
 	NTMap.find grammar.start grammar.rules
 	|> List.fold_left
 	    (fun acc x -> start_express acc (get_expr x.expression))
 	    (TSet.empty, memory_acc)
     in (*start_main*)
-    
+
     let result, _ = start_main grammar_start NTMap.empty in result
 
   let start grammar = start_or_stop grammar (fun x -> x)

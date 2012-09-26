@@ -8,17 +8,17 @@ open ParsedPCFG
 
 let capture_counter = let x = ref 0 in fun () -> incr x; !x
 
-let parse_preds s = 
-  try 
-    Lexing.from_string s |> Ns_yac.pred Ns_lex.pred_token 
-  with Ns_yac.Error -> 
+let parse_preds s =
+  try
+    Lexing.from_string s |> Ns_yac.pred Ns_lex.pred_token
+  with Ns_yac.Error ->
     failwith (sprintf "Failed to parse %s as predicate" s)
 
-let parse_acts s = 
-  match s with 
-      None -> VarMap.empty 
-    | Some s -> 
-	  try 
+let parse_acts s =
+  match s with
+      None -> VarMap.empty
+    | Some s ->
+	  try
 	    Lexing.from_string s |> Ns_yac.act Ns_lex.act_token
 	  with Ns_yac.Error ->
 	    failwith (sprintf "Failed to parse %s as action" s)
@@ -45,13 +45,13 @@ let full_parse (nt,predopt,priopt,rules) =
   {name=nt; predicates=preds; priority=pri; expression = items}
 
 (* TYPE: proto:grammar -> extr:grammar -> grammar *)
-let merge_cas : proto:grammar -> extr:grammar -> grammar = 
+let merge_cas : proto:grammar -> extr:grammar -> grammar =
   fun ~proto ~extr -> approx_grammar ~x_grammar:extr ~p_grammar:proto
 
 
-let print_reg_rule oc rr = 
+let print_reg_rule oc rr =
   let so = Option.print String.print in
-  Printf.fprintf oc "{p:%a; rx:%a acts:%a nt: %a}%!" 
+  Printf.fprintf oc "{p:%a; rx:%a acts:%a nt: %a}%!"
     (List.print Int.print) rr.prio so rr.rx (List.print print_action) rr.act so rr.nt
 
 let print_rrule oc (preds,body) = fprintf oc "%a%a" (print_varmap print_pred) preds print_reg_rule body
@@ -59,38 +59,38 @@ let print_reg_rules oc = function
   | [] -> ()
   | l -> List.print ~first:"\n#  " ~sep:"\n#  " ~last:"\n" print_rrule oc l
 
-let print_reg_ca oc (ca: regular_grammar) = 
+let print_reg_ca oc (ca: regular_grammar) =
   Map.print String.print print_reg_rules oc ca;
   fprintf oc "Total: %d states\n" (Map.fold (fun _ x -> x+1) ca 0)
 
 let print_iaction oc (i,e) = fprintf oc "$%d := %a" i (print_a_exp ("$" ^ string_of_int i)) e
-let print_iact_opt oc (i,e) = match e with 
+let print_iact_opt oc (i,e) = match e with
   | Fast_a _ -> fprintf oc "$%d := Fast" i
   | Slow_a e -> fprintf oc "$%d := %a" i (print_a_exp ("$" ^ string_of_int i)) e
 let print_ipred oc (i,e) = print_p_exp ("$" ^ string_of_int i) oc e
 
 
 let print_opt_rule oc iirr =
-  Printf.fprintf oc "%s %a #%d" 
+  Printf.fprintf oc "%s %a #%d"
 (*    (List.print ~first:"" ~last:"" ~sep:"." Int.print) iirr.prio *)
     (Option.default "" iirr.rx)
-    (List.print ~first:"[" ~last:"]" ~sep:"; " print_iaction) iirr.act 
+    (List.print ~first:"[" ~last:"]" ~sep:"; " print_iaction) iirr.act
     (Option.default (-1) iirr.nt)
-  
-let print_rule i oc = function 
-  | [],r -> fprintf oc "#%2d -> %a\n" i print_opt_rule r 
+
+let print_rule i oc = function
+  | [],r -> fprintf oc "#%2d -> %a\n" i print_opt_rule r
   | p,r -> fprintf oc "#%2d %a -> %a\n" i (List.print print_ipred) p print_opt_rule r
-let print_rules i oc lst = 
+let print_rules i oc lst =
   let lst = List.sort (fun (_,a) (_,b) -> compare a.prio b.prio) lst in
   List.print ~first:"" ~sep:"" ~last:"" (print_rule i) oc lst
 
-let print_reg_ds_ca oc (ca: regular_grammar_arr) = 
+let print_reg_ds_ca oc (ca: regular_grammar_arr) =
   Array.iteri (fun i rs -> print_rules i oc rs) ca
 
 exception Non_regular_rule of production
 
-let merge_rx r s = 
-  (r |> String.rchop) ^ (s |> String.lchop) 
+let merge_rx r s =
+  (r |> String.rchop) ^ (s |> String.lchop)
 (*  |> tap (eprintf "MERGE_RX: %s + %s -> %s\n" r s )*)
 
 let prune_unreachable start rg =
@@ -100,48 +100,48 @@ let prune_unreachable start rg =
   close !reachable;
   while Set.is_empty !c |> not do
     let new_rs = Set.diff !c !reachable in
-    reachable := Set.union !reachable !c; 
-    c := Set.empty; 
-    close new_rs; 
+    reachable := Set.union !reachable !c;
+    c := Set.empty;
+    close new_rs;
   done;
   Array.range rg |> Enum.iter (fun i -> if not (Set.mem i !reachable) then rg.(i) <- [])
 
 let regularize : grammar -> regular_grammar = fun grammar ->
-  let make_r r =  
+  let make_r r =
     let rec head_tail = function
-      | [(Term a, head_act); (Nonterm b, tail_act)] ->  
-	{ prio = r.priority; 
-	  rx   = Some a; 
+      | [(Term a, head_act); (Nonterm b, tail_act)] ->
+	{ prio = r.priority;
+	  rx   = Some a;
 	  act  = act_act_compose head_act tail_act |> VarMap.enum |> List.of_enum;
-	  nt   = Some b } 
+	  nt   = Some b }
       | [(Term a, head_act)] ->
 	{ prio = r.priority;
 	  rx   = Some a;
 	  act  = VarMap.enum head_act |> List.of_enum;
 	  nt   = None}
-      | (Term a, head_act) :: (Term b, bhead_act) :: t -> 
+      | (Term a, head_act) :: (Term b, bhead_act) :: t ->
 	head_tail ((Term (merge_rx a b), (act_act_compose head_act bhead_act)) :: t)
       | [] ->
 	{ prio = r.priority;
 	  rx   = None;
 	  act  = [];
-	  nt   = None } 
-      | [(Nonterm a, head_act)] -> 
-	{ prio = r.priority; 
-	  rx   = None; 
-	  act  = VarMap.enum head_act |> List.of_enum; 
-	  nt   = Some a } 
-      | x -> print_endline (Std.dump x); raise (Non_regular_rule r) 
-	  
+	  nt   = None }
+      | [(Nonterm a, head_act)] ->
+	{ prio = r.priority;
+	  rx   = None;
+	  act  = VarMap.enum head_act |> List.of_enum;
+	  nt   = Some a }
+      | x -> print_endline (dump x); raise (Non_regular_rule r)
+
     in
     ( r.predicates, (head_tail r.expression ) )
-  in 
-  let make_regular_g g = 
-    NTMap.enum g.rules |> map (second (List.map make_r)) |> Map.of_enum
-  in 
+  in
+  let make_regular_g g =
+    NTMap.enum g.rules |> map (Tuple2.map2 (List.map make_r)) |> Map.of_enum
+  in
   grammar |> normalize_grammar |> idle_elimination |> make_regular_g
 
-let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) = 
+let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) =
   fun start ca ->
     let v_counter = Ean_std.make_counter 0 in
     let {Cache.get=int_of_v} = Cache.make_ht (fun _ -> v_counter ()) 10 in
@@ -152,7 +152,7 @@ let destring : (string -> regular_grammar -> (regular_grammar_arr * int)) =
     let fix_pair_p (v,p) = (int_of_v v, p) in
     let fix_rule (r: (string, string, 'prio) regular_rule) = {r with act = List.map fix_pair_a r.act; nt = Option.map int_of_nt r.nt} in
     let fix_pred (p:pred) = VarMap.enum p |> Enum.map fix_pair_p |> List.of_enum in
-    let pmap = Map.enum ca |> 
+    let pmap = Map.enum ca |>
 	Enum.map (fun (ca, pro) -> int_of_nt ca, (List.map (fun (p,r) -> fix_pred p, fix_rule r) pro)) in
     Enum.force pmap;
 
@@ -180,11 +180,11 @@ let compose_preds p1 p2 =
 
 let dechain (rg: regular_grammar_arr) =
   let is_chain_rule rs = function (_,{rx=Some _; act=[]; nt=Some nt}) -> List.length rs = 1 || List.length rg.(nt) = 1 | _ -> false in
-  let merge p rx pri (p1, rr) = 
-    compose_preds p p1, {rr with rx=Some (Option.map_default (merge_rx rx) rx rr.rx); prio = pri @ rr.prio} 
-  in 
+  let merge p rx pri (p1, rr) =
+    compose_preds p p1, {rr with rx=Some (Option.map_default (merge_rx rx) rx rr.rx); prio = pri @ rr.prio}
+  in
   let can_improve rs = List.exists (is_chain_rule rs) rs in
-  let elim_chain_rules nt = 
+  let elim_chain_rules nt =
     let dechained = function
       | (p, {rx=Some rx; act=[]; prio=pri; nt=Some next}) when List.length rg.(nt) = 1 || List.length rg.(next) = 1 ->
 	List.map (merge p rx pri) rg.(next)
@@ -208,7 +208,7 @@ let dechain (rg: regular_grammar_arr) =
 
 let flatten_priorities ca =
   let prio_map rs =
-    let prios = List.map (fun (_p,r) -> r.prio) rs |> List.sort_unique (List.make_compare Int.compare) in
+    let prios = List.map (fun (_p,r) -> r.prio) rs |> List.sort_unique (List.compare Int.compare) in
     (fun prio -> List.index_of prio prios |> Option.get |> (+) 1)
   in
   let fix_pri m (p,r) = p,{r with prio = m r.prio} in
@@ -229,27 +229,27 @@ let run_act get_f vars (var,act) =
 (*let upd_p = Point.create "rules_upd" *)
 
 exception Unknown_nonterminal of string
-let verify_grammar g = 
-  let is_defined (pi,_) = 
-    match pi with Term _ -> () | 
-	Nonterm nt -> try NTMap.find nt g.rules |> ignore 
+let verify_grammar g =
+  let is_defined (pi,_) =
+    match pi with Term _ -> () |
+	Nonterm nt -> try NTMap.find nt g.rules |> ignore
 	with Not_found -> raise (Unknown_nonterminal nt) in
-  NTMap.iter (fun _ ps -> List.iter 
-		(fun p -> 
+  NTMap.iter (fun _ ps -> List.iter
+		(fun p ->
 		   try List.iter is_defined p.expression
-		   with Unknown_nonterminal nt -> 
-		     printf "\nUnknown nonterminal %s in rule: %a\n" 
+		   with Unknown_nonterminal nt ->
+		     printf "\nUnknown nonterminal %s in rule: %a\n"
 		       nt print_production p
-		) 
-		ps 
+		)
+		ps
 	     )
     g.rules
 
 let parse_spec_file fn =
-  let epsilon_rule = {name="@EPSILON"; predicates=VarMap.empty; 
+  let epsilon_rule = {name="@EPSILON"; predicates=VarMap.empty;
 		      expression=[]; priority=[50]} in
-  let rules = 
-    try 
+  let rules =
+    try
       Lexing.from_channel (open_in fn)
         |> Ns_yac.spec Ns_lex.token
 	|> List.map full_parse
@@ -266,7 +266,7 @@ let parse_spec_file fn =
 	NTMap.add r.name (old @ [r]) acc
       with Not_found -> NTMap.add r.name [r] acc
     in
-    List.backwards rs |> tap (fun e -> Enum.push e epsilon_rule) |> Enum.fold add_to_map NTMap.empty 
+    List.backwards rs |> tap (fun e -> Enum.push e epsilon_rule) |> Enum.fold add_to_map NTMap.empty
   in
   {start=start; rules=rules |> index}
 

@@ -6,7 +6,7 @@ open Printf
 
 (* BEGIN MIN_REGEX *)
 
-type 'a t = 
+type 'a t =
   | Value of ISet.t
   | Union of 'a t Set.t
   | Concat of 'a t list * bool
@@ -15,10 +15,10 @@ type 'a t =
 
 let epsilon = Concat ([],true)
 
-let rec compare ~dec_comp x y = match (x,y) with 
+let rec compare ~dec_comp x y = match (x,y) with
     Union a, Union b -> Enum.compare (compare ~dec_comp) (Set.enum a) (Set.enum b)
   | Accept (a,_), Accept (b,_) -> dec_comp a b
-  | Concat (a,_), Concat (b,_) -> List.make_compare (compare ~dec_comp) a b
+  | Concat (a,_), Concat (b,_) -> List.compare (compare ~dec_comp) a b
   | Kleene a, Kleene b -> compare ~dec_comp a b
   | a,b -> Pervasives.compare a b
 
@@ -42,8 +42,8 @@ let append t u = Concat (u::t, false)
 let union s = Union (Set.map reduce s)
 let union_unsafe s = Union s
 let union2 a b = Union (Set.add (reduce a) (Set.singleton (reduce b))) |> reduce
-let union_with s = function 
-    Union s1 -> Union (Set.union s s1) 
+let union_with s = function
+    Union s1 -> Union (Set.union s s1)
   | e -> Union (Set.add (reduce e) s)
 let union_sets s1 s2 = Union (Set.union s1 s2)
 let concat l = Concat (l,false)
@@ -59,7 +59,7 @@ let roots = Hashtbl.create 10
 
 let add_root rx str = Hashtbl.add roots rx str
 
-let rec print oc = function 
+let rec print oc = function
   | x when Hashtbl.mem roots x -> IO.nwrite oc (Hashtbl.find roots x)
   | Union s when Set.mem epsilon s -> print oc (Union (Set.remove epsilon s)); IO.write oc '?'
   | Union s -> Set.print ~first:"(" ~sep:"|" ~last:")" print oc s
@@ -70,7 +70,7 @@ let rec print oc = function
   | Value a -> Pcregex.print_iset oc a
   | Accept (i,p) -> fprintf oc "{{%d:%d}}" p i
 
-let rec printp ?(dec=true) oc = function 
+let rec printp ?(dec=true) oc = function
   | Union s when Set.mem epsilon s -> printp oc (Union (Set.remove epsilon s)); IO.write oc '?'
   | Union s -> Set.print ~first:"(" ~sep:"|" ~last:")" printp oc s
   | Concat ([], _) -> ()
@@ -88,7 +88,7 @@ let print_inner_norm_regex oc rmap =
 
 let print_norm_regex oc (_acc, rmap) = print_inner_norm_regex oc rmap
 
-let print_norm_regexp oc (_, rmap) = 
+let print_norm_regexp oc (_, rmap) =
    IO.write oc '(';
    IMap.iter_range (Ean_std.print_range printp oc) rmap;
    IO.write oc ')'
@@ -118,14 +118,14 @@ let hash x = Hashtbl.hash (IO.to_string print x)
 let rec depth = function
   | Value _ -> 1
   | Accept _ -> 1
-  | Kleene x -> 1 + depth x 
+  | Kleene x -> 1 + depth x
   | Union s -> 1 + (Set.enum s |> map depth |> Enum.reduce max)
   | Concat (l,_) -> 1 + (List.enum l |> map depth |> Enum.reduce max)
 
 let rec width = function
   | Value _ -> 1
   | Accept _ -> 1
-  | Kleene x -> max 1 (width x) 
+  | Kleene x -> max 1 (width x)
   | Union s -> max (Set.cardinal s) (Set.enum s |> map width |> Enum.reduce max)
   | Concat ([],_) -> 0
   | Concat (l,_) -> max (List.length l) (List.enum l |> map width |> Enum.reduce max)
