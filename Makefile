@@ -1,16 +1,16 @@
 SHELL := /bin/bash
-DEBUG = 
+DEBUG = -g
 CPPFLAGS =  -O2 $(DEBUG) -I .
 OCAMLFLAGS = -annot -w Z $(DEBUG)
 PACKAGES = batteries,benchmark
 
-all: FlowSifter
+all: FlowSifter ns_compile
 
 #all: bench-all
 
 .PHONY: clean hwrun %.threadlog bench-all runlog.% outliers rectest
 
-dist-clean: clean	
+dist-clean: clean
 
 clean:
 	$(RM) *.a *.o *.cmi *.cmx *.cmo *.cmxa *.annot lib_b/*.o lib_u/*.o
@@ -79,7 +79,7 @@ pcap_parser.cmo: pcap_parser.ml
 %.cmo: %.ml
 	ocamlfind ocamlc -package $(PACKAGES) $(OCAMLFLAGS) -c $^
 
-OLIBS = #libocamlviz.cmxa 
+OLIBS = #libocamlviz.cmxa
 
 bench-bpac: bpac.cmxa pcap_parser.cmx bench.cmx tcmalloc_stubs.o
 	ocamlfind ocamlopt $(OCAMLFLAGS) -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc bpac.cmxa tcmalloc_stubs.o $(LIBS) $(FLOW) pcap_parser.cmx bench.cmx -o $@
@@ -94,20 +94,23 @@ pcap_parser: pcap_parser.ml
 	ocamlbuild -no-hygiene pcap_parser.native
 	mv pcap_parser.native pcap_parser
 
-hwrun: 
+hwrun:
 	ocamlbuild -no-hygiene hwrun.native
 	mv hwrun.native hwrun
 
 demo: *.ml
 	ocamlbuild demo.native
 
-gen_extr: 
+gen_extr:
 	ocamlbuild -j 0 -use-ocamlfind gen_extr.native
 
 FlowSifter: gen_extr
 	cp _build/gen_extr.native dist/FlowSifter
 
-#join -j 1 -o 1.1 1.2 2.2 null.20-timelog null.50-timelog | join -j 1 -o 1.1 1.2 1.3 2.2 - null.100-timelog | join -j 1 -o 1.1 1.2 1.3 1.4 2.2 - null.150-timelog | join -j 1 -o 1.1 1.2 1.3 1.4 1.5 2.2 - null.250-timelog 
+ns_compile:
+	ocamlbuild -use-ocamlfind ns_compile.native
+
+#join -j 1 -o 1.1 1.2 2.2 null.20-timelog null.50-timelog | join -j 1 -o 1.1 1.2 1.3 2.2 - null.100-timelog | join -j 1 -o 1.1 1.2 1.3 1.4 2.2 - null.150-timelog | join -j 1 -o 1.1 1.2 1.3 1.4 1.5 2.2 - null.250-timelog
 
 ####
 #### targets for statistics
@@ -118,7 +121,7 @@ TRACE=traces/Forensic_challenge_4-http.pcap # 99K trace, mostly headers
 
 TRACE2=traces/jub-http.pcap # 345M, mostly content
 
-%.threadlog: bench-% 
+%.threadlog: bench-%
 	./$^ -1 $(TRACE) & ( echo -n $$a; ./kill_when_flat.sh $$! ) | tee -a $@; sleep 1; echo >> $@
 
 %.perf: bench-%
@@ -128,7 +131,7 @@ TRACE2=traces/jub-http.pcap # 345M, mostly content
 	./$^ -5 $(TRACE2) | tee -a $@
 	echo >> $@
 
-MODES=bpac upac 
+MODES=bpac upac
 MEM_MODES=bpac flow null
 
 bench-all: $(patsubst %,bench-%,$(MODES))
@@ -140,7 +143,7 @@ perf-all: $(patsubst %, %.perf, $(MODES))
 perf2-all: $(patsubst %, %.perf2, $(MODES))
 
 
-mldeps: 
+mldeps:
 	$(MAKE) ns_lex.ml ns_yac.ml
 	ocamlfind ocamldep -package bitstring.syntax -syntax camlp4o *.ml > mldeps
 
@@ -197,15 +200,15 @@ harvdata: bench-bpac bench-upac
 	-mv -b $@ $@.bkp
 	echo -e $(HEADER) > $@
 	./bench-bpac -n $(COUNT) ~/traces/http/use/h*t.pcap | tee -a $@
-	./bench-upac -n $(COUNT) ~/traces/http/use/h*t.pcap | tee -a $@ 
+	./bench-upac -n $(COUNT) ~/traces/http/use/h*t.pcap | tee -a $@
 	./bench-bpac -n $(COUNT) ~/traces/http/use/h*t1.pcap | tee -a $@
-	./bench-upac -n $(COUNT) ~/traces/http/use/h*t1.pcap | tee -a $@ 
+	./bench-upac -n $(COUNT) ~/traces/http/use/h*t1.pcap | tee -a $@
 
 figures: rundata rectest memory.R
 	R --save < memory.R
 
 outliers: bench-upac
-	./bench-upac ~/traces/http/use/98w3-wednesday.pcap 
+	./bench-upac ~/traces/http/use/98w3-wednesday.pcap
 
 diff-test: all
 	./bench-bpac -f -d ~/traces/http/use/harvest.pcap* > log; tail -n 1 log;\
