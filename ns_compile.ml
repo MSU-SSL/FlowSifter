@@ -13,10 +13,9 @@ let rec print_aexp v oc = function
   | Sub (a,b) -> bool_exp v oc '-' a b
   | Multiply (a,b) -> bool_exp v oc '-' a b
   | Divide (a,b) -> bool_exp v oc '-' a b
-  | Function (name, _, []) -> fprintf oc "%s(st)" name;
   | Function (name, _, aes) ->
-    List.print (print_aexp v) ~first:(name ^ "(st,") ~last:")" ~sep:", " oc aes
-  | Variable -> fprintf oc "st.v%d" v
+    List.print (print_aexp v) ~first:(name ^ "(") ~last:")" ~sep:", " oc aes
+  | Variable -> fprintf oc "v%d" v
   | Constant c -> fprintf oc "%d" c
 and bool_exp v oc op a b =
   fprintf oc "(%a %c %a)" (print_aexp v) a op (print_aexp v) b
@@ -36,33 +35,37 @@ let rec print_pexp v oc = function
 let declare_uint oc v = fprintf oc "  unsigned int %s;\n" v
 
 let declare_vars oc var_count =
-  fprintf oc "struct state {\n";
+  fprintf oc "struct state {\npublic:\n";
   for i = 0 to var_count - 1 do
     declare_uint oc ("v" ^ string_of_int i);
   done;
   declare_uint oc "base_pos";
-  declare_uint oc "pos";
+  declare_uint oc "fdpos";
   fprintf oc "  char* flow_data;\n";
+  declare_uint oc "flow_data_length";
   declare_uint oc "fail_drop";
   declare_uint oc "rerun_temp";
   declare_uint oc "dfa_best_pri";
+  declare_uint oc "dfa_best_q";
+  declare_uint oc "dfa_best_pos";
   declare_uint oc "dfa_pri";
   declare_uint oc "dfa_q";
-  fprintf oc "void (*q)(state&);\n";
-  fprintf oc "};\n"
+  fprintf oc "  void (state::*q)();\n"
+
 
 let print_builtins oc =
-  fprintf oc "int pos(state& st) { return st.pos; }\n"
+  fprintf oc "  int pos() { return fdpos; }\n"
+    (*TODO MORE BUILTINS *)
 
 let print_act oc (var, act) =
-  fprintf oc "st.v%d = %a; " var (print_aexp var) act
+  fprintf oc "v%d = %a; " var (print_aexp var) act
 
 let print_acts oc acts =
   List.print print_act ~first:"" ~last:"" ~sep:"" oc acts
 
 let print_pred oc idx preds =
   let print_expr oc ps = List.print (fun oc (v,pe) -> print_pexp v oc pe) ~first:"(" ~last:")" ~sep:" && " oc ps in
-  fprintf oc "bool p%d = %a;\n" idx print_expr preds;
+  fprintf oc "    bool p%d = %a;\n" idx print_expr preds;
   sprintf "p%d" idx
 
 open Regex_dfa
@@ -78,24 +81,34 @@ let dfa_type _dfa =
   else if Array.length _dfa.qs < 1 lsl 16 then "unsigned short"
   else "unsigned int"
 
-let print_dfa_table oc i dfa =
-  let print_q oc q = Array.print ~first:"" ~last:"" ~sep:"," Int.print oc q.map in
-  fprintf oc "%s dfa%d[%d] = " (dfa_type dfa) i (Array.length dfa.qs * 256);
-  Array.print ~first:"{" ~last:"};\n" ~sep:",\n" print_q oc dfa.qs
+let print_dfa_table oc dfa id =
+  let print_tr oc q = Array.print ~first:"" ~last:"\n" ~sep:"," Int.print oc q.map in
+  let print_pri oc q = Int.print oc q.pri in
+  let print_vect oc printer = (* prints something for each dfa state *)
+    (* IO.nwrite oc "{}" *)
+    Array.print ~first:"{" ~last:"}" ~sep:"," printer oc dfa.qs
+  in
 
-let print_dfa_q oc qid q =
-  fprintf oc "case %d: " qid;
-  fprintf oc "switch (st.flow_data[st.pos++]) {";
-  Array.iteri (fun i dest -> fprintf oc "case %d: st.dfa_q = %d; break;\n" i dest) q.map;
-  fprintf oc "}\n"
+  let num_states = Array.length dfa.qs in
+  fprintf oc "%s dfa_tr%d[%d] = %a;\n" (dfa_type dfa) id (num_states * 256)
+    print_vect print_tr;
+  fprintf oc "char dfa_pri%d[%d] = %a;\n" id num_states print_vect print_pri
 
 
 let print_dfa oc dfa id =
-  print_dfa_table oc id dfa;
-  fprintf oc "void DFA%d(state& st) {" id;
-  fprintf oc "while (1) {";
-  fprintf oc "return;";
-  fprintf oc "}  }\n"
+  let say x = fprintf oc (x ^^ "\n") in
+  say "void DFA%d() {" id;
+  say "  while (fdpos < flow_data_length) {";
+  say "    dfa_q = dfa_tr%d[(dfa_q << 8) | flow_data[fdpos++]];" id;
+  say "    if (dfa_q == -1) return;";
+  say "    dfa_pri = dfa_pri%d[dfa_q];" id;
+  say "    if (dfa_pri < dfa_best_pri) break;";
+  say "    if (dfa_pri > dfa_best_pri) { dfa_best_pri = dfa_pri; dfa_best_pos = fdpos; dfa_best_q = dfa_q; }";
+  say "  } // no more parsing of flow - maybe run actions, maybe wait for more data\n";
+  say "  if (fdpos < flow_data_length) { \n";
+  say "//    dfa_act%d[dfa_best_q](); // run actions for this decision" id;
+  say "    fdpos = dfa_best_pos;";
+  say "}}\n"
 
 let dfa_ht : (dfa, int) Hashtbl.t = Hashtbl.create 20
 
@@ -109,7 +122,7 @@ let dfaid dfa =
 let rules_eval oc = function
   | [{rx=None; act; nt; prio=_}] ->
     let qnext = Option.default (-1) nt in
-    fprintf oc " st.q = CA%d; %a" qnext print_acts act;
+    fprintf oc " q = &state::CA%d; %a" qnext print_acts act;
   | rules ->
     let dfa = List.enum rules
       |> Enum.map Ns_run.make_rx_pair
@@ -118,39 +131,80 @@ let rules_eval oc = function
       |> Nfa.build_dfa ~labels:false dec_ops
       |> Regex_dfa.minimize
       |> Regex_dfa.to_array in
-    fprintf oc " st.dfa_q = %d; st.dfa_best_pri = 0; st.q = DFA%d;" dfa.q0.id (dfaid dfa)
-
-let predeclare_ca_states oc n =
-  for i = 0 to (n-1) do
-    fprintf oc "void CA%d(state&);" i;
-  done;
-  fprintf oc "\n"
+    fprintf oc " dfa_q = %d; dfa_best_pri = 0; q = &state::DFA%d;" dfa.q0.id (dfaid dfa)
 
 (* print a function for a CA nonterminal *)
 let ca_trans oc idx rules =
-  fprintf oc "void CA%d(state& st) {" idx;
+  fprintf oc "  void CA%d() {" idx;
   if List.for_all (fun (p,_) -> List.length p = 0) rules then
     (* no predicates; go directly to CA state w/ actions or DFA*)
     List.map snd rules |> rules_eval oc
   else ( (* deal with predicates *)
     let vars = List.mapi (fun i (p,_) -> print_pred oc i p) rules in
     (* GENERATE IDX *)
-    fprintf oc "int idx = 0";
+    fprintf oc "    int idx = 0";
     List.iteri (fun i pi -> fprintf oc " + (%s << %d)" pi i) (List.rev vars);
     fprintf oc ";\n";
-    fprintf oc "switch (idx) {\n";
+    fprintf oc "    switch (idx) {\n";
     for i = 0 to (1 lsl (List.length rules)) - 1 do
-      fprintf oc "case %d:" i;
+      fprintf oc "    case %d:" i;
       Ns_run.get_comb i rules |> rules_eval oc;
       fprintf oc "break;\n";
     done;
-    fprintf oc " }\n"; (* close switch *)
+    fprintf oc "    }\n"; (* close switch *)
   );
-  fprintf oc "}\n" (* end function *)
+  fprintf oc "  }\n" (* end function *)
+
+let print_includes say =
+  say "#include <stdlib.h>";
+  say "#include <stdbool.h>";
+  say "#include <inttypes.h>";
+  say "#include <assert.h>";
+  say "#include <stdio.h>";
+  say "#include <fcntl.h>";
+  say "#include <string.h> // general string handling"
+
 
 let gen_header oc var_count =
   declare_vars oc var_count;
   print_builtins oc
+
+let print_read_file say =
+  say "  void read_file(char* filename) {
+    FILE* fd = fopen(filename, \"r\");
+    char* buffer;
+
+    printf(\"Subject: %s\\n\", basename(filename));
+    fseek (fd , 0 , SEEK_END);
+    size_t file_size = ftell (fd);
+    rewind (fd);
+
+    // allocate memory to contain the whole file:
+    buffer = (char *) malloc (sizeof(char)*file_size);
+    if (buffer == NULL) {fputs (\"Memory error\",stderr); exit (2);}
+
+    // copy the file into the buffer:
+    int result = fread (buffer,1,file_size,fd);
+    if (result != file_size) {fputs (\"Reading error\",stderr); exit (3);}
+
+    flow_data = buffer;
+    flow_data_length = file_size;
+  }"
+
+let end_parser_object oc = IO.nwrite oc "};\n"
+
+let print_main say =
+  say "#define CALL_MEMBER_FN(object,ptrToMember)  ((object).*(ptrToMember))";
+  say "int main(int argc, char* argv[]) {";
+  say "  if (argc != 2) { printf (\"fs [trace_file]\\n\"); exit(1); }";
+  say "  state st;";
+  say "  st.read_file(argv[1]);";
+  say "  st.q = &state::CA0;";
+  say "  while (st.q != NULL) CALL_MEMBER_FN(st, st.q)();";
+  say "  return 0;";
+  say "}";
+  say ""
+
 
 let main p e =
   let proto = Ns_parse.parse_file_as_spec p
@@ -166,12 +220,19 @@ let main p e =
   in
 (*  let oc = File.open_out (e ^ ".c") in *)
   let buf = IO.output_string () in
-  let oc = stdout in (* change to file when ready *)
+  let oc = File.open_out "fs.c" in
+  let say x = IO.nwrite oc x; IO.write oc '\n' in
   Array.iteri (ca_trans buf) ca;
+  print_includes say;
+  Hashtbl.iter (print_dfa_table oc) dfa_ht; (* print the DFA data tables *)
   gen_header oc var_count;
-  Hashtbl.iter (print_dfa oc) dfa_ht;
-  predeclare_ca_states oc (Array.length ca);
-  IO.nwrite oc (IO.close_out buf)
+  Hashtbl.iter (print_dfa oc) dfa_ht; (* print the dfa handling functions *)
+  IO.nwrite oc (IO.close_out buf);
+  print_read_file say;
+  end_parser_object oc;
+  print_main say
+
+
 
 let () = main "http.pro" "extr.ca"
 
