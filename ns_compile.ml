@@ -13,8 +13,9 @@ let rec print_aexp v oc = function
   | Sub (a,b) -> bool_exp v oc '-' a b
   | Multiply (a,b) -> bool_exp v oc '-' a b
   | Divide (a,b) -> bool_exp v oc '-' a b
+  | Function (name, _, []) -> fprintf oc "%s(st)" name;
   | Function (name, _, aes) ->
-    List.print (print_aexp v) ~first:(name ^ "(") ~last:")" ~sep:", " oc aes
+    List.print (print_aexp v) ~first:(name ^ "(st,") ~last:")" ~sep:", " oc aes
   | Variable -> fprintf oc "st.v%d" v
   | Constant c -> fprintf oc "%d" c
 and bool_exp v oc op a b =
@@ -47,7 +48,11 @@ let declare_vars oc var_count =
   declare_uint oc "dfa_best_pri";
   declare_uint oc "dfa_pri";
   declare_uint oc "dfa_q";
+  fprintf oc "void (*q)(state&);\n";
   fprintf oc "};\n"
+
+let print_builtins oc =
+  fprintf oc "int pos(state& st) { return st.pos; }\n"
 
 let print_act oc (var, act) =
   fprintf oc "st.v%d = %a; " var (print_aexp var) act
@@ -57,7 +62,8 @@ let print_acts oc acts =
 
 let print_pred oc idx preds =
   let print_expr oc ps = List.print (fun oc (v,pe) -> print_pexp v oc pe) ~first:"(" ~last:")" ~sep:" && " oc ps in
-  fprintf oc "bool p%d = %a;\n" idx print_expr preds
+  fprintf oc "bool p%d = %a;\n" idx print_expr preds;
+  sprintf "p%d" idx
 
 open Regex_dfa
 
@@ -67,11 +73,14 @@ let dec_ops = {dec0 = ([],-1); merge = merge_dec; cmp = compare}
 type dfa =
     (unit, int array, (int * Ns_types.ParsedPCFG.a_exp) list * int) fa
 
-let dfa_type _dfa = "long"
+let dfa_type _dfa =
+  if Array.length _dfa.qs < 256 then "unsigned char"
+  else if Array.length _dfa.qs < 1 lsl 16 then "unsigned short"
+  else "unsigned int"
 
 let print_dfa_table oc i dfa =
   let print_q oc q = Array.print ~first:"" ~last:"" ~sep:"," Int.print oc q.map in
-  fprintf oc "%s dfa%d[] = " (dfa_type dfa) i;
+  fprintf oc "%s dfa%d[%d] = " (dfa_type dfa) i (Array.length dfa.qs * 256);
   Array.print ~first:"{" ~last:"};\n" ~sep:",\n" print_q oc dfa.qs
 
 let print_dfa_q oc qid q =
@@ -82,11 +91,11 @@ let print_dfa_q oc qid q =
 
 
 let print_dfa oc dfa id =
-(*  fprintf oc "void DFA%d(state st) {" id;
-  fprintf oc "begin%d: switch(dfa_q) {" id;
-  Array.iteri (print_dfa_q oc)  dfa.Regex_dfa.qs;
-  fprintf oc "}  }\n" *)
-  print_dfa_table oc id dfa
+  print_dfa_table oc id dfa;
+  fprintf oc "void DFA%d(state& st) {" id;
+  fprintf oc "while (1) {";
+  fprintf oc "return;";
+  fprintf oc "}  }\n"
 
 let dfa_ht : (dfa, int) Hashtbl.t = Hashtbl.create 20
 
@@ -111,6 +120,12 @@ let rules_eval oc = function
       |> Regex_dfa.to_array in
     fprintf oc " st.dfa_q = %d; st.dfa_best_pri = 0; st.q = DFA%d;" dfa.q0.id (dfaid dfa)
 
+let predeclare_ca_states oc n =
+  for i = 0 to (n-1) do
+    fprintf oc "void CA%d(state&);" i;
+  done;
+  fprintf oc "\n"
+
 (* print a function for a CA nonterminal *)
 let ca_trans oc idx rules =
   fprintf oc "void CA%d(state& st) {" idx;
@@ -118,8 +133,11 @@ let ca_trans oc idx rules =
     (* no predicates; go directly to CA state w/ actions or DFA*)
     List.map snd rules |> rules_eval oc
   else ( (* deal with predicates *)
-    List.iteri (fun i (p,_) -> print_pred oc i p) rules;
+    let vars = List.mapi (fun i (p,_) -> print_pred oc i p) rules in
     (* GENERATE IDX *)
+    fprintf oc "int idx = 0";
+    List.iteri (fun i pi -> fprintf oc " + (%s << %d)" pi i) (List.rev vars);
+    fprintf oc ";\n";
     fprintf oc "switch (idx) {\n";
     for i = 0 to (1 lsl (List.length rules)) - 1 do
       fprintf oc "case %d:" i;
@@ -131,7 +149,8 @@ let ca_trans oc idx rules =
   fprintf oc "}\n" (* end function *)
 
 let gen_header oc var_count =
-  declare_vars oc var_count
+  declare_vars oc var_count;
+  print_builtins oc
 
 let main p e =
   let proto = Ns_parse.parse_file_as_spec p
@@ -151,6 +170,7 @@ let main p e =
   Array.iteri (ca_trans buf) ca;
   gen_header oc var_count;
   Hashtbl.iter (print_dfa oc) dfa_ht;
+  predeclare_ca_states oc (Array.length ca);
   IO.nwrite oc (IO.close_out buf)
 
 let () = main "http.pro" "extr.ca"
