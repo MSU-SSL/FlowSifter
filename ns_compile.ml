@@ -41,8 +41,8 @@ let declare_vars oc var_count =
   done;
   declare_uint oc "base_pos";
   declare_uint oc "fdpos";
-  fprintf oc "  char* flow_data;\n";
-  declare_uint oc "flow_data_length";
+  fprintf oc "  unsigned char* flow_data;\n";
+  fprintf oc "  size_t flow_data_length;\n";
   declare_uint oc "fail_drop";
   declare_uint oc "rerun_temp";
   declare_uint oc "dfa_best_pri";
@@ -100,7 +100,7 @@ let print_dfa oc dfa id =
   say "void DFA%d() {" id;
   say "  while (fdpos < flow_data_length) {";
   say "    dfa_q = dfa_tr%d[(dfa_q << 8) | flow_data[fdpos++]];" id;
-  say "    if (dfa_q == -1) return;";
+  say "    if (dfa_q == (%s)(-1)) return;" (dfa_type dfa);
   say "    dfa_pri = dfa_pri%d[dfa_q];" id;
   say "    if (dfa_pri < dfa_best_pri) break;";
   say "    if (dfa_pri > dfa_best_pri) { dfa_best_pri = dfa_pri; dfa_best_pos = fdpos; dfa_best_q = dfa_q; }";
@@ -108,7 +108,7 @@ let print_dfa oc dfa id =
   say "  if (fdpos < flow_data_length) { \n";
   say "//    dfa_act%d[dfa_best_q](); // run actions for this decision" id;
   say "    fdpos = dfa_best_pos;";
-  say "}}\n"
+  say "} else q = NULL; }\n"
 
 let dfa_ht : (dfa, int) Hashtbl.t = Hashtbl.create 20
 
@@ -172,23 +172,19 @@ let gen_header oc var_count =
 let print_read_file say =
   say "  void read_file(char* filename) {
     FILE* fd = fopen(filename, \"r\");
-    char* buffer;
 
     printf(\"Subject: %s\\n\", basename(filename));
     fseek (fd , 0 , SEEK_END);
-    size_t file_size = ftell (fd);
+    flow_data_length = ftell (fd);
     rewind (fd);
 
     // allocate memory to contain the whole file:
-    buffer = (char *) malloc (sizeof(char)*file_size);
-    if (buffer == NULL) {fputs (\"Memory error\",stderr); exit (2);}
+    flow_data = (unsigned char *) malloc (sizeof(char)*flow_data_length);
+    if (flow_data == NULL) {fputs (\"Memory error\",stderr); exit (2);}
 
     // copy the file into the buffer:
-    int result = fread (buffer,1,file_size,fd);
-    if (result != file_size) {fputs (\"Reading error\",stderr); exit (3);}
-
-    flow_data = buffer;
-    flow_data_length = file_size;
+    size_t result = fread (flow_data,1,flow_data_length,fd);
+    if (result != flow_data_length) {fputs (\"Reading error\",stderr); exit (3);}
   }"
 
 let end_parser_object oc = IO.nwrite oc "};\n"
