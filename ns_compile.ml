@@ -35,6 +35,7 @@ let rec print_pexp v oc = function
 let declare_uint oc v = fprintf oc "  unsigned int %s;\n" v
 
 let declare_vars oc var_count =
+  declare_uint oc "matches";
   fprintf oc "struct state {\npublic:\n";
   for i = 0 to var_count - 1 do
     declare_uint oc ("v" ^ string_of_int i);
@@ -53,8 +54,18 @@ let declare_vars oc var_count =
   fprintf oc "  void (state::*q)();\n"
 
 
-let print_builtins oc =
-  fprintf oc "  int pos() { return fdpos; }\n"
+let print_builtins say =
+  say "  int pos() { return fdpos; }";
+  say "  int skip(int i) { fdpos += i; return fdpos; }";
+  say "  int skip_to(int i) { fdpos = i; return i; }";
+  say "  int notify(int i) { matches++; return 0; }";
+  say "  int cur_byte() { return 30; } //FIXME";
+  say "  int cur_double_byte() { return 20; } //FIXME";
+  say "  int getnum() { return 10; } //FIXME";
+  say "  int gethex() { return 0x0f; } //FIXME";
+  say "  int token(int start_pos) { matches++; return 0; }";
+  say "  int bounds(int start_pos, int end_pos) { matches++; return 0; }";
+  ()
     (*TODO MORE BUILTINS *)
 
 let print_act oc (var, act) =
@@ -175,7 +186,8 @@ let print_includes say =
 
 let gen_header oc var_count =
   declare_vars oc var_count;
-  print_builtins oc
+  print_builtins (fun x -> IO.nwrite oc x; IO.write oc '\n')
+
 
 let print_read_file say =
   say "  void read_file(char* filename) {
