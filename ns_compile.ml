@@ -94,21 +94,28 @@ let print_dfa_table oc dfa id =
     print_vect print_tr;
   fprintf oc "char dfa_pri%d[%d] = %a;\n" id num_states print_vect print_pri
 
-
 let print_dfa oc dfa id =
   let say x = fprintf oc (x ^^ "\n") in
   say "void DFA%d() {" id;
   say "  while (fdpos < flow_data_length) {";
   say "    dfa_q = dfa_tr%d[(dfa_q << 8) | flow_data[fdpos++]];" id;
-  say "    if (dfa_q == (%s)(-1)) return;" (dfa_type dfa);
+  say "    if (dfa_q == (%s)(-1)) {q = NULL; return;}" (dfa_type dfa);
   say "    dfa_pri = dfa_pri%d[dfa_q];" id;
   say "    if (dfa_pri < dfa_best_pri) break;";
   say "    if (dfa_pri > dfa_best_pri) { dfa_best_pri = dfa_pri; dfa_best_pos = fdpos; dfa_best_q = dfa_q; }";
-  say "  } // no more parsing of flow - maybe run actions, maybe wait for more data\n";
-  say "  if (fdpos < flow_data_length) { \n";
-  say "//    dfa_act%d[dfa_best_q](); // run actions for this decision" id;
+  say "  } // no more parsing of flow - maybe run actions, maybe wait for more data";
+  say "  if (fdpos < flow_data_length) {";
+  say "    switch(dfa_best_q) {";
+  Array.iteri (fun i q ->
+               let acts, qnext = q.dec in
+               if qnext != -1 then
+                 say "    case %d: %aq=&state::CA%d; break;" i print_acts acts qnext) dfa.qs;
+
+  say "    default: printf(\"No qnext!\"); // Nothing";
+  say "    }";
   say "    fdpos = dfa_best_pos;";
-  say "} else q = NULL; }\n"
+  say "  } //done parsing this packet, wait for more data";
+  say "}\n"
 
 let dfa_ht : (dfa, int) Hashtbl.t = Hashtbl.create 20
 
@@ -162,7 +169,8 @@ let print_includes say =
   say "#include <assert.h>";
   say "#include <stdio.h>";
   say "#include <fcntl.h>";
-  say "#include <string.h> // general string handling"
+  say "#include <string.h> // general string handling";
+  say "#define CALL_MEMBER_FN(object,ptrToMember)  ((object).*(ptrToMember))"
 
 
 let gen_header oc var_count =
@@ -190,7 +198,6 @@ let print_read_file say =
 let end_parser_object oc = IO.nwrite oc "};\n"
 
 let print_main say =
-  say "#define CALL_MEMBER_FN(object,ptrToMember)  ((object).*(ptrToMember))";
   say "int main(int argc, char* argv[]) {";
   say "  if (argc != 2) { printf (\"fs [trace_file]\\n\"); exit(1); }";
   say "  state st;";
@@ -202,7 +209,8 @@ let print_main say =
   say ""
 
 
-let main p e =
+let main p e outfile =
+  printf "Compiling %s and %s to %s\n" p e outfile;
   let proto = Ns_parse.parse_file_as_spec p
   and extr = Ns_parse.parse_file_as_extraction e in
   let ca, var_count =
@@ -216,7 +224,7 @@ let main p e =
   in
 (*  let oc = File.open_out (e ^ ".c") in *)
   let buf = IO.output_string () in
-  let oc = File.open_out "fs.c" in
+  let oc = File.open_out outfile in
   let say x = IO.nwrite oc x; IO.write oc '\n' in
   Array.iteri (ca_trans buf) ca;
   print_includes say;
@@ -230,7 +238,7 @@ let main p e =
 
 
 
-let () = main "http.pro" "extr.ca"
+let () = main "http.pro" "extr.ca" "fs.c"
 
 (*
 int CA (state st) {
