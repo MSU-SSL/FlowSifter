@@ -36,13 +36,14 @@ let declare_uint oc v = fprintf oc "  unsigned int %s;\n" v
 
 let declare_vars oc var_count =
   declare_uint oc "matches";
+  declare_uint oc "flows";
   fprintf oc "struct state {\npublic:\n";
   for i = 0 to var_count - 1 do
     declare_uint oc ("v" ^ string_of_int i);
   done;
   declare_uint oc "base_pos";
   declare_uint oc "fdpos";
-  fprintf oc "  unsigned char* flow_data;\n";
+  fprintf oc "  const unsigned char* flow_data;\n";
   fprintf oc "  size_t flow_data_length;\n";
   declare_uint oc "fail_drop";
   declare_uint oc "rerun_temp";
@@ -51,15 +52,15 @@ let declare_vars oc var_count =
   declare_uint oc "dfa_best_pos";
   declare_uint oc "dfa_pri";
   declare_uint oc "dfa_q";
-  fprintf oc "  void (state::*q)();\n"
-
+  fprintf oc "  void (state::*q)();\n";
+  fprintf oc "  state() : base_pos(0), fdpos(0), flow_data(NULL), flow_data_length(0), fail_drop(0), rerun_temp(0), dfa_best_pri(0), dfa_best_q(0), dfa_best_pos(0), dfa_pri(0), dfa_q(0), q(&state::CA0) {flows++;}\n"
 
 let print_builtins say =
   say "  int pos() { return fdpos; }";
   say "  int skip(int i) { fdpos += i; return fdpos; }";
   say "  int skip_to(int i) { fdpos = i; return i; }";
   say "  int notify(int i) { matches++; return 0; }";
-  say "  int cur_byte() { return 30; } //FIXME";
+  say "  int cur_byte() { return flow_data[fdpos]; } //FIXME";
   say "  int cur_double_byte() { return 20; } //FIXME";
   say "  int getnum() { return 10; } //FIXME";
   say "  int gethex() { return 0x0f; } //FIXME";
@@ -87,13 +88,17 @@ let dec_ops = {dec0 = ([],-1); merge = merge_dec; cmp = compare}
 type dfa =
     (unit, int array, (int * Ns_types.ParsedPCFG.a_exp) list * int) fa
 
-let dfa_type _dfa =
-  if Array.length _dfa.qs < 256 then "unsigned char"
-  else if Array.length _dfa.qs < 1 lsl 16 then "unsigned short"
+let dfa_type dfa =
+  if Array.length dfa.qs < 256 then "unsigned char"
+  else if Array.length dfa.qs < 1 lsl 16 then "unsigned short"
   else "unsigned int"
 
+let dfa_type_max dfa = match Array.length dfa.qs with x when x < 255 -> "0xff" | x when x < 1 lsl 16 - 1 -> "0xffff" | _ -> "0xffffffff"
+
 let print_dfa_table oc dfa id =
-  let print_tr oc q = Array.print ~first:"" ~last:"\n" ~sep:"," Int.print oc q.map in
+  let qmax = dfa_type_max dfa in
+  let safe_print oc x = if x = ~-1 then String.print oc qmax else Int.print oc x in
+  let print_tr oc q = Array.print ~first:"" ~last:"\n" ~sep:"," safe_print oc q.map in
   let print_pri oc q = Int.print oc q.pri in
   let print_vect oc printer = (* prints something for each dfa state *)
     (* IO.nwrite oc "{}" *)
@@ -109,8 +114,9 @@ let print_dfa oc dfa id =
   let say x = fprintf oc (x ^^ "\n") in
   say "void DFA%d() {" id;
   say "  while (fdpos < flow_data_length) {";
+  say "    printf(\"D%d.%%03d@%%2x \", dfa_q, flow_data[fdpos]);" id;
   say "    dfa_q = dfa_tr%d[(dfa_q << 8) | flow_data[fdpos++]];" id;
-  say "    if (dfa_q == (%s)(-1)) {q = NULL; return;}" (dfa_type dfa);
+  say "    if (dfa_q == %s) {dfa_q = %d; return;}" (dfa_type_max dfa) dfa.q0.id;
   say "    dfa_pri = dfa_pri%d[dfa_q];" id;
   say "    if (dfa_pri < dfa_best_pri) break;";
   say "    if (dfa_pri > dfa_best_pri) { dfa_best_pri = dfa_pri; dfa_best_pos = fdpos; dfa_best_q = dfa_q; }";
@@ -174,14 +180,24 @@ let ca_trans oc idx rules =
   fprintf oc "  }\n" (* end function *)
 
 let print_includes say =
-  say "#include <stdlib.h>";
-  say "#include <stdbool.h>";
-  say "#include <inttypes.h>";
-  say "#include <assert.h>";
-  say "#include <stdio.h>";
-  say "#include <fcntl.h>";
-  say "#include <string.h> // general string handling";
-  say "#define CALL_MEMBER_FN(object,ptrToMember)  ((object).*(ptrToMember))"
+  say "
+#include <stdlib.h>
+#include <stdbool.h>
+#include <inttypes.h>
+#include <assert.h>
+#include <stdio.h>
+#include <fcntl.h>
+#include <string.h> // general string handling
+#include <sys/time.h> // for gettimeofday
+#include <pcap/pcap.h>
+#include <utility>
+#include <unordered_map>
+#include <netinet/if_ether.h>
+#include <netinet/tcp.h>
+#include <netinet/ip.h>
+#define CALL_MEMBER_FN(object,ptrToMember)  ((object).*(ptrToMember))
+using namespace std;
+"
 
 
 let gen_header oc var_count =
@@ -199,27 +215,123 @@ let print_read_file say =
     rewind (fd);
 
     // allocate memory to contain the whole file:
-    flow_data = (unsigned char *) malloc (sizeof(char)*flow_data_length);
+    unsigned char* data = (unsigned char *) malloc (sizeof(char)*flow_data_length);
     if (flow_data == NULL) {fputs (\"Memory error\",stderr); exit (2);}
 
     // copy the file into the buffer:
-    size_t result = fread (flow_data,1,flow_data_length,fd);
+    size_t result = fread (data,1,flow_data_length,fd);
     if (result != flow_data_length) {fputs (\"Reading error\",stderr); exit (3);}
-  }"
+    flow_data = data;
+  }
+"
 
 let end_parser_object oc = IO.nwrite oc "};\n"
 
+(* Single-flow main *)
 let print_main say =
   say "int main(int argc, char* argv[]) {";
   say "  if (argc != 2) { printf (\"fs [trace_file]\\n\"); exit(1); }";
   say "  state st;";
   say "  st.read_file(argv[1]);";
-  say "  st.q = &state::CA0;";
-  say "  while (st.q != NULL) CALL_MEMBER_FN(st, st.q)();";
+  say "  struct timeval t0,tf;";
+  say "  gettimeofday(&t0, NULL);";
+  say "  while (st.q != NULL && st.fdpos < st.flow_data_length) CALL_MEMBER_FN(st, st.q)();";
+  say "  gettimeofday(&tf, NULL);";
+  say "  double t0s = t0.tv_sec+(t0.tv_usec/1000000.0);";
+  say "  double tfs = tf.tv_sec+(tf.tv_usec/1000000.0);";
+  say "  double time_used = tfs - t0s;";
+  say "  double gbps = ((double) st.flow_data_length) * 8 / time_used / 1000000000;";
+  say "  printf(\"\\nMatches: %d Bytes: %lu Time: %.3fs Rate: %.2f\\n\", matches, st.flow_data_length, time_used, gbps);";
   say "  return 0;";
   say "}";
   say ""
 
+(* multi-flow-enabled main *)
+let print_pcap_main say =
+  say "
+struct four_tuple {
+  uint32_t src; uint32_t dest;
+  uint16_t src_p; uint16_t dest_p;
+  four_tuple(ip* iph, tcphdr* tcph) : src(iph->ip_src.s_addr), dest(iph->ip_dst.s_addr), src_p(tcph->source), dest_p(tcph->dest) {}
+  four_tuple() : src(0), dest(0), src_p(0), dest_p(0) {}
+  bool operator==(const four_tuple& ft) const { return src==ft.src && dest == ft.dest && src_p == ft.src_p && dest_p == ft.dest_p; }
+};
+
+template <class T>
+inline void hash_combine(std::size_t & seed, const T & v)
+{
+  std::hash<T> hasher;
+  seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
+
+
+namespace std {
+  template <> struct hash<four_tuple> {
+    inline size_t operator()(const four_tuple& ft) const {
+      size_t seed=0;
+      hash_combine(seed, ft.src);
+      hash_combine(seed, ft.dest);
+      hash_combine(seed, ft.src_p);
+      hash_combine(seed, ft.dest_p);
+      return seed;
+    }
+  };
+}
+
+pcap_t* pcap;
+size_t bytes_processed = 0;
+unordered_map<four_tuple, state> flow_table;
+four_tuple null_ft = four_tuple();
+void handler(u_char*, const struct pcap_pkthdr* h, const u_char* bytes) {
+  bool end_of_flow;
+  const u_char* bytes0 = bytes;
+  struct ether_header *eptr = (struct ether_header *) bytes;
+  bytes += sizeof(ether_header);
+  auto et = ntohs(eptr->ether_type);
+//  printf(\"%u, %u\", et, ETHERTYPE_IP);
+  if (et != ETHERTYPE_IP) return;
+  struct ip* iph = (struct ip*) bytes;
+  bytes += iph->ip_hl * 4;
+  uint8_t ipt = iph->ip_p;
+//  printf(\"%u,%u\", ipt, IPPROTO_TCP);
+  if (ipt != IPPROTO_TCP) return;
+  struct tcphdr* tcp_header = (struct tcphdr*) bytes;
+  bytes += tcp_header->doff * 4;
+  end_of_flow = tcp_header->fin == 1;
+  four_tuple ft = four_tuple(iph, tcp_header);
+  if (ft == null_ft) return; // do nothing if it's not a tcp packet
+  state& st = flow_table[ft];
+  //parse the current packet
+  st.flow_data_length = h->caplen - (bytes - bytes0);
+  st.fdpos = 0;
+  st.flow_data = bytes;
+  printf(\"\\n%lu %.30s\\n\", st.flow_data_length, bytes);
+  while (st.q != NULL && st.fdpos < st.flow_data_length)
+    CALL_MEMBER_FN(st, st.q)();
+
+  bytes_processed += st.flow_data_length;
+  if (end_of_flow) flow_table.erase(ft);
+  if (flows > 2) pcap_breakloop(pcap);
+}
+
+char errbuf[PCAP_ERRBUF_SIZE];
+
+int main(int argc, char* argv[]) {
+  if (argc != 2) { printf (\"fs [trace file]\\n\"); exit(1); }
+  pcap = pcap_open_offline(argv[1], errbuf);
+  if (pcap == NULL) { printf (\"Error opening file\\n\"); exit(2); }
+  struct timeval t0,tf;
+  gettimeofday(&t0, NULL);
+  int err = pcap_loop(pcap, -1, handler, NULL);
+  gettimeofday(&tf, NULL);
+  double t0s = t0.tv_sec+(t0.tv_usec/1000000.0);
+  double tfs = tf.tv_sec+(tf.tv_usec/1000000.0);
+  double time_used = tfs - t0s;
+  double gbps = ((double) bytes_processed) * 8 / time_used / 1000000000;
+  printf(\"\\nFlows: %d Matches: %d Bytes: %lu Time: %.3fs Rate: %.2f\\n\", flows, matches, bytes_processed, time_used, gbps);
+  return 0;
+}
+"
 
 let main p e outfile =
   printf "Compiling %s and %s to %s\n" p e outfile;
@@ -246,7 +358,7 @@ let main p e outfile =
   IO.nwrite oc (IO.close_out buf);
   print_read_file say;
   end_parser_object oc;
-  print_main say
+  print_pcap_main say
 
 
 

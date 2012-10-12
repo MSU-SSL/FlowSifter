@@ -219,3 +219,18 @@ diff-test: all
 	./bench-upac -f -d ~/traces/http/use/98w3-wednesday.pcap >> log; tail -n 1 log;\
 	./bench-bpac -f -d ~/traces/http/use/99w2-tuesday.inside* >> log; tail -n 1 log;\
 	./bench-upac -f -d ~/traces/http/use/99w2-tuesday.inside* >> log; tail -n 1 log
+
+%.native: *.ml
+	ocamlbuild -use-ocamlfind $@
+
+fs.c: ns_compile.native
+	./ns_compile.native
+
+fs: fs.c
+	g++ -std=c++0x $< -o $@ -g -lpcap
+
+fs.p: fs.c
+	g++ -std=c++0x $< -o $@ -lpcap -pg
+
+fs-test: fs
+	./fs ~/traces/http/use/98w2-monday.pcap
