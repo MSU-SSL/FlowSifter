@@ -80,6 +80,16 @@ let rec printp ?(dec=true) oc = function
   | Value a -> Pcregex.print_iset oc a
   | Accept (x,p) -> fprintf oc "{{%d:%s}}" p (if dec then dump x else "x")
 
+let rec printdp decp oc = function
+  | Union s when Set.mem epsilon s -> printdp decp oc (Union (Set.remove epsilon s)); IO.write oc '?'
+  | Union s -> Set.print ~first:"(" ~sep:"|" ~last:")" (printdp decp) oc s
+  | Concat ([], _) -> ()
+  | Concat (h::t,_) -> printdp decp oc h; printdp decp oc (Concat (t,true))
+  | Kleene (Concat (regl,_)) -> List.print ~first:"(" ~sep:"" ~last:")" (printdp decp) oc regl;  IO.write oc '*'
+  | Kleene reg -> printdp decp oc reg; IO.write oc '*'
+  | Value a -> Pcregex.print_iset oc a
+  | Accept (x,p) -> fprintf oc "{{%d:%a}}" p decp x
+
 
 let print_inner_norm_regex oc rmap =
    IO.write oc '(';
