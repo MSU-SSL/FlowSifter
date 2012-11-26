@@ -7,6 +7,8 @@ open ParsedPCFG
 (** Routines to output a C++ program that flowsifter-parses a pcap file *)
 (************************************************************************)
 
+let debug = true
+
 (* print an arithmetic expression to an output channel oc *)
 let rec print_aexp v oc = function
   | Plus (a,b) -> bool_exp v oc '+' a b
@@ -37,14 +39,15 @@ let declare_uint oc v = fprintf oc "  unsigned int %s;\n" v
 let declare_vars oc var_count =
   declare_uint oc "matches";
   declare_uint oc "flows";
+  fprintf oc "#define PRI_DEF(dfa) dfa_pri##dfa[0]\n";
   fprintf oc "struct state {\npublic:\n";
   for i = 0 to var_count - 1 do
     declare_uint oc ("v" ^ string_of_int i);
   done;
-  declare_uint oc "base_pos";
-  declare_uint oc "fdpos";
+  declare_uint oc "base_pos"; (* offset within flow of current flow_data start *)
+  declare_uint oc "fdpos"; (* position within current flow data *)
   fprintf oc "  const unsigned char* flow_data;\n";
-  fprintf oc "  size_t flow_data_length;\n";
+  fprintf oc "  size_t flow_data_length;\n"; (* length of flow data *)
   declare_uint oc "fail_drop";
   declare_uint oc "rerun_temp";
   declare_uint oc "dfa_best_pri";
@@ -53,40 +56,50 @@ let declare_vars oc var_count =
   declare_uint oc "dfa_pri";
   declare_uint oc "dfa_q";
   fprintf oc "  void (state::*q)();\n";
-  fprintf oc "  state() : base_pos(0), fdpos(0), flow_data(NULL), flow_data_length(0), fail_drop(0), rerun_temp(0), dfa_best_pri(0), dfa_best_q(0), dfa_best_pos(0), dfa_pri(0), dfa_q(0), q(&state::CA0) {flows++;}\n"
+  fprintf oc "  state() : base_pos(0), fdpos(0), flow_data(NULL), flow_data_length(0), fail_drop(0), rerun_temp(0), dfa_best_pri(PRI_DEF(0)), dfa_best_q(0), dfa_best_pos(0), dfa_pri(PRI_DEF(0)), dfa_q(0), q(&state::CA0) {flows++;}\n"
 
 let print_builtins say =
   say "  int pos() { return fdpos; }";
   say "  int skip(int i) { fdpos += i; return fdpos; }";
   say "  int skip_to(int i) { fdpos = i; return i; }";
   say "  int notify(int i) { matches++; return 0; }";
-  say "  int cur_byte() { return flow_data[fdpos]; } //FIXME";
+  say "  int cur_byte() { return flow_data[fdpos]; }";
   say "  int cur_double_byte() { return 20; } //FIXME";
   say "  int getnum() { return 10; } //FIXME";
   say "  int gethex() { return 0x0f; } //FIXME";
-  say "  int token(int start_pos) { matches++; return 0; }";
+  say "  int token(int start_pos) { matches++; printf(\"T:%d-%d: %.*s  \", start_pos, fdpos, fdpos-start_pos, flow_data + start_pos - 1); return 0; }";
   say "  int bounds(int start_pos, int end_pos) { matches++; return 0; }";
   ()
     (*TODO MORE BUILTINS *)
 
-let print_act oc (var, act) =
+let print_act_raw oc (var, act) =
   fprintf oc "v%d = %a; " var (print_aexp var) act
+
+let print_act oc (var, act) =
+  print_act_raw oc (var, act);
+  if debug then fprintf oc "printf(\"v%d=%a=%%d \", v%d); " var (print_aexp var) act var
 
 let print_acts oc acts =
   List.print print_act ~first:"" ~last:"" ~sep:"" oc acts
 
 let print_pred oc idx preds =
-  let print_expr oc ps = List.print (fun oc (v,pe) -> print_pexp v oc pe) ~first:"(" ~last:")" ~sep:" && " oc ps in
-  fprintf oc "    bool p%d = %a;\n" idx print_expr preds;
-  sprintf "p%d" idx
+  if preds = [] then "1" else
+    let print_expr oc ps = List.print (fun oc (v,pe) -> print_pexp v oc pe) ~first:"(" ~last:")" ~sep:" && " oc ps in
+    fprintf oc "    bool p%d = %a;\n" idx print_expr preds;
+    sprintf "p%d" idx
 
 open Regex_dfa
 
 let merge_dec (_act1,nt1 as a) (_act2, nt2 as b) = if nt1 > nt2 then a else b
 let dec_ops = {dec0 = ([],-1); merge = merge_dec; cmp = compare}
 
-type dfa =
-    (unit, int array, (int * Ns_types.ParsedPCFG.a_exp) list * int) fa
+type dec = (int * Ns_types.ParsedPCFG.a_exp) list * int
+type dfa = (unit, int array, dec) fa
+type regex = dec Minreg.t
+let print_dec oc (al,qn) =
+  List.print ~first:"" ~sep:" " ~last:"" print_act_raw oc al;
+  fprintf oc "Q%d" qn
+let print_regex oc rx = Minreg.printdp print_dec oc rx
 
 let dfa_type dfa =
   if Array.length dfa.qs < 256 then "unsigned char"
@@ -95,71 +108,94 @@ let dfa_type dfa =
 
 let dfa_type_max dfa = match Array.length dfa.qs with x when x < 255 -> "0xff" | x when x < 1 lsl 16 - 1 -> "0xffff" | _ -> "0xffffffff"
 
-let print_dfa_table oc dfa id =
+let print_dfa_table oc dfa ((regex: regex), id) =
   let qmax = dfa_type_max dfa in
   let safe_print oc x = if x = ~-1 then String.print oc qmax else Int.print oc x in
-  let print_tr oc q = Array.print ~first:"" ~last:"\n" ~sep:"," safe_print oc q.map in
+  let print_tr oc q i qn =
+    safe_print oc qn;
+    if i != Array.length q.map - 1 then IO.write oc ',';
+    if i mod 16 = 15 then IO.write oc '\n'
+  in
+  let print_trs oc q = Array.iteri (print_tr oc q) q.map; IO.write oc '\n' in
   let print_pri oc q = Int.print oc q.pri in
   let print_vect oc printer = (* prints something for each dfa state *)
     (* IO.nwrite oc "{}" *)
-    Array.print ~first:"{" ~last:"}" ~sep:"," printer oc dfa.qs
+    Array.print ~first:"{\n" ~last:"}" ~sep:"," printer oc dfa.qs
   in
 
   let num_states = Array.length dfa.qs in
+  fprintf oc "// Regex: %a\n" print_regex regex;
   fprintf oc "%s dfa_tr%d[%d] = %a;\n" (dfa_type dfa) id (num_states * 256)
-    print_vect print_tr;
+    print_vect print_trs;
   fprintf oc "char dfa_pri%d[%d] = %a;\n" id num_states print_vect print_pri
 
-let print_dfa oc dfa id =
+let print_caref oc q = if q = -1 then fprintf oc "&state::CA0" else fprintf oc "&state::CA%d" q
+let print_dfa oc dfa (regex,id) =
   let say x = fprintf oc (x ^^ "\n") in
   say "void DFA%d() {" id;
+  if debug then say "  printf(\"D%d \");" id;
+  if debug then say "  printf(\"RX: %a \\n\");" print_regex regex;
   say "  while (fdpos < flow_data_length) {";
-  say "    printf(\"D%d.%%03d@%%2x \", dfa_q, flow_data[fdpos]);" id;
+  if debug then
+    say "    printf(\"q%%03dp%%1d@%%02d(%%2s) \", dfa_q, dfa_pri, fdpos, nice(flow_data[fdpos]));";
   say "    dfa_q = dfa_tr%d[(dfa_q << 8) | flow_data[fdpos++]];" id;
-  say "    if (dfa_q == %s) {dfa_q = %d; return;}" (dfa_type_max dfa) dfa.q0.id;
+  say "    if (dfa_q == %s) {break;}" (dfa_type_max dfa);
   say "    dfa_pri = dfa_pri%d[dfa_q];" id;
-  say "    if (dfa_pri < dfa_best_pri) break;";
-  say "    if (dfa_pri > dfa_best_pri) { dfa_best_pri = dfa_pri; dfa_best_pos = fdpos; dfa_best_q = dfa_q; }";
+  say "    if (dfa_pri < dfa_best_pri) { printf(\"pri_quit \"); break; }";
+  say "    if (dfa_pri >= dfa_best_pri) {  // higher value is higher priority";
+  if debug then say "      printf(\"pp:%%d@%%d \", dfa_pri, fdpos);";
+  say "      dfa_best_pri = dfa_pri; dfa_best_pos = fdpos; dfa_best_q = dfa_q;";
+  say "    }";
   say "  } // no more parsing of flow - maybe run actions, maybe wait for more data";
-  say "  if (fdpos < flow_data_length) {";
+  if debug then
+    say "  printf(\"q%%03d@%%02d \", dfa_q, fdpos);";
+  say "  if (fdpos < flow_data_length || dfa_q == %s) {" (dfa_type_max dfa);
+  say "    printf(\"DBQ:%%d \", dfa_best_q);";
   say "    switch(dfa_best_q) {";
   Array.iteri (fun i q ->
                let acts, qnext = q.dec in
-               if qnext != -1 then
-                 say "    case %d: %aq=&state::CA%d; break;" i print_acts acts qnext) dfa.qs;
-
-  say "    default: printf(\"No qnext!\"); // Nothing";
+(*               if qnext != -1 then*)
+                 say "    case %d: %aq=%a; break;" i print_acts acts print_caref qnext)
+    dfa.qs;
+(*  say "    default: %s; dfa_best_pos=fdpos; q=&state::CA0; // Nothing"
+    (if debug then "printf(\"No act; RESET \")" else "0"); *)
   say "    }";
-  say "    fdpos = dfa_best_pos;";
-  say "  } //done parsing this packet, wait for more data";
+  say "    dfa_best_q = 0; dfa_pri = PRI_DEF(%d); fdpos = dfa_best_pos;" id;
+  say "    if (fdpos < 0) { printf(\"NEED LAST PACKET\\n\"); }";
+  say "  } else { printf(\"input break \"); }";
+  if debug then say "  printf (\"X@%%02dp%%1d\\n\", fdpos, dfa_pri);";
   say "}\n"
 
-let dfa_ht : (dfa, int) Hashtbl.t = Hashtbl.create 20
+let dfa_ht : (dfa, regex * int) Hashtbl.t = Hashtbl.create 20
 
-let dfaid dfa =
-  try Hashtbl.find dfa_ht dfa
+let dfaid regex dfa =
+  try Hashtbl.find dfa_ht dfa |> snd
   with Not_found ->
-    (Hashtbl.length dfa_ht) |> tap (Hashtbl.add dfa_ht dfa)
-
+    let id = Hashtbl.length dfa_ht in
+    Hashtbl.add dfa_ht dfa (regex, id);
+    id
 
 (* print code to evaluate *)
 let rules_eval oc = function
   | [{rx=None; act; nt; prio=_}] ->
     let qnext = Option.default (-1) nt in
-    fprintf oc " q = &state::CA%d; %a" qnext print_acts act;
+    fprintf oc " q = %a; %a" print_caref qnext print_acts act;
   | rules ->
-    let dfa = List.enum rules
+    let regex = List.enum rules
       |> Enum.map Ns_run.make_rx_pair
       |> Pcregex.rx_of_dec_strings ~anchor:true
-      |> Minreg.of_reg
+      |> Minreg.of_reg in
+    let dfa = regex
       |> Nfa.build_dfa ~labels:false dec_ops
       |> Regex_dfa.minimize
       |> Regex_dfa.to_array in
-    fprintf oc " dfa_q = %d; dfa_best_pri = 0; q = &state::DFA%d;" dfa.q0.id (dfaid dfa)
+    let dfa_id = dfaid regex dfa in
+    fprintf oc " dfa_q = %d; dfa_best_pri=PRI_DEF(%d); dfa_best_q=%d; q = &state::DFA%d; /* %a */ " dfa.q0.id dfa_id dfa.q0.id dfa_id print_regex regex
 
 (* print a function for a CA nonterminal *)
 let ca_trans oc idx rules =
-  fprintf oc "  void CA%d() {" idx;
+  fprintf oc "  void CA%d() {\n" idx;
+  if debug then fprintf oc "    printf(\"CA%d\");\n" idx;
   if List.for_all (fun (p,_) -> List.length p = 0) rules then
     (* no predicates; go directly to CA state w/ actions or DFA*)
     List.map snd rules |> rules_eval oc
@@ -167,8 +203,9 @@ let ca_trans oc idx rules =
     let vars = List.mapi (fun i (p,_) -> print_pred oc i p) rules in
     (* GENERATE IDX *)
     fprintf oc "    int idx = 0";
-    List.iteri (fun i pi -> fprintf oc " + (%s << %d)" pi i) (List.rev vars);
+    List.iteri (fun i pi -> fprintf oc " | (%s << %d)" pi i) (List.rev vars);
     fprintf oc ";\n";
+    if debug then fprintf oc "    printf(\" P%%x \", idx);\n";
     fprintf oc "    switch (idx) {\n";
     for i = 0 to (1 lsl (List.length rules)) - 1 do
       fprintf oc "    case %d:" i;
@@ -190,6 +227,7 @@ let print_includes say =
 #include <string.h> // general string handling
 #include <sys/time.h> // for gettimeofday
 #include <pcap/pcap.h>
+#include <limits.h>
 #include <utility>
 #include <unordered_map>
 #include <netinet/if_ether.h>
@@ -197,6 +235,8 @@ let print_includes say =
 #include <netinet/ip.h>
 #define CALL_MEMBER_FN(object,ptrToMember)  ((object).*(ptrToMember))
 using namespace std;
+char charbuf[2];
+char* nice(unsigned char c) { if (c >= 0x20 && c <= 0x7e) sprintf(charbuf, \" %c\", c); else sprintf(charbuf, \"%02x\", c); return charbuf;}
 "
 
 
@@ -208,15 +248,15 @@ let gen_header oc var_count =
 let print_read_file say =
   say "  void read_file(char* filename) {
     FILE* fd = fopen(filename, \"r\");
-
-    printf(\"Subject: %s\\n\", basename(filename));
-    fseek (fd , 0 , SEEK_END);
+";
+  if debug then say "    printf(\"Subject: %s\\n\", basename(filename));";
+  say "    fseek (fd , 0 , SEEK_END);
     flow_data_length = ftell (fd);
     rewind (fd);
 
     // allocate memory to contain the whole file:
     unsigned char* data = (unsigned char *) malloc (sizeof(char)*flow_data_length);
-    if (flow_data == NULL) {fputs (\"Memory error\",stderr); exit (2);}
+    if (data == NULL) {fputs (\"Memory error\",stderr); exit (2);}
 
     // copy the file into the buffer:
     size_t result = fread (data,1,flow_data_length,fd);
@@ -300,18 +340,30 @@ void handler(u_char*, const struct pcap_pkthdr* h, const u_char* bytes) {
   end_of_flow = tcp_header->fin == 1;
   four_tuple ft = four_tuple(iph, tcp_header);
   if (ft == null_ft) return; // do nothing if it's not a tcp packet
-  state& st = flow_table[ft];
+  state& st = flow_table[ft]; // generates a new fa state if one doesn't exist
   //parse the current packet
-  st.flow_data_length = h->caplen - (bytes - bytes0);
-  st.fdpos = 0;
+//  st.fdpos = 0;
   st.flow_data = bytes;
-  printf(\"\\n%lu %.30s\\n\", st.flow_data_length, bytes);
+  st.flow_data_length = h->caplen - (bytes - bytes0);";
+  if debug then
+    say "  printf(\"\\nPKT(%luB):%.30s\\n\", st.flow_data_length, bytes);";
+  say "
   while (st.q != NULL && st.fdpos < st.flow_data_length)
     CALL_MEMBER_FN(st, st.q)();
 
-  bytes_processed += st.flow_data_length;
-  if (end_of_flow) flow_table.erase(ft);
+  if (st.fdpos < st.flow_data_length) {
+    bytes_processed += st.fdpos;
+  } else {
+    st.base_pos += st.flow_data_length;
+    st.fdpos -= st.flow_data_length;
+    st.dfa_best_pos -= st.flow_data_length;
+    if (st.dfa_best_pos < 0) { printf(\"MAYBE NEED LAST PACKET\\n\"); }
+    bytes_processed += st.flow_data_length;
+  }
+
+  if (end_of_flow || st.q == NULL) flow_table.erase(ft);
   if (flows > 2) pcap_breakloop(pcap);
+  printf(\"Flows: %d Matches: %d Bytes: %lu \\n\", flows, matches, bytes_processed);
 }
 
 char errbuf[PCAP_ERRBUF_SIZE];
@@ -320,6 +372,7 @@ int main(int argc, char* argv[]) {
   if (argc != 2) { printf (\"fs [trace file]\\n\"); exit(1); }
   pcap = pcap_open_offline(argv[1], errbuf);
   if (pcap == NULL) { printf (\"Error opening file\\n\"); exit(2); }
+  matches=0;
   struct timeval t0,tf;
   gettimeofday(&t0, NULL);
   int err = pcap_loop(pcap, -1, handler, NULL);
@@ -340,9 +393,10 @@ let main p e outfile =
   let ca, var_count =
     Ns_parse.merge_cas ~proto ~extr
     |> Ns_parse.regularize
+    |> tap (Printf.printf "Grammar:\n%a\n" Ns_parse.print_reg_ca)
     |> Ns_parse.destring extr.start in
   let ca = Ns_parse.dechain ca
-(*    |>tap (Printf.printf "Grammar:\n%a\n" Ns_parse.print_reg_ds_ca)*)
+    |> tap (Printf.printf "Grammar:\n%a\n" Ns_parse.print_reg_ds_ca)
     |> Ns_parse.flatten_priorities
 (*    |> Ns_run.optimize_preds *)
   in
@@ -350,19 +404,30 @@ let main p e outfile =
   let buf = IO.output_string () in
   let oc = File.open_out outfile in
   let say x = IO.nwrite oc x; IO.write oc '\n' in
+  (* buffer the CA transitions *)
   Array.iteri (ca_trans buf) ca;
+  (* print the C includes *)
   print_includes say;
-  Hashtbl.iter (print_dfa_table oc) dfa_ht; (* print the DFA data tables *)
+  (* print the DFA data tables *)
+  Hashtbl.iter (print_dfa_table oc) dfa_ht;
+  (* print the CA struct header *)
   gen_header oc var_count;
-  Hashtbl.iter (print_dfa oc) dfa_ht; (* print the dfa handling functions *)
+  (* print the dfa handling functions *)
+  Hashtbl.iter (print_dfa oc) dfa_ht;
+  (* write the CA transition functions that were buffered *)
   IO.nwrite oc (IO.close_out buf);
+  (* print the function to read a file *)
   print_read_file say;
+  (* close the CA struct *)
   end_parser_object oc;
-  print_pcap_main say
+  (* print the main function *)
+(*  print_pcap_main say *)
+  print_main say (* NON_PCAP INPUT *)
 
 
 
-let () = main "http.pro" "extr.ca" "fs.c"
+let () = main "ab.pro" "ab.ext" "fs.c"
+(* let () = main "http.pro" "extr.ca" "fs.c" *)
 
 (*
 int CA (state st) {
