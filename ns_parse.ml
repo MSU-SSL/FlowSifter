@@ -72,14 +72,16 @@ let print_ipred oc (i,e) = print_p_exp ("$" ^ string_of_int i) oc e
 
 let print_opt_rule oc iirr =
   Printf.fprintf oc "%s %a #%d"
-(*    (List.print ~first:"" ~last:"" ~sep:"." Int.print) iirr.prio *)
     (Option.default "" iirr.rx)
     (List.print ~first:"[" ~last:"]" ~sep:"; " print_iaction) iirr.act
     (Option.default (-1) iirr.nt)
 
+
+let print_prio = List.print ~first:"" ~last:"" ~sep:"." Int.print
+
 let print_rule i oc = function
-  | [],r -> fprintf oc "#%2d -> %a\n" i print_opt_rule r
-  | p,r -> fprintf oc "#%2d %a -> %a\n" i (List.print print_ipred) p print_opt_rule r
+  | [],r -> fprintf oc "#%2d %a-> %a\n" i print_prio r.prio print_opt_rule r
+  | p,r -> fprintf oc "#%2d %a %a-> %a\n" i (List.print print_ipred) p print_prio r.prio print_opt_rule r
 let print_rules i oc lst =
   let lst = List.sort (fun (_,a) (_,b) -> compare a.prio b.prio) lst in
   List.print ~first:"" ~sep:"" ~last:"" (print_rule i) oc lst
