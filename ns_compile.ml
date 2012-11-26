@@ -7,7 +7,7 @@ open ParsedPCFG
 (** Routines to output a C++ program that flowsifter-parses a pcap file *)
 (************************************************************************)
 
-let debug = true
+let debug = false
 
 (* print an arithmetic expression to an output channel oc *)
 let rec print_aexp v oc = function
@@ -39,7 +39,7 @@ let declare_uint oc v = fprintf oc "  unsigned int %s;\n" v
 let declare_vars oc var_count =
   declare_uint oc "matches";
   declare_uint oc "flows";
-  fprintf oc "#define PRI_DEF(dfa) dfa_pri##dfa[0]\n";
+  fprintf oc "#define PRI_DEF(dfa) ((dfa_pri##dfa[0] > 0x80) ? dfa_pri##dfa[0] : 0)\n";
   fprintf oc "struct state {\npublic:\n";
   for i = 0 to var_count - 1 do
     declare_uint oc ("v" ^ string_of_int i);
@@ -96,6 +96,8 @@ let dec_ops = {dec0 = ([],-1); merge = merge_dec; cmp = compare}
 type dec = (int * Ns_types.ParsedPCFG.a_exp) list * int
 type dfa = (unit, int array, dec) fa
 type regex = dec Minreg.t
+let is_accepting = function ([], -1) -> false | _ -> true
+let is_accepting_q q = if is_accepting q.dec then 0x80 else 0
 let print_dec oc (al,qn) =
   List.print ~first:"" ~sep:" " ~last:"" print_act_raw oc al;
   fprintf oc "Q%d" qn
@@ -117,7 +119,9 @@ let print_dfa_table oc dfa ((regex: regex), id) =
     if i mod 16 = 15 then IO.write oc '\n'
   in
   let print_trs oc q = Array.iteri (print_tr oc q) q.map; IO.write oc '\n' in
-  let print_pri oc q = Int.print oc q.pri in
+  let print_pri oc q =
+    assert(q.pri < 127); Int.print oc (is_accepting_q q lor q.pri)
+  in
   let print_vect oc printer = (* prints something for each dfa state *)
     (* IO.nwrite oc "{}" *)
     Array.print ~first:"{\n" ~last:"}" ~sep:"," printer oc dfa.qs
@@ -127,22 +131,22 @@ let print_dfa_table oc dfa ((regex: regex), id) =
   fprintf oc "// Regex: %a\n" print_regex regex;
   fprintf oc "%s dfa_tr%d[%d] = %a;\n" (dfa_type dfa) id (num_states * 256)
     print_vect print_trs;
-  fprintf oc "char dfa_pri%d[%d] = %a;\n" id num_states print_vect print_pri
+  fprintf oc "unsigned char dfa_pri%d[%d] = %a;\n" id num_states print_vect print_pri
 
 let print_caref oc q = if q = -1 then fprintf oc "&state::CA0" else fprintf oc "&state::CA%d" q
 let print_dfa oc dfa (regex,id) =
   let say x = fprintf oc (x ^^ "\n") in
   say "void DFA%d() {" id;
   if debug then say "  printf(\"D%d \");" id;
-  if debug then say "  printf(\"RX: %a \\n\");" print_regex regex;
+(*  if debug then say "  printf(\"RX: %a \\n\");" print_regex regex;*)
   say "  while (fdpos < flow_data_length) {";
   if debug then
     say "    printf(\"q%%03dp%%1d@%%02d(%%2s) \", dfa_q, dfa_pri, fdpos, nice(flow_data[fdpos]));";
   say "    dfa_q = dfa_tr%d[(dfa_q << 8) | flow_data[fdpos++]];" id;
   say "    if (dfa_q == %s) {break;}" (dfa_type_max dfa);
   say "    dfa_pri = dfa_pri%d[dfa_q];" id;
-  say "    if (dfa_pri < dfa_best_pri) { printf(\"pri_quit \"); break; }";
-  say "    if (dfa_pri >= dfa_best_pri) {  // higher value is higher priority";
+  say "    if (dfa_pri < (dfa_best_pri & 0x7f)) { printf(\"pri_quit \"); break; }";
+  say "    if ((dfa_pri & 0x80) && dfa_pri >= dfa_best_pri) {  // higher value is higher priority";
   if debug then say "      printf(\"pp:%%d@%%d \", dfa_pri, fdpos);";
   say "      dfa_best_pri = dfa_pri; dfa_best_pos = fdpos; dfa_best_q = dfa_q;";
   say "    }";
@@ -150,11 +154,13 @@ let print_dfa oc dfa (regex,id) =
   if debug then
     say "  printf(\"q%%03d@%%02d \", dfa_q, fdpos);";
   say "  if (fdpos < flow_data_length || dfa_q == %s) {" (dfa_type_max dfa);
-  say "    printf(\"DBQ:%%d \", dfa_best_q);";
+  if debug then say "    printf(\"DBQ:%%d \", dfa_best_q);";
   say "    switch(dfa_best_q) {";
   Array.iteri (fun i q ->
                let acts, qnext = q.dec in
-(*               if qnext != -1 then*)
+               if qnext = -1 then
+		 say "    case %d: q=&state::CA0; dfa_best_pos++; break;" i
+	       else
                  say "    case %d: %aq=%a; break;" i print_acts acts print_caref qnext)
     dfa.qs;
 (*  say "    default: %s; dfa_best_pos=fdpos; q=&state::CA0; // Nothing"
@@ -421,13 +427,13 @@ let main p e outfile =
   (* close the CA struct *)
   end_parser_object oc;
   (* print the main function *)
-(*  print_pcap_main say *)
-  print_main say (* NON_PCAP INPUT *)
+  print_pcap_main say (* PCAP INPUT *)
+(*  print_main say (* NON_PCAP INPUT *) *)
 
 
 
-let () = main "ab.pro" "ab.ext" "fs.c"
-(* let () = main "http.pro" "extr.ca" "fs.c" *)
+(*let () = main "dyck.pro" "dyck.ext" "fs.c" *)
+let () = main "http.pro" "extr.ca" "fs.c"
 
 (*
 int CA (state st) {

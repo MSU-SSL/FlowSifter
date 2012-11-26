@@ -233,5 +233,5 @@ fs.p: fs.c
 	g++ -std=c++0x $< -o $@ -lpcap -pg
 
 fs-test: fs
-#	./fs ~/traces/http/use/98w2-monday.pcap
-	./fs abtest.txt
+	./fs ~/traces/http/use/98w2-monday.pcap
+#	./fs dyckTest.txt
