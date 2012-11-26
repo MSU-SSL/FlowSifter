@@ -71,12 +71,12 @@ let rec print oc = function
   | Accept (i,p) -> fprintf oc "{{%d:%d}}" p i
 
 let rec printp ?(dec=true) oc = function
-  | Union s when Set.mem epsilon s -> printp oc (Union (Set.remove epsilon s)); IO.write oc '?'
-  | Union s -> Set.print ~first:"(" ~sep:"|" ~last:")" printp oc s
+  | Union s when Set.mem epsilon s -> printp ~dec oc (Union (Set.remove epsilon s)); IO.write oc '?'
+  | Union s -> Set.print ~first:"(" ~sep:"|" ~last:")" (printp ~dec) oc s
   | Concat ([], _) -> ()
-  | Concat (h::t,_) -> printp oc h; printp oc (Concat (t,true))
-  | Kleene (Concat (regl,_)) -> List.print ~first:"(" ~sep:"" ~last:")" printp oc regl;  IO.write oc '*'
-  | Kleene reg -> printp oc reg; IO.write oc '*'
+  | Concat (h::t,_) -> printp ~dec oc h; printp ~dec oc (Concat (t,true))
+  | Kleene (Concat (regl,_)) -> List.print ~first:"(" ~sep:"" ~last:")" (printp ~dec) oc regl;  IO.write oc '*'
+  | Kleene reg -> printp ~dec oc reg; IO.write oc '*'
   | Value a -> Pcregex.print_iset oc a
   | Accept (x,p) -> fprintf oc "{{%d:%s}}" p (if dec then dump x else "x")
 
