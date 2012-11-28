@@ -146,9 +146,9 @@ let print_dfa_table oc dfa ((regex: regex), id) =
 
   let num_states = Array.length dfa.qs in
   fprintf oc "// Regex: %a\n" print_regex regex;
-  fprintf oc "%s dfa_tr%d[%d] = %a;\n" (dfa_type dfa) id (num_states * 256)
+  fprintf oc "const %s dfa_tr%d[%d] = %a;\n" (dfa_type dfa) id (num_states * 256)
     print_vect print_trs;
-  fprintf oc "unsigned char dfa_pri%d[%d] = %a;\n" id num_states print_vect print_pri
+  fprintf oc "const unsigned char dfa_pri%d[%d] = %a;\n" id num_states print_vect print_pri
 
 let print_caref oc q = if q = -1 then fprintf oc "&state::CA0" else fprintf oc "&state::CA%d" q
 let print_dfa oc dfa (regex,id) =
@@ -158,20 +158,21 @@ let print_dfa oc dfa (regex,id) =
   say "  while (fdpos < flow_data_length) {";
   if debug then
     say "    printf(\"q%%03dp%%1d@%%02d(%%2s) \", dfa_q, dfa_pri & 0x7f, fdpos, nice(flow_data[fdpos]));";
-  say "    dfa_q = dfa_tr%d[(dfa_q << 8) | flow_data[fdpos++]];" id;
-  say "    if (dfa_q == %s) {break;}" (dfa_type_max dfa);
-  say "    dfa_pri = dfa_pri%d[dfa_q];" id;
-  say "    if (dfa_pri < (dfa_best_pri & 0x7f)) { %s break; }" (if debug then sprintf "printf(\"RX: %a pri_quit\\n\");" (fun () -> IO.to_string print_regex) regex else "");
-  say "    if ((dfa_pri & 0x80) && dfa_pri >= dfa_best_pri) {  // higher value is higher priority";
+  say "    dfa_q = dfa_tr%d[(dfa_q << 8) | flow_data[fdpos++]]; // load qnext" id;
+  say "    if (dfa_q == %s) break; //quit if qnext = -1" (dfa_type_max dfa);
+  say "    dfa_pri = dfa_pri%d[dfa_q]; //load this state's priority" id;
+  if debug then say "if (dfa_pri < dfa_best_pri) printf(\"RX: %a pri_quit\\n\"); " print_regex regex;
+  say "    if (dfa_pri < dfa_best_pri) break; // quit if low priority";
+  say "    if (dfa_pri & 0x80) {  // accept state";
   if debug then say "      printf(\"pp:%%d@%%d \", dfa_pri & 0x7f, fdpos);";
-  say "      dfa_best_pri = dfa_pri; dfa_best_pos = fdpos; dfa_best_q = dfa_q;";
+  say "      dfa_best_pri = dfa_pri & 0x7f; dfa_best_pos = fdpos; dfa_best_q = dfa_q;";
   say "    }";
   say "  } // no more parsing of flow - maybe run actions, maybe wait for more data";
   if debug then
     say "  printf(\"q%%03d@%%02d \", dfa_q, fdpos);";
   say "  if (fdpos < flow_data_length || dfa_q == %s) {" (dfa_type_max dfa);
   if debug then say "    printf(\"DBQ:%%d \", dfa_best_q);";
-  say "    dfa_pri = PRI_DEF(%d); fdpos = dfa_best_pos;" id;
+  say "    fdpos = dfa_best_pos;";
   say "    switch(dfa_best_q) {";
   Array.iteri (fun i q ->
                let acts, qnext = q.dec in
@@ -183,7 +184,7 @@ let print_dfa oc dfa (regex,id) =
 (*  say "    default: %s; dfa_best_pos=fdpos; q=&state::CA0; // Nothing"
     (if debug then "printf(\"No act; RESET \")" else "0"); *)
   say "    }";
-  say "    dfa_best_q = 0;";
+  say "    dfa_best_q = 0; dfa_pri = 0;";
   say "    if (fdpos < 0) { printf(\"NEED LAST PACKET\\n\"); }";
   say "  } else { ";
   if debug then say "  printf(\"input break \");" else say "0;";
