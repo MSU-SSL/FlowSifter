@@ -50,9 +50,10 @@ let merge_cas : proto:grammar -> extr:grammar -> grammar =
 
 
 let print_reg_rule oc rr =
-  let so = Option.print String.print in
-  Printf.fprintf oc "{p:%a; rx:%a acts:%a nt: %a}%!"
-    (List.print Int.print) rr.prio so rr.rx (List.print print_action) rr.act so rr.nt
+  let print_nt oc = function None -> IO.nwrite oc "FAIL" | Some nt -> String.print oc nt in
+  let print_rx oc = function None -> IO.nwrite oc "//" | Some rx -> String.print oc rx in
+  Printf.fprintf oc "%a; %a %a -> %a}%!"
+    (List.print ~first:"" ~sep:"." ~last:"" Int.print) rr.prio print_rx rr.rx (List.print print_action) rr.act print_nt rr.nt
 
 let print_rrule oc (preds,body) = fprintf oc "%a%a" (print_varmap print_pred) preds print_reg_rule body
 let print_reg_rules oc = function
