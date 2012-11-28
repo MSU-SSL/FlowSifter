@@ -8,7 +8,7 @@ open ParsedPCFG
 (************************************************************************)
 
 let debug = false
-let starts = true
+let starts = false
 let print_matches = false
 
 (* print an arithmetic expression to an output channel oc *)
@@ -166,12 +166,12 @@ let print_dfa oc dfa (regex,id) =
   say "  unsigned int fdp = fdpos;";
   say "  while (fdp < flow_data_length) {";
   if debug then
-    say "    printf(\"q%%03dp%%1d@%%02d(%%2s) \", dq, dp, fdp, nice(flow_data[fdpos]));";
+    say "    printf(\"q%%03dp%%1d@%%02d(%%2s) \", dq, dp, fdp, nice(flow_data[fdp]));";
   say "    dq = dfa_tr%d[(dq << 8) | flow_data[fdp]]; // load qnext" id;
   say "    fdp++;";
   say "    if (dq == %s) break; //quit if qnext = -1" (dfa_type_max dfa);
   say "    dp = dfa_pri%d[dq]; //load this state's priority" id;
-  if debug then say "if (dfa_pri < dfa_best_pri) printf(\"RX: %a pri_quit\\n\"); " print_regex regex;
+  if debug then say "if (dp < dfa_best_pri) printf(\"RX: %a pri_quit\\n\"); " print_regex regex;
   say "    if (dp < dfa_best_pri) break; // quit if low priority";
   say "    if (dp & 0x80) {  // accept state";
   if debug then say "      printf(\"pp:%%d@%%d \", dp & 0x7f, fdp);";
@@ -410,7 +410,7 @@ void handler(u_char*, const struct pcap_pkthdr* h, const u_char* bytes) {
 
   if (end_of_flow || st.q == NULL) flow_table.erase(ft);";
   if debug then
-    say "if (flows > 2) pcap_breakloop(pcap);";
+    say "if (flows > 200) pcap_breakloop(pcap);";
   say "
 }
 

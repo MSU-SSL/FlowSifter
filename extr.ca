@@ -12,5 +12,5 @@ HEADERS1 -> ;
 
 HEADER1 -> /(?i:Content-length):\s*/ [hpos:= token(hpos)] // [bodylength := getnum()] ;
 HEADER1 -> /(?i:Transfer-Encoding):\s*chunked/ [ bodychunked := 1 ] ;
-HEADER1 15 -> /(?i:Transfer-Encoding):\s*/ [hpos:= token(hpos)] token( VALUE ) ;
-HEADER1 10 -> TOKEN /:\s*/ [hpos:= token(hpos)] token( VALUE ) ;
+HEADER1 15 -> /(?i:Transfer-Encoding):\s*/ [hpos:= token(hpos)] token( TEXT ) ;
+HEADER1 10 -> TOKEN /:\s*/ [hpos:= token(hpos)] token( TEXT ) ;
