@@ -7,7 +7,8 @@ open ParsedPCFG
 (** Routines to output a C++ program that flowsifter-parses a pcap file *)
 (************************************************************************)
 
-let debug = false
+let debug = true
+let print_matches = true
 
 (* print an arithmetic expression to an output channel oc *)
 let rec print_aexp v oc = function
@@ -39,6 +40,7 @@ let declare_uint oc v = fprintf oc "  unsigned int %s;\n" v
 let declare_vars oc var_count =
   declare_uint oc "matches";
   declare_uint oc "flows";
+  declare_uint oc "skip_b";
   fprintf oc "#define PRI_DEF(dfa) ((dfa_pri##dfa[0] > 0x80) ? dfa_pri##dfa[0] : 0)\n";
   fprintf oc "struct state {\npublic:\n";
   for i = 0 to var_count - 1 do
@@ -60,14 +62,29 @@ let declare_vars oc var_count =
 
 let print_builtins say =
   say "  int pos() { return fdpos; }";
-  say "  int skip(int i) { fdpos += i; return fdpos; }";
-  say "  int skip_to(int i) { fdpos = i; return i; }";
+  say "  int drop_tail() { fdpos += 9999999; return fdpos; }";
+  say "  int skip(int i) { skip_b += i; fdpos += i; return fdpos; }";
+  say "  int skip_to(int i) { skip_b += (i - fdpos); fdpos = i; return i; }";
   say "  int notify(int i) { matches++; return 0; }";
   say "  int cur_byte() { return flow_data[fdpos]; }";
   say "  int cur_double_byte() { return 20; } //FIXME";
-  say "  int getnum() { return 10; } //FIXME";
-  say "  int gethex() { return 0x0f; } //FIXME";
-  say "  int token(int start_pos) { matches++; printf(\"T:%d-%d: %.*s  \", start_pos, fdpos, fdpos-start_pos, flow_data + start_pos - 1); return 0; }";
+  say "  int getnum() { int acc = 0; while (flow_data[fdpos] >= '0' && flow_data[fdpos] <= '9') { acc = acc * 10 + (flow_data[fdpos] - '0'); fdpos++; } return acc; } //FIXME ACROSS PACKETS";
+  say "
+  int gethex() {
+    int acc = 0;
+    while ((flow_data[fdpos] >= '0' && flow_data[fdpos] <= '9') ||
+           (flow_data[fdpos] >= 'a' && flow_data[fdpos] <= 'f') ||
+           (flow_data[fdpos] >= 'A' && flow_data[fdpos] <= 'F')) {
+      char val = (flow_data[fdpos] >= '0' && flow_data[fdpos] <= '9') ? flow_data[fdpos] - '0' : (flow_data[fdpos] >= 'a' && flow_data[fdpos] <= 'f') ? flow_data[fdpos] - 'a' + 10 : flow_data[fdpos] - 'A' + 10;
+      acc = acc * 16 + val;
+      fdpos++;
+    }
+    return acc;
+  }  //FIXME ACROSS PACKETS";
+  if print_matches then
+    say "  int token(int start_pos) { matches++; printf(\"T:%d-%d: %.*s  \", start_pos, fdpos, fdpos-start_pos+1, flow_data + start_pos - 1); return 0; }"
+  else
+    say "  int token(int start_pos) { matches++; return 0; }";
   say "  int bounds(int start_pos, int end_pos) { matches++; return 0; }";
   ()
     (*TODO MORE BUILTINS *)
@@ -138,16 +155,15 @@ let print_dfa oc dfa (regex,id) =
   let say x = fprintf oc (x ^^ "\n") in
   say "void DFA%d() {" id;
   if debug then say "  printf(\"D%d \");" id;
-(*  if debug then say "  printf(\"RX: %a \\n\");" print_regex regex;*)
   say "  while (fdpos < flow_data_length) {";
   if debug then
-    say "    printf(\"q%%03dp%%1d@%%02d(%%2s) \", dfa_q, dfa_pri, fdpos, nice(flow_data[fdpos]));";
+    say "    printf(\"q%%03dp%%1d@%%02d(%%2s) \", dfa_q, dfa_pri & 0x7f, fdpos, nice(flow_data[fdpos]));";
   say "    dfa_q = dfa_tr%d[(dfa_q << 8) | flow_data[fdpos++]];" id;
   say "    if (dfa_q == %s) {break;}" (dfa_type_max dfa);
   say "    dfa_pri = dfa_pri%d[dfa_q];" id;
-  say "    if (dfa_pri < (dfa_best_pri & 0x7f)) { printf(\"pri_quit \"); break; }";
+  say "    if (dfa_pri < (dfa_best_pri & 0x7f)) { %s break; }" (if debug then sprintf "printf(\"RX: %a pri_quit\\n\");" (fun () -> IO.to_string print_regex) regex else "");
   say "    if ((dfa_pri & 0x80) && dfa_pri >= dfa_best_pri) {  // higher value is higher priority";
-  if debug then say "      printf(\"pp:%%d@%%d \", dfa_pri, fdpos);";
+  if debug then say "      printf(\"pp:%%d@%%d \", dfa_pri & 0x7f, fdpos);";
   say "      dfa_best_pri = dfa_pri; dfa_best_pos = fdpos; dfa_best_q = dfa_q;";
   say "    }";
   say "  } // no more parsing of flow - maybe run actions, maybe wait for more data";
@@ -155,6 +171,7 @@ let print_dfa oc dfa (regex,id) =
     say "  printf(\"q%%03d@%%02d \", dfa_q, fdpos);";
   say "  if (fdpos < flow_data_length || dfa_q == %s) {" (dfa_type_max dfa);
   if debug then say "    printf(\"DBQ:%%d \", dfa_best_q);";
+  say "    dfa_pri = PRI_DEF(%d); fdpos = dfa_best_pos;" id;
   say "    switch(dfa_best_q) {";
   Array.iteri (fun i q ->
                let acts, qnext = q.dec in
@@ -166,10 +183,12 @@ let print_dfa oc dfa (regex,id) =
 (*  say "    default: %s; dfa_best_pos=fdpos; q=&state::CA0; // Nothing"
     (if debug then "printf(\"No act; RESET \")" else "0"); *)
   say "    }";
-  say "    dfa_best_q = 0; dfa_pri = PRI_DEF(%d); fdpos = dfa_best_pos;" id;
+  say "    dfa_best_q = 0;";
   say "    if (fdpos < 0) { printf(\"NEED LAST PACKET\\n\"); }";
-  say "  } else { printf(\"input break \"); }";
-  if debug then say "  printf (\"X@%%02dp%%1d\\n\", fdpos, dfa_pri);";
+  say "  } else { ";
+  if debug then say "  printf(\"input break \");" else say "0;";
+  say "  }";
+  if debug then say "  printf (\"X@%%02dp%%1d\\n\", fdpos, dfa_pri & 0x7f);";
   say "}\n"
 
 let dfa_ht : (dfa, regex * int) Hashtbl.t = Hashtbl.create 20
@@ -191,6 +210,7 @@ let rules_eval oc = function
       |> Enum.map Ns_run.make_rx_pair
       |> Pcregex.rx_of_dec_strings ~anchor:true
       |> Minreg.of_reg in
+    printf "Generating DFA for regex %a\n%!" print_regex regex;
     let dfa = regex
       |> Nfa.build_dfa ~labels:false dec_ops
       |> Regex_dfa.minimize
@@ -287,7 +307,7 @@ let print_main say =
   say "  double tfs = tf.tv_sec+(tf.tv_usec/1000000.0);";
   say "  double time_used = tfs - t0s;";
   say "  double gbps = ((double) st.flow_data_length) * 8 / time_used / 1000000000;";
-  say "  printf(\"\\nMatches: %d Bytes: %lu Time: %.3fs Rate: %.2f\\n\", matches, st.flow_data_length, time_used, gbps);";
+  say "  printf(\"\\nMatches: %d Bytes: %lu Time: %.3fs Rate: %.2fGbps\\n\", matches, st.flow_data_length, time_used, gbps);";
   say "  return 0;";
   say "}";
   say ""
@@ -333,15 +353,20 @@ void handler(u_char*, const struct pcap_pkthdr* h, const u_char* bytes) {
   const u_char* bytes0 = bytes;
   struct ether_header *eptr = (struct ether_header *) bytes;
   bytes += sizeof(ether_header);
-  auto et = ntohs(eptr->ether_type);
-//  printf(\"%u, %u\", et, ETHERTYPE_IP);
+  auto et = ntohs(eptr->ether_type);";
+  if debug then say "printf(\"ethertype: %u \", et);";
+  say "
   if (et != ETHERTYPE_IP) return;
   struct ip* iph = (struct ip*) bytes;
   bytes += iph->ip_hl * 4;
-  uint8_t ipt = iph->ip_p;
-//  printf(\"%u,%u\", ipt, IPPROTO_TCP);
+  uint16_t ip_len = iph->ip_len;
+  uint8_t ipt = iph->ip_p;";
+  if debug then say "printf(\"IP_PROTOCOL: %u \", ipt);";
+  say "
   if (ipt != IPPROTO_TCP) return;
-  struct tcphdr* tcp_header = (struct tcphdr*) bytes;
+  struct tcphdr* tcp_header = (struct tcphdr*) bytes;";
+  if debug then say "printf(\"doff:%d \",tcp_header->doff);";
+  say "
   bytes += tcp_header->doff * 4;
   end_of_flow = tcp_header->fin == 1;
   four_tuple ft = four_tuple(iph, tcp_header);
@@ -350,6 +375,7 @@ void handler(u_char*, const struct pcap_pkthdr* h, const u_char* bytes) {
   //parse the current packet
 //  st.fdpos = 0;
   st.flow_data = bytes;
+
   st.flow_data_length = h->caplen - (bytes - bytes0);";
   if debug then
     say "  printf(\"\\nPKT(%luB):%.30s\\n\", st.flow_data_length, bytes);";
@@ -367,9 +393,11 @@ void handler(u_char*, const struct pcap_pkthdr* h, const u_char* bytes) {
     bytes_processed += st.flow_data_length;
   }
 
-  if (end_of_flow || st.q == NULL) flow_table.erase(ft);
-  if (flows > 2) pcap_breakloop(pcap);
-  printf(\"Flows: %d Matches: %d Bytes: %lu \\n\", flows, matches, bytes_processed);
+  if (end_of_flow || st.q == NULL) flow_table.erase(ft);";
+  if debug then
+    say "if (flows > 2) pcap_breakloop(pcap);";
+  say "
+//  printf(\"Flows: %d Matches: %d Bytes: %lu \\n\", flows, matches, bytes_processed);
 }
 
 char errbuf[PCAP_ERRBUF_SIZE];
@@ -387,7 +415,7 @@ int main(int argc, char* argv[]) {
   double tfs = tf.tv_sec+(tf.tv_usec/1000000.0);
   double time_used = tfs - t0s;
   double gbps = ((double) bytes_processed) * 8 / time_used / 1000000000;
-  printf(\"\\nFlows: %d Matches: %d Bytes: %lu Time: %.3fs Rate: %.2f\\n\", flows, matches, bytes_processed, time_used, gbps);
+  printf(\"\\nFlows: %d Matches: %d Bytes: %lu Skipped: %u Time: %.3fs Rate: %.2fGbps\\n\", flows, matches, bytes_processed, skip_b, time_used, gbps);
   return 0;
 }
 "
@@ -399,11 +427,14 @@ let main p e outfile =
   let ca, var_count =
     Ns_parse.merge_cas ~proto ~extr
     |> Ns_parse.regularize
-    |> tap (Printf.printf "Grammar:\n%a\n" Ns_parse.print_reg_ca)
-    |> Ns_parse.destring extr.start in
-  let ca = Ns_parse.dechain ca
-    |> tap (Printf.printf "Grammar:\n%a\n" Ns_parse.print_reg_ds_ca)
-    |> Ns_parse.flatten_priorities
+    |> tap (Printf.printf "Grammar reg:\n%a\n" Ns_parse.print_reg_ca)
+    |> Ns_parse.destring extr.start
+  in
+  let ca = ca
+  |> tap (Printf.printf "Grammar ds:\n%a\n" Ns_parse.print_reg_ds_ca)
+  |> Ns_parse.dechain
+  |> tap (Printf.printf "Grammar dechained:\n%a\n" Ns_parse.print_reg_ds_ca)
+  |> Ns_parse.flatten_priorities
 (*    |> Ns_run.optimize_preds *)
   in
 (*  let oc = File.open_out (e ^ ".c") in *)
@@ -433,7 +464,7 @@ let main p e outfile =
 
 
 (*let () = main "dyck.pro" "dyck.ext" "fs.c" *)
-let () = main "http.pro" "extr.ca" "fs.c"
+let () = main Sys.argv.(1) Sys.argv.(2) Sys.argv.(3)
 
 (*
 int CA (state st) {

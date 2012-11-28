@@ -223,8 +223,8 @@ diff-test: all
 %.native: *.ml
 	ocamlbuild -use-ocamlfind $@
 
-fs.c: ns_compile.native
-	./ns_compile.native
+fs.c: ns_compile.native http.pro extr.ca
+	./ns_compile.native http.pro extr.ca "$@"
 
 fs: fs.c
 	g++ -std=c++0x $< -o $@ -g -lpcap
