@@ -8,6 +8,7 @@ open ParsedPCFG
 (************************************************************************)
 
 let debug = false
+let starts = true
 let print_matches = false
 
 (* print an arithmetic expression to an output channel oc *)
@@ -37,10 +38,12 @@ let rec print_pexp v oc = function
 
 let declare_uint oc v = fprintf oc "  unsigned int %s;\n" v
 
-let declare_vars oc var_count =
+let declare_vars dfa_count oc var_count =
+  let say x = fprintf oc (x ^^ "\n") in
   declare_uint oc "matches";
   declare_uint oc "flows";
   declare_uint oc "skip_b";
+  if starts then say "int dfa_starts[%d] = {0};" dfa_count;
   fprintf oc "#define PRI_DEF(dfa) ((dfa_pri##dfa[0] > 0x80) ? dfa_pri##dfa[0] : 0)\n";
   fprintf oc "struct state {\npublic:\n";
   for i = 0 to var_count - 1 do
@@ -155,10 +158,9 @@ let print_caref oc q = if q = -1 then fprintf oc "&state::CA0" else fprintf oc "
 let print_dfa oc dfa (regex,id) =
   let say x = fprintf oc (x ^^ "\n") in
   say "//RX: %a" print_regex regex;
-  say "int dfa_starts%d = 0;" id;
   say "void DFA%d() {" id;
   if debug then say "  printf(\"D%d \");" id;
-  if debug then say "  dfa_starts%d++;" id;
+  if starts then say "  dfa_starts[%d]++;" id;
   say "  unsigned int dq = dfa_q;";
   say "  unsigned int dp = dfa_pri;";
   say "  unsigned int fdp = fdpos;";
@@ -280,7 +282,7 @@ char* nice(unsigned char c) { if (c >= 0x20 && c <= 0x7e) sprintf(charbuf, \" %%
 
 
 let gen_header oc var_count =
-  declare_vars oc var_count;
+  declare_vars (Hashtbl.length dfa_ht) oc var_count;
   print_builtins oc
 
 
@@ -428,11 +430,13 @@ int main(int argc, char* argv[]) {
   double time_used = tfs - t0s;
   double gbps = ((double) bytes_processed) * 8 / time_used / 1000000000;
   printf(\"\\nFlows: %%d Matches: %%d Bytes: %%lu Skipped: %%u Time: %%.3fs Rate: %%.2fGbps\\n\", flows, matches, bytes_processed, skip_b, time_used, gbps);";
-  if debug then (
+  if starts then (
     say "//print dfa_starts
   printf(\"DFA starts: \");
 ";
-    Hashtbl.iter (fun _ (_rx,id) -> say "  printf(\"DFA%d: %%d\n\",dfa_starts%d);" id id) dfa_ht;
+    for id = 0 to Hashtbl.length dfa_ht do
+      say "  printf(\"%d:%%d\\n\",dfa_starts[%d]);" id id;
+    done;
   );
   say"
   return 0;
