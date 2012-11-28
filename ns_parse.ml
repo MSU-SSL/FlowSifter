@@ -90,6 +90,18 @@ let print_rules i oc lst =
 let print_reg_ds_ca oc (ca: regular_grammar_arr) =
   Array.iteri (fun i rs -> print_rules i oc rs) ca
 
+
+(* printing flattened-priority CA *)
+let print_rule_flat i oc = function
+  | [],r -> fprintf oc "#%2d \t\t%d\t-> %a\n" i r.prio print_opt_rule r
+  | p,r -> fprintf oc "#%2d %a \t%d\t-> %a\n" i (List.print print_ipred) p r.prio print_opt_rule r
+let print_rules_flat i oc lst =
+  List.print ~first:"" ~sep:"" ~last:"" (print_rule_flat i) oc lst
+
+let print_reg_ds_ca_flat oc ca =
+  Array.iteri (fun i rs -> print_rules_flat i oc rs) ca
+
+
 exception Non_regular_rule of production
 
 let merge_rx r s =

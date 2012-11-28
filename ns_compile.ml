@@ -153,21 +153,29 @@ let print_dfa_table oc dfa ((regex: regex), id) =
 let print_caref oc q = if q = -1 then fprintf oc "&state::CA0" else fprintf oc "&state::CA%d" q
 let print_dfa oc dfa (regex,id) =
   let say x = fprintf oc (x ^^ "\n") in
+  say "//RX: %a" print_regex regex;
   say "void DFA%d() {" id;
   if debug then say "  printf(\"D%d \");" id;
-  say "  while (fdpos < flow_data_length) {";
+  say "  unsigned int dq = dfa_q;";
+  say "  unsigned int dp = dfa_pri;";
+  say "  unsigned int fdp = fdpos;";
+  say "  while (fdp < flow_data_length) {";
   if debug then
-    say "    printf(\"q%%03dp%%1d@%%02d(%%2s) \", dfa_q, dfa_pri & 0x7f, fdpos, nice(flow_data[fdpos]));";
-  say "    dfa_q = dfa_tr%d[(dfa_q << 8) | flow_data[fdpos++]]; // load qnext" id;
-  say "    if (dfa_q == %s) break; //quit if qnext = -1" (dfa_type_max dfa);
-  say "    dfa_pri = dfa_pri%d[dfa_q]; //load this state's priority" id;
+    say "    printf(\"q%%03dp%%1d@%%02d(%%2s) \", dq, dp, fdp, nice(flow_data[fdpos]));";
+  say "    dq = dfa_tr%d[(dq << 8) | flow_data[fdp]]; // load qnext" id;
+  say "    fdp++;";
+  say "    if (dq == %s) break; //quit if qnext = -1" (dfa_type_max dfa);
+  say "    dp = dfa_pri%d[dq]; //load this state's priority" id;
   if debug then say "if (dfa_pri < dfa_best_pri) printf(\"RX: %a pri_quit\\n\"); " print_regex regex;
-  say "    if (dfa_pri < dfa_best_pri) break; // quit if low priority";
-  say "    if (dfa_pri & 0x80) {  // accept state";
-  if debug then say "      printf(\"pp:%%d@%%d \", dfa_pri & 0x7f, fdpos);";
-  say "      dfa_best_pri = dfa_pri & 0x7f; dfa_best_pos = fdpos; dfa_best_q = dfa_q;";
+  say "    if (dp < dfa_best_pri) break; // quit if low priority";
+  say "    if (dp & 0x80) {  // accept state";
+  if debug then say "      printf(\"pp:%%d@%%d \", dp & 0x7f, fdp);";
+  say "      dfa_best_pri = dp & 0x7f; dfa_best_pos = fdp; dfa_best_q = dq;";
   say "    }";
   say "  } // no more parsing of flow - maybe run actions, maybe wait for more data";
+  say "  dfa_q = dq;";
+  say "  dfa_pri = dp;";
+  say "  fdpos = fdp;";
   if debug then
     say "  printf(\"q%%03d@%%02d \", dfa_q, fdpos);";
   say "  if (fdpos < flow_data_length || dfa_q == %s) {" (dfa_type_max dfa);
@@ -211,7 +219,7 @@ let rules_eval oc = function
       |> Enum.map Ns_run.make_rx_pair
       |> Pcregex.rx_of_dec_strings ~anchor:true
       |> Minreg.of_reg in
-    printf "Generating DFA for regex %a\n%!" print_regex regex;
+(*    printf "Generating DFA for regex %a\n%!" print_regex regex; *)
     let dfa = regex
       |> Nfa.build_dfa ~labels:false dec_ops
       |> Regex_dfa.minimize
@@ -425,15 +433,15 @@ let main p e outfile =
   and extr = Ns_parse.parse_file_as_extraction e in
   let ca, var_count =
     Ns_parse.merge_cas ~proto ~extr
-    |> Ns_parse.regularize
-    |> tap (Printf.printf "Grammar reg:\n%a\n" Ns_parse.print_reg_ca)
-    |> Ns_parse.destring extr.start
+  |> Ns_parse.regularize
+(*  |> tap (Printf.printf "Grammar reg:\n%a\n" Ns_parse.print_reg_ca) *)
+  |> Ns_parse.destring extr.start
   in
   let ca = ca
-  |> tap (Printf.printf "Grammar ds:\n%a\n" Ns_parse.print_reg_ds_ca)
+(*  |> tap (Printf.printf "Grammar ds:\n%a\n" Ns_parse.print_reg_ds_ca) *)
   |> Ns_parse.dechain
-  |> tap (Printf.printf "Grammar dechained:\n%a\n" Ns_parse.print_reg_ds_ca)
   |> Ns_parse.flatten_priorities
+  |> tap (Printf.printf "Final Grammar:\n%a\n" Ns_parse.print_reg_ds_ca_flat)
 (*    |> Ns_run.optimize_preds *)
   in
 (*  let oc = File.open_out (e ^ ".c") in *)
