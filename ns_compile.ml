@@ -7,8 +7,8 @@ open ParsedPCFG
 (** Routines to output a C++ program that flowsifter-parses a pcap file *)
 (************************************************************************)
 
-let debug = true
-let print_matches = true
+let debug = false
+let print_matches = false
 
 (* print an arithmetic expression to an output channel oc *)
 let rec print_aexp v oc = function
@@ -359,9 +359,9 @@ void handler(u_char*, const struct pcap_pkthdr* h, const u_char* bytes) {
   if (et != ETHERTYPE_IP) return;
   struct ip* iph = (struct ip*) bytes;
   bytes += iph->ip_hl * 4;
-  uint16_t ip_len = iph->ip_len;
+  uint16_t ip_len = ntohs(iph->ip_len);
   uint8_t ipt = iph->ip_p;";
-  if debug then say "printf(\"IP_PROTOCOL: %u \", ipt);";
+  if debug then say "printf(\"IP_PROTOCOL: %u len:%u \", ipt, ip_len);";
   say "
   if (ipt != IPPROTO_TCP) return;
   struct tcphdr* tcp_header = (struct tcphdr*) bytes;";
@@ -373,14 +373,12 @@ void handler(u_char*, const struct pcap_pkthdr* h, const u_char* bytes) {
   if (ft == null_ft) return; // do nothing if it's not a tcp packet
   state& st = flow_table[ft]; // generates a new fa state if one doesn't exist
   //parse the current packet
-//  st.fdpos = 0;
   st.flow_data = bytes;
-
-  st.flow_data_length = h->caplen - (bytes - bytes0);";
+  st.flow_data_length = ip_len - (bytes - (const u_char*)iph);";
   if debug then
     say "  printf(\"\\nPKT(%luB):%.30s\\n\", st.flow_data_length, bytes);";
   say "
-  while (st.q != NULL && st.fdpos < st.flow_data_length)
+  while (st.fdpos < st.flow_data_length && st.q != NULL)
     CALL_MEMBER_FN(st, st.q)();
 
   if (st.fdpos < st.flow_data_length) {
