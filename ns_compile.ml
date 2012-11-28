@@ -60,7 +60,8 @@ let declare_vars oc var_count =
   fprintf oc "  void (state::*q)();\n";
   fprintf oc "  state() : base_pos(0), fdpos(0), flow_data(NULL), flow_data_length(0), fail_drop(0), rerun_temp(0), dfa_best_pri(PRI_DEF(0)), dfa_best_q(0), dfa_best_pos(0), dfa_pri(PRI_DEF(0)), dfa_q(0), q(&state::CA0) {flows++;}\n"
 
-let print_builtins say =
+let print_builtins oc =
+  let say x = fprintf oc (x ^^ "\n") in
   say "  int pos() { return fdpos; }";
   say "  int drop_tail() { fdpos += 9999999; return fdpos; }";
   say "  int skip(int i) { skip_b += i; fdpos += i; return fdpos; }";
@@ -82,7 +83,7 @@ let print_builtins say =
     return acc;
   }  //FIXME ACROSS PACKETS";
   if print_matches then
-    say "  int token(int start_pos) { matches++; printf(\"T:%d-%d: %.*s  \", start_pos, fdpos, fdpos-start_pos+1, flow_data + start_pos - 1); return 0; }"
+    say "  int token(int start_pos) { matches++; printf(\"T:%%d-%%d: %%.*s  \", start_pos, fdpos, fdpos-start_pos+1, flow_data + start_pos - 1); return 0; }"
   else
     say "  int token(int start_pos) { matches++; return 0; }";
   say "  int bounds(int start_pos, int end_pos) { matches++; return 0; }";
@@ -154,8 +155,10 @@ let print_caref oc q = if q = -1 then fprintf oc "&state::CA0" else fprintf oc "
 let print_dfa oc dfa (regex,id) =
   let say x = fprintf oc (x ^^ "\n") in
   say "//RX: %a" print_regex regex;
+  say "int dfa_starts%d = 0;" id;
   say "void DFA%d() {" id;
   if debug then say "  printf(\"D%d \");" id;
+  if debug then say "  dfa_starts%d++;" id;
   say "  unsigned int dq = dfa_q;";
   say "  unsigned int dp = dfa_pri;";
   say "  unsigned int fdp = fdpos;";
@@ -251,7 +254,8 @@ let ca_trans oc idx rules =
   );
   fprintf oc "  }\n" (* end function *)
 
-let print_includes say =
+let print_includes oc =
+  let say x = fprintf oc (x ^^ "\n") in
   say "
 #include <stdlib.h>
 #include <stdbool.h>
@@ -271,20 +275,21 @@ let print_includes say =
 #define CALL_MEMBER_FN(object,ptrToMember)  ((object).*(ptrToMember))
 using namespace std;
 char charbuf[2];
-char* nice(unsigned char c) { if (c >= 0x20 && c <= 0x7e) sprintf(charbuf, \" %c\", c); else sprintf(charbuf, \"%02x\", c); return charbuf;}
+char* nice(unsigned char c) { if (c >= 0x20 && c <= 0x7e) sprintf(charbuf, \" %%c\", c); else sprintf(charbuf, \"%%02x\", c); return charbuf;}
 "
 
 
 let gen_header oc var_count =
   declare_vars oc var_count;
-  print_builtins (fun x -> IO.nwrite oc x; IO.write oc '\n')
+  print_builtins oc
 
 
-let print_read_file say =
+let print_read_file oc =
+  let say x = fprintf oc (x ^^ "\n") in
   say "  void read_file(char* filename) {
     FILE* fd = fopen(filename, \"r\");
 ";
-  if debug then say "    printf(\"Subject: %s\\n\", basename(filename));";
+  if debug then say "    printf(\"Subject: %%s\\n\", basename(filename));";
   say "    fseek (fd , 0 , SEEK_END);
     flow_data_length = ftell (fd);
     rewind (fd);
@@ -322,7 +327,8 @@ let print_main say =
   say ""
 
 (* multi-flow-enabled main *)
-let print_pcap_main say =
+let print_pcap_main oc =
+  let say x = fprintf oc (x ^^ "\n") in
   say "
 struct four_tuple {
   uint32_t src; uint32_t dest;
@@ -363,18 +369,18 @@ void handler(u_char*, const struct pcap_pkthdr* h, const u_char* bytes) {
   struct ether_header *eptr = (struct ether_header *) bytes;
   bytes += sizeof(ether_header);
   auto et = ntohs(eptr->ether_type);";
-  if debug then say "printf(\"ethertype: %u \", et);";
+  if debug then say "printf(\"ethertype: %%u \", et);";
   say "
   if (et != ETHERTYPE_IP) return;
   struct ip* iph = (struct ip*) bytes;
   bytes += iph->ip_hl * 4;
   uint16_t ip_len = ntohs(iph->ip_len);
   uint8_t ipt = iph->ip_p;";
-  if debug then say "printf(\"IP_PROTOCOL: %u len:%u \", ipt, ip_len);";
+  if debug then say "printf(\"IP_PROTOCOL: %%u len:%%u \", ipt, ip_len);";
   say "
   if (ipt != IPPROTO_TCP) return;
   struct tcphdr* tcp_header = (struct tcphdr*) bytes;";
-  if debug then say "printf(\"doff:%d \",tcp_header->doff);";
+  if debug then say "printf(\"doff:%%d \",tcp_header->doff);";
   say "
   bytes += tcp_header->doff * 4;
   end_of_flow = tcp_header->fin == 1;
@@ -385,7 +391,7 @@ void handler(u_char*, const struct pcap_pkthdr* h, const u_char* bytes) {
   st.flow_data = bytes;
   st.flow_data_length = ip_len - (bytes - (const u_char*)iph);";
   if debug then
-    say "  printf(\"\\nPKT(%luB):%.30s\\n\", st.flow_data_length, bytes);";
+    say "  printf(\"\\nPKT(%%luB):%%.30s\\n\", st.flow_data_length, bytes);";
   say "
   while (st.fdpos < st.flow_data_length && st.q != NULL)
     CALL_MEMBER_FN(st, st.q)();
@@ -404,7 +410,6 @@ void handler(u_char*, const struct pcap_pkthdr* h, const u_char* bytes) {
   if debug then
     say "if (flows > 2) pcap_breakloop(pcap);";
   say "
-//  printf(\"Flows: %d Matches: %d Bytes: %lu \\n\", flows, matches, bytes_processed);
 }
 
 char errbuf[PCAP_ERRBUF_SIZE];
@@ -422,7 +427,14 @@ int main(int argc, char* argv[]) {
   double tfs = tf.tv_sec+(tf.tv_usec/1000000.0);
   double time_used = tfs - t0s;
   double gbps = ((double) bytes_processed) * 8 / time_used / 1000000000;
-  printf(\"\\nFlows: %d Matches: %d Bytes: %lu Skipped: %u Time: %.3fs Rate: %.2fGbps\\n\", flows, matches, bytes_processed, skip_b, time_used, gbps);
+  printf(\"\\nFlows: %%d Matches: %%d Bytes: %%lu Skipped: %%u Time: %%.3fs Rate: %%.2fGbps\\n\", flows, matches, bytes_processed, skip_b, time_used, gbps);";
+  if debug then (
+    say "//print dfa_starts
+  printf(\"DFA starts: \");
+";
+    Hashtbl.iter (fun _ (_rx,id) -> say "  printf(\"DFA%d: %%d\n\",dfa_starts%d);" id id) dfa_ht;
+  );
+  say"
   return 0;
 }
 "
@@ -447,11 +459,10 @@ let main p e outfile =
 (*  let oc = File.open_out (e ^ ".c") in *)
   let buf = IO.output_string () in
   let oc = File.open_out outfile in
-  let say x = IO.nwrite oc x; IO.write oc '\n' in
   (* buffer the CA transitions *)
   Array.iteri (ca_trans buf) ca;
   (* print the C includes *)
-  print_includes say;
+  print_includes oc;
   (* print the DFA data tables *)
   Hashtbl.iter (print_dfa_table oc) dfa_ht;
   (* print the CA struct header *)
@@ -461,11 +472,11 @@ let main p e outfile =
   (* write the CA transition functions that were buffered *)
   IO.nwrite oc (IO.close_out buf);
   (* print the function to read a file *)
-  print_read_file say;
+  print_read_file oc;
   (* close the CA struct *)
   end_parser_object oc;
   (* print the main function *)
-  print_pcap_main say (* PCAP INPUT *)
+  print_pcap_main oc (* PCAP INPUT *)
 (*  print_main say (* NON_PCAP INPUT *) *)
 
 
