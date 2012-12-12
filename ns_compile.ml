@@ -408,20 +408,17 @@ void gen_packets(u_char*, const struct pcap_pkthdr* h, const u_char* bytes) {
     off = tcp_header->seq - initial_sequence_number[ft];
   }
   uint16_t len = ip_len - (bytes - (const u_char*)iph);
-  packets.push_back(packet(ft, (const char*) bytes, len, end_of_flow, off));
+  if (len > 0)
+    packets.push_back(packet(ft, (const char*) bytes, len, end_of_flow, off));
   if (end_of_flow) initial_sequence_number.erase(ft);
 }
 
-void run_parse() {
-  for (auto i = packets.begin(); i != packets.end(); i++) {
-    packet& p = *i;
-    // TODO: optimize flow_table reference
-    state& st = flow_table[p.ft]; // generates a new fa state if needed
+void run_fs(packet& p, state& st) {
     st.flow_data = (const u_char*) p.payload.c_str();
     st.flow_data_length = p.payload.size();
 ";
   if debug then
-    say "  printf(\"\\nPKT(%%luB):%%.30s\\n\", st.flow_data_length, bytes);";
+    say "  printf(\"\\nPKT(%%luB):%%.30s\\n\", st.flow_data_length, st.flow_data);";
   say "
   while (st.fdpos < st.flow_data_length && st.q != NULL)
     CALL_MEMBER_FN(st, st.q)();
@@ -435,8 +432,26 @@ void run_parse() {
     if (st.dfa_best_pos < 0) { printf(\"MAYBE NEED LAST PACKET\\n\"); }
     bytes_processed += st.flow_data_length;
   }
+}
 
-  if (p.fin || st.q == NULL) flow_table.erase(p.ft);";
+void run_parse() {
+  for (auto i = packets.begin(); i != packets.end(); i++) {
+    packet& p = *i;
+    if (p.fin && p.off == 0) { //singleton flow
+      state st;
+      run_fs(p, st);
+    } else if (p.fin) { //final packet of flow
+      auto j = flow_table.find(p.ft);
+      run_fs(p, (*j).second);
+      flow_table.erase(j);
+    } else if (p.off == 0) { // initial packet of flow
+      state& st = flow_table[p.ft]; // creates new state
+      run_fs(p,st);
+    } else { // middle packet
+      state& st = flow_table[p.ft]; // does not create new state
+      run_fs(p,st);
+    }
+//  if (p.fin || st.q == NULL) flow_table.erase(p.ft);";
   if debug then
     say "if (flows > 200) pcap_breakloop(pcap);";
   say "  }
