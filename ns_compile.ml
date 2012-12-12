@@ -271,6 +271,8 @@ let print_includes oc =
 #include <limits.h>
 #include <utility>
 #include <unordered_map>
+#include <string>
+#include <vector>
 #include <netinet/if_ether.h>
 #include <netinet/tcp.h>
 #include <netinet/ip.h>
@@ -364,8 +366,18 @@ namespace std {
 pcap_t* pcap;
 size_t bytes_processed = 0;
 unordered_map<four_tuple, state> flow_table;
+unordered_map<four_tuple, uint32_t> initial_sequence_number;
 four_tuple null_ft = four_tuple();
-void handler(u_char*, const struct pcap_pkthdr* h, const u_char* bytes) {
+struct packet {
+  four_tuple ft;  // the 4-tuple that identifies this flow
+  string payload; // the byte contents of the flow
+  bool fin;   // whether this packet is final packet of flow
+  uint32_t off; // offset of packet
+  packet(four_tuple ft, const char* bytes, size_t len, bool fin, uint32_t off) : ft(ft), payload(bytes, len), fin(fin), off(off) {}
+};
+vector<packet> packets;
+
+void gen_packets(u_char*, const struct pcap_pkthdr* h, const u_char* bytes) {
   bool end_of_flow;
   const u_char* bytes0 = bytes;
   struct ether_header *eptr = (struct ether_header *) bytes;
@@ -388,10 +400,26 @@ void handler(u_char*, const struct pcap_pkthdr* h, const u_char* bytes) {
   end_of_flow = tcp_header->fin == 1;
   four_tuple ft = four_tuple(iph, tcp_header);
   if (ft == null_ft) return; // do nothing if it's not a tcp packet
-  state& st = flow_table[ft]; // generates a new fa state if one doesn't exist
-  //parse the current packet
-  st.flow_data = bytes;
-  st.flow_data_length = ip_len - (bytes - (const u_char*)iph);";
+  uint32_t off; // byte offset for this packet
+  if (tcp_header->syn == 1) {
+    initial_sequence_number[ft] = tcp_header->seq;
+    off = 0;
+  } else {
+    off = tcp_header->seq - initial_sequence_number[ft];
+  }
+  uint16_t len = ip_len - (bytes - (const u_char*)iph);
+  packets.push_back(packet(ft, (const char*) bytes, len, end_of_flow, off));
+  if (end_of_flow) initial_sequence_number.erase(ft);
+}
+
+void run_parse() {
+  for (auto i = packets.begin(); i != packets.end(); i++) {
+    packet& p = *i;
+    // TODO: optimize flow_table reference
+    state& st = flow_table[p.ft]; // generates a new fa state if needed
+    st.flow_data = (const u_char*) p.payload.c_str();
+    st.flow_data_length = p.payload.size();
+";
   if debug then
     say "  printf(\"\\nPKT(%%luB):%%.30s\\n\", st.flow_data_length, bytes);";
   say "
@@ -408,10 +436,10 @@ void handler(u_char*, const struct pcap_pkthdr* h, const u_char* bytes) {
     bytes_processed += st.flow_data_length;
   }
 
-  if (end_of_flow || st.q == NULL) flow_table.erase(ft);";
+  if (p.fin || st.q == NULL) flow_table.erase(p.ft);";
   if debug then
     say "if (flows > 200) pcap_breakloop(pcap);";
-  say "
+  say "  }
 }
 
 char errbuf[PCAP_ERRBUF_SIZE];
@@ -420,10 +448,11 @@ int main(int argc, char* argv[]) {
   if (argc != 2) { printf (\"fs [trace file]\\n\"); exit(1); }
   pcap = pcap_open_offline(argv[1], errbuf);
   if (pcap == NULL) { printf (\"Error opening file\\n\"); exit(2); }
+  int err = pcap_loop(pcap, -1, gen_packets, NULL); // parse pcap into packets
   matches=0;
   struct timeval t0,tf;
   gettimeofday(&t0, NULL);
-  int err = pcap_loop(pcap, -1, handler, NULL);
+  run_parse();
   gettimeofday(&tf, NULL);
   double t0s = t0.tv_sec+(t0.tv_usec/1000000.0);
   double tfs = tf.tv_sec+(tf.tv_usec/1000000.0);
