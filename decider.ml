@@ -17,7 +17,7 @@ let min_domain t = enum t |> Enum.peek |> Option.get |> (fun (n1,_,_) -> n1)
 let map f t = IMap.map f t
 
 let lookup d i = IMap.find i d
-
+let get_eq d = IMap.get_dec_eq d
 
 let sub min max d = d |> IMap.from min |> IMap.until max
 

@@ -234,4 +234,5 @@ fs.p: fs.c
 
 fs-test: fs
 	./fs ~/traces/http/use/98w2-monday.pcap
+	./fs ~/traces/http/use/99w5-friday.outside.tcpdump.gz.pcap
 #	./fs dyckTest.txt

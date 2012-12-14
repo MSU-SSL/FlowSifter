@@ -413,7 +413,7 @@ void gen_packets(u_char*, const struct pcap_pkthdr* h, const u_char* bytes) {
   if (end_of_flow) initial_sequence_number.erase(ft);
 }
 
-void run_fs(packet& p, state& st) {
+inline void run_fs(packet& p, state& st) {
     st.flow_data = (const u_char*) p.payload.c_str();
     st.flow_data_length = p.payload.size();
 ";
@@ -472,8 +472,9 @@ int main(int argc, char* argv[]) {
   double t0s = t0.tv_sec+(t0.tv_usec/1000000.0);
   double tfs = tf.tv_sec+(tf.tv_usec/1000000.0);
   double time_used = tfs - t0s;
+
   double gbps = ((double) bytes_processed) * 8 / time_used / 1000000000;
-  printf(\"\\nFlows: %%d Matches: %%d Bytes: %%lu Skipped: %%u Time: %%.3fs Rate: %%.2fGbps\\n\", flows, matches, bytes_processed, skip_b, time_used, gbps);";
+  printf(\"Flows: %%d Matches: %%d Bytes: %%lu Skipped: %%u Time: %%.3fs Rate: %%.2fGbps\\n\\n\", flows, matches, bytes_processed, skip_b, time_used, gbps);";
   if starts then (
     say "//print dfa_starts
   printf(\"DFA starts: \");

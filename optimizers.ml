@@ -85,7 +85,7 @@ let ternary_rr rset =
 (* let razor1d_timer = Time.create "Razor1d" *)
 
 (* internal razor 1d function -- use razor_1d_c or razor_1d_i for complete/incomplete tables *)
-let razor_1d_int weight_dec (bdd, decs, of_prefix) =
+let razor_1d_int weight_dec (bdd, decs, of_prefix, eq) =
   (* Utility function *)
   let dec_count = Array.length decs in
   let get_weight i = weight_dec decs.(i) in
@@ -93,7 +93,7 @@ let razor_1d_int weight_dec (bdd, decs, of_prefix) =
   (* return a solution array for a range with a particular decision *)
   let unit_sol d pred =
     let base_sol d2 =
-      if d = d2 then
+      if eq d d2 then
 	{cost = weight_dec d2;
 	 rset = Vect.empty}
       else
@@ -142,10 +142,10 @@ let razor_1d_int weight_dec (bdd, decs, of_prefix) =
 (*let r1dc_p = Point.create "razor_1dc"
 let r1dc_t = Time.create "razor_1dc" *)
 
-let razor_1d_c weight_f (bdd, decs, of_prefix) =
+let razor_1d_c weight_f (bdd, decs, of_prefix, eq) =
 (*  Point.observe r1dc_p; Time.start r1dc_t; *)
   let bdd = Bdd.map Option.get bdd in (* remove Some from all bdd leaves *)
-  let sols = razor_1d_int weight_f (bdd, decs, of_prefix) in
+  let sols = razor_1d_int weight_f (bdd, decs, of_prefix, eq) in
   let best = Array.range decs |> Enum.arg_min (fun i -> sols.(i).cost) in
   let add_default d sol =
     {sol with rset = Vect.append {pred=of_prefix []; dec=d} sol.rset} in
@@ -158,7 +158,7 @@ let r1di_t = Time.create "razor_1di" *)
  * * Deals with whether the BDD is incomplete
  * * Handles the resulting sol array
  *)
-let razor_1d_i weight_f (bdd, decs, of_prefix) =
+let razor_1d_i weight_f (bdd, decs, of_prefix, eq) =
   if Bdd.is_incomplete bdd then begin
 (*    Point.observe r1di_p;
     Time.start r1di_t; *)
@@ -169,24 +169,24 @@ let razor_1d_i weight_f (bdd, decs, of_prefix) =
       match d.dec with None -> None | Some dec -> Some {d with dec=dec} in
     let weight_dec =
       function None -> Cost.of_int (1 lsl 48) | Some d -> weight_f d in
-    let sols = razor_1d_int weight_dec (bdd, decs, of_prefix) in
+    let sols = razor_1d_int weight_dec (bdd, decs, of_prefix, Option.eq ~eq) in
     let sol = sols.(dec_count) in (* the one with default None *)
     let r = {sol with rset = Vect.filter_map clean_dec sol.rset} in
 (*    Time.stop r1di_t; *)
     r
   end
   else
-    razor_1d_c weight_f (bdd, decs, of_prefix)
+    razor_1d_c weight_f (bdd, decs, of_prefix, eq)
 
 (* runs razor such that a given decision [def] has high cost,
    and returns the incomplete classifier without [def] *)
-let razor_1d_no_default def weight_f (bdd, decs, of_prefix) =
+let razor_1d_no_default def weight_f (bdd, decs, of_prefix, eq) =
   let weight_dec = function
-    | x when x = def -> Cost.of_int (1 lsl 48)
+    | x when eq x def -> Cost.of_int (1 lsl 48)
     | x -> weight_f x in
   let def_id = Array.findi (fun x -> x = def) decs in
   let bdd = Bdd.map Option.get bdd in (* remove Some from all bdd leaves *)
-  let sols = razor_1d_int weight_dec (bdd, decs, of_prefix) in
+  let sols = razor_1d_int weight_dec (bdd, decs, of_prefix, eq) in
   sols.(def_id).rset
 
 
@@ -217,14 +217,14 @@ let struct_of_dec ?bit_width decider =
   and of_prefix = range_of_prefix bit_width in
   let decs = D.decs decider |> Set.enum |> Array.of_enum in
 (*  Time.stop sod_t; *)
-  (bdd, decs, of_prefix)
+  (bdd, decs, of_prefix, D.get_eq decider)
 
 let struct_of_tcam ?perm tcam =
   let widths = Tcam.Entry.widths (Vect.last tcam).pred in
   let bdd = Bdd.of_tcam ?perm tcam (* encode the ruleset as a bdd *)
   and of_prefix = tcam_entry_of_prefix widths in
   let decs = Tcam.decs tcam |> Set.enum |> Array.of_enum in
-  (bdd, decs, of_prefix)
+  (bdd, decs, of_prefix, (=))
 
 (* let razor_point = Point.create "Razor" *)
 (* let rr_skip_point = Point.create "RR skipped" *)
@@ -410,7 +410,7 @@ let trazor ?rr_lim ?bit_width root =
     let bdd = Bdd.of_imap bit_width decider
     and of_prefix = tcam_entry_of_prefix [bit_width] in
     let decs = D.decs decider |> Set.enum |> Array.of_enum in
-    (bdd, decs, of_prefix)
+    (bdd, decs, of_prefix, D.get_eq decider)
   in
   razor_gen ~to_struct ~post:bitmerge ~rr:ternary_rr ?rr_lim ?bit_width root
 
