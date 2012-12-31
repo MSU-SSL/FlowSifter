@@ -22,6 +22,8 @@ module Rule = struct
   (** print rule to stdout **)
 (*  let print_irule r = print_rule Int.print stdout r; print_newline() *)
 
+  let compare pred_comp dec_comp {pred;dec} {pred=p2; dec=d2} =
+    BatOrd.bin_comp pred_comp pred p2 dec_comp dec d2
 
 end
 

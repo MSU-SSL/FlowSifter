@@ -2,10 +2,10 @@ open Batteries
 
 type 'a t = 'a IMap.t
 
-let empty () = IMap.empty ~eq:(=)
-let make_default min max v = IMap.add_range min max v (empty ())
-let default ?(min_key=min_int) ?(max_key=max_int) d =
-  IMap.add_range min_key max_key d (empty ())
+let empty eq = IMap.empty ~eq
+let make_default ~eq min max v = IMap.add_range min max v (empty eq)
+let default ~eq ?(min_key=min_int) ?(max_key=max_int) d =
+  IMap.add_range min_key max_key d (empty eq)
 
 let add min max c t = IMap.add_range min max c t
 
@@ -21,22 +21,23 @@ let get_eq d = IMap.get_dec_eq d
 
 let sub min max d = d |> IMap.from min |> IMap.until max
 
-let of_enum e =
+let of_enum ~eq e =
   let add_acc acc (lo,hi,c) = IMap.add_range lo hi c acc in
-  Enum.fold add_acc (empty ()) e
+  Enum.fold add_acc (empty eq) e
 
 let decs d =
   let accum _ _ c acc = Set.add c acc in
   fold accum d Set.empty
 
-let compare_rng (min, max, c1) (lo, hi, c2) =
-  match Pervasives.compare min lo with
-      0 -> (match Pervasives.compare max hi with
-		0 -> Pervasives.compare c1 c2
+let compare_rng cmp (min, max, c1) (lo, hi, c2) =
+  match Int.compare min lo with
+      0 -> (match Int.compare max hi with
+		0 -> cmp c1 c2
 	      | x -> x)
     | x -> x
 
-let compare d1 d2 = BatEnum.compare compare_rng (enum d1) (enum d2)
+let compare dec_cmp d1 d2 =
+  BatEnum.compare (compare_rng dec_cmp) (enum d1) (enum d2)
 
 let print oc d =
   enum d |> Enum.print (fun oc (min,max,_) -> Printf.fprintf oc "(%d,%d,xx)" min max) oc
@@ -45,3 +46,4 @@ let print_all vp oc d =
   enum d |> Enum.print (fun oc (min,max,v) -> Printf.fprintf oc "(%d,%d,%a)" min max vp v) oc
 
 let lookupi d i = Printf.printf "%a %d\n" print d i; IMap.find i d
+let domain d = IMap.domain d

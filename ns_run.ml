@@ -79,11 +79,11 @@ let gen_vsdfa ~boost ~stride optimize_state_acts rules =
   |> Nfa.build_dfa ~labels:false dec_ops
   |> Regex_dfa.minimize
   |> D2fa.of_dfa
-  |> Vsdfa.of_d2fa
+  |> Vsdfa.of_d2fa Int.compare
        (*       |> tap (fun _ -> eprintf "Vsdfa built\n%!") *)
-  |> Vsdfa.increase_stride_all ((=) ([],-1)) ~com_lim:max_int (stride-1)
+  |> Vsdfa.increase_stride_all ~cmp:Int.compare ((=) ([],-1)) ~com_lim:max_int (stride-1)
        (*       |> tap (fun _ -> eprintf "Stride increased\n%!") *)
-  |> Vsdfa.boost ((=) ([],-1)) ~loop_lim:160 ~boost:(boost-1)
+  |> Vsdfa.boost ~cmp:Int.compare ((=) ([],-1)) ~loop_lim:160 ~boost:(boost-1)
   |> Regex_dfa.map_dec new_dops optimize_state_acts
 
 (* Compiles a list of rules into an automaton with decisions of

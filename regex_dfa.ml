@@ -422,8 +422,8 @@ open RS.Rule
 let table_of_q q = RS.table_of_map q.map
 
 let tcam_of_rs rs = Tcam.of_fw_ruleset [bits_per_char] rs
-let opt_table_of_q q = Optimizers.raz_dec q.map |> tcam_of_rs |> Optimizers.bitweave
-let opt_itable_of_q q = table_of_q q |> (fun rs -> rs.RS.rs) |> tcam_of_rs |> Optimizers.bitweave
+let opt_table_of_q ~cmp ~q = Optimizers.raz_dec q.map |> tcam_of_rs |> Optimizers.bitweave ~cmp
+let opt_itable_of_q ~cmp q = table_of_q q |> (fun rs -> rs.RS.rs) |> tcam_of_rs |> Optimizers.bitweave ~cmp
 
 let boosted_table_of_q ?(boost_stride=7) q =
   let m = q.map and id = q.id in
@@ -438,10 +438,10 @@ let boosted_table_of_q ?(boost_stride=7) q =
 	      |> Enum.scan prepend_star_fields
 	      |> Enum.reduce RS.join |> Vect.append default
 
-let tcam_size_q q = opt_itable_of_q q |> Vect.length
+let tcam_size_q ~cmp q = opt_itable_of_q ~cmp q |> Vect.length
 
-let dfa_tcam_size dfa =
-  Array.enum dfa.qs |> map tcam_size_q |> Enum.sum
+let dfa_tcam_size ~cmp dfa =
+  Array.enum dfa.qs |> map (tcam_size_q ~cmp) |> Enum.sum
 
 (*
 let to_rs_dfa dfa = map_qs opt_itable_of_q dfa

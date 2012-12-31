@@ -21,15 +21,14 @@ let print_candidates sa = Array.iteri print_isol sa
 (* let rr_rule_removed = Point.create "RR.rule_removed" *)
 
 let build_rule_table rule_count afdd = (* build lookup [rule -> rule list list] *)
-  (* Time.start rr_build_rt; *)
   let rt = Array.make rule_count [] in
   let leaf_set = Fdd.node_sets afdd in
   let f_leaf ris =
     let ris_r = ref ris in
     let ins ri = rt.(ri) <- ris_r :: rt.(ri) in
-    List.iter ins ris in
+    List.iter ins ris
+  in
   Set.iter f_leaf leaf_set;
-  (* Time.stop rr_build_rt; *)
   rt
 
 let filter_rules rset rule_table =
@@ -51,29 +50,18 @@ let filter_rules rset rule_table =
     if (keep i ts)
     then keep_r := (Vect.get rset i) :: !keep_r
     else begin
-      (* Point.observe rr_rule_removed; *)
       List.iter (fun rs -> rs := list_remove i !rs) ts;
     end
   done;
   Vect.of_list !keep_r
 
 let redundancy_removal rset =
-  Fdd.make_allmatch Fdd.insert_range rset
+  Fdd.make_allmatch Int.compare Fdd.insert_range rset
       |> build_rule_table (Vect.length rset)
       |> filter_rules rset
 
-
-(* let rr_point = Point.create "RR" *)
-(* let rr_timer = Time.create "RR" *)
-(* let redundancy_removal rs =  *)
-(*   Point.observe rr_point; *)
-(*   Time.start rr_timer;  *)
-(*   let ret = redundancy_removal_int rs in  *)
-(*   Time.stop rr_timer;  *)
-(*   ret *)
-
 let ternary_rr rset =
-  Fdd.make_allmatch Fdd.insert_entry rset
+  Fdd.make_allmatch Int.compare Fdd.insert_entry rset
       |> build_rule_table (Vect.length rset)
       |> filter_rules rset
 
@@ -206,7 +194,6 @@ let tcam_entry_of_prefix widths =
 let sod_t = Time.create "struct_of_dec"*)
 
 let struct_of_dec ?bit_width decider =
-(*  Point.observe sod_p; Time.start sod_t; *)
   let bit_width = match bit_width with
       None -> (try decider |> IMap.domain |> ISet.max_elt |> bits_v with _ -> 1)
     | Some bw -> bw
@@ -216,7 +203,6 @@ let struct_of_dec ?bit_width decider =
   let bdd = Bdd.of_imap bit_width decider
   and of_prefix = range_of_prefix bit_width in
   let decs = D.decs decider |> Set.enum |> Array.of_enum in
-(*  Time.stop sod_t; *)
   (bdd, decs, of_prefix, D.get_eq decider)
 
 let struct_of_tcam ?perm tcam =
@@ -226,14 +212,11 @@ let struct_of_tcam ?perm tcam =
   let decs = Tcam.decs tcam |> Set.enum |> Array.of_enum in
   (bdd, decs, of_prefix, (=))
 
-(* let razor_point = Point.create "Razor" *)
-(* let rr_skip_point = Point.create "RR skipped" *)
-
-let razor_gen ~to_struct ?rr ?(post = identity) ?(rr_lim = 1000) ?bit_width root =
+let razor_gen ~to_struct ?rr ?(post = identity)
+    ?(rr_lim = 1000) ?bit_width root =
   let rr = Option.default identity rr in
-  (* Point.observe razor_point; *)
   let rr_opt rs =
-    if Vect.length rs > rr_lim then ((* Point.observe rr_skip_point; *) rs) else rr rs in
+    if Vect.length rs > rr_lim then rs else rr rs in
   let rec razor_node = function
       Fdd.T d -> Vect.make 1 {pred=[]; dec=d}
     | Fdd.NT d ->
@@ -248,7 +231,7 @@ let razor_gen ~to_struct ?rr ?(post = identity) ?(rr_lim = 1000) ?bit_width root
 
 	RS.merge_w_children get_child_sol sol |> rr_opt
   in
-  razor_node root |> rr
+  razor_node (Fdd.get_tree root) |> rr
 
 let razor ?post ?rr_lim ?bit_width root =
   razor_gen ~to_struct:struct_of_dec ~rr:redundancy_removal
@@ -312,7 +295,7 @@ let permutation_by_count part =
   let count = column_star_counts part in
   let bits = Array.length count in
   let perm_array = 0 --^ bits |> Array.of_enum in
-  Array.stable_sort (fun i j -> compare count.(i) count.(j)) perm_array;
+  Array.stable_sort (fun i j -> Int.compare count.(i) count.(j)) perm_array;
   perm_array
 
 let inv_perm p =
@@ -321,7 +304,7 @@ let inv_perm p =
   perm_inv
 
 (* make sure to return groups in decreasing order of prefix size *)
-let partition_by_bitmask_dec w etcam =
+let partition_by_bitmask_dec ~cmp w etcam =
   let groups = Array.create (w+1) [] in (* TODO: use set instead of list *)
   let push i e =
 (*    printf "Entry %a has prefix length %d (w=%d)\n" Entry.print e.pred i w; *)
@@ -329,8 +312,8 @@ let partition_by_bitmask_dec w etcam =
   (* push each entry into an array slot *)
   iter (fun e -> push (Entry.prefix_len e.pred) e) etcam;
   (* return the enum of the list of each slot shortest prefix first *)
-  let order = chain_comp (fun r1 r2 -> compare r1.dec r2.dec)
-    (fun r s -> compare (List.length r.pred) (List.length s.pred)) in
+  let order = chain_comp (fun r1 r2 -> cmp r1.dec r2.dec)
+    (fun r s -> Int.compare (List.length r.pred) (List.length s.pred)) in
   Array.map (List.group order) groups
   |> Array.backwards |> map List.enum |> Enum.flatten
 
@@ -363,10 +346,10 @@ let bitmerge_group (type t0) g =
 
 let enum_map f e = Enum.map f e |> Enum.flatten
 
-let bitmerge tcam = if Vect.length tcam < 2 then tcam else
+let bitmerge ~cmp tcam = if Vect.length tcam < 2 then tcam else
   let w = Tcam.width_rv tcam in
   let rec loop etcam =
-    let groups = partition_by_bitmask_dec w etcam in
+    let groups = partition_by_bitmask_dec ~cmp w etcam in
     (* Enum.print ~first:"Merge Groups:\n" ~sep:"\n" ~last:"\n" (List.print (RS.Rule.print Entry.print Int.print)) stdout (Enum.clone groups);    *)
     let group_results = map bitmerge_group groups in
     let no_merges = Enum.for_all (fun (_,some_used) -> not some_used) (Enum.clone group_results)
@@ -381,7 +364,7 @@ let unweave perm div =
   Vect.map perm_filt div
 
 
-let bitweave_div div =
+let bitweave_div ~cmp div =
   (* weave |- to_map |- razor_incomplete |- of_rs |- unweave *)
   (* printf "Division: \n%a" (RS.print_rv Entry.print Int.print) div;  *)
   (* printf "Permutation: %a\n" (Array.print Int.print) perm_a;  *)
@@ -390,19 +373,17 @@ let bitweave_div div =
   (* printf "Before unweave: \n%a" (RS.print_rv Entry.print Int.print) merged;  *)
   (* printf "Out: \n%a" (RS.print_rv Entry.print Int.print) out;  *)
   let perm_a = permutation_by_count div in
-  raz_tcam ~perm:(fun i -> perm_a.(i)) div |> bitmerge |> unweave (inv_perm perm_a)
+  raz_tcam ~perm:(fun i -> perm_a.(i)) div |> bitmerge ~cmp |> unweave (inv_perm perm_a)
 
-let bitweave tcam =
+let bitweave ~cmp tcam =
   if Vect.is_empty tcam then tcam
   else
-    bitweave_divide tcam |> Vect.map bitweave_div |> Vect.reduce Vect.concat
+    bitweave_divide tcam |> Vect.map (bitweave_div ~cmp) |> Vect.reduce Vect.concat
 
-let bitweave_rs rs = {rs with RS.rs = bitweave rs.RS.rs }
-
-let trazor ?rr_lim ?bit_width root =
+let trazor ?rr_lim ?bit_width ~cmp root =
   let to_struct ?bit_width decider =
     let bit_width = match bit_width with
-	None -> decider |> IMap.domain |> ISet.max_elt |> bits_v
+      | None -> decider |> D.domain |> ISet.max_elt |> bits_v
       | Some bw -> bw
     in
     assert (bit_width <= Sys.word_size - 2);
@@ -412,13 +393,13 @@ let trazor ?rr_lim ?bit_width root =
     let decs = D.decs decider |> Set.enum |> Array.of_enum in
     (bdd, decs, of_prefix, D.get_eq decider)
   in
-  razor_gen ~to_struct ~post:bitmerge ~rr:ternary_rr ?rr_lim ?bit_width root
-
+  let post = bitmerge ~cmp:(Fdd.compare_aux cmp) in
+  razor_gen ~to_struct ~post ~rr:ternary_rr ?rr_lim ?bit_width root
 
 (* Generic compression functions *)
 
-let compress rs =
+let compress ~cmp rs =
   if Ruleset.is_complete rs then
-    RS.wrap (raz_tcam |- bitmerge) rs
+    RS.wrap (raz_tcam |- bitmerge ~cmp) rs
   else
-    RS.wrap bitweave rs
+    RS.wrap (bitweave ~cmp) rs

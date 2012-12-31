@@ -85,7 +85,8 @@ struct
         *)
        flag ["ocaml"; "pkg_threads"; "compile"]  (S[A "-thread"]);
        flag ["ocaml"; "pkg_threads"; "link"]     (S[A "-thread"]);
-       flag ["ocaml"; "pkg_threads"; "infer_interface"] (S[A "-thread"])
+       flag ["ocaml"; "pkg_threads"; "infer_interface"] (S[A "-thread"]);
+       flag ["ocaml"; "compile"; "bin_annot"] (S[A "-bin-annot"]);
 end
 
 (**
