@@ -449,4 +449,4 @@ let to_rs_dfa dfa = map_qs opt_itable_of_q dfa
 
 let tcam_size dfa =
   let get_map x = x.map in
-  Array.enum dfa.qs |> map (get_map |- Optimizers.raz_dec |- Vect.length) |> Enum.reduce (+)
+  Array.enum dfa.qs |> map (get_map %> Optimizers.raz_dec %> Vect.length) |> Enum.reduce (+)

@@ -105,7 +105,7 @@ let compile_ca_vs ~boost ~stride rules = compile_ca_gen (gen_vsdfa ~boost ~strid
 
 
 let fill_cache cached_compile ca =
-  Enum.iter (cached_compile |- ignore) (get_all_rule_groups ca)
+  Enum.iter (cached_compile %> ignore) (get_all_rule_groups ca)
 
 let null_env = (0,ref 0, "")
 

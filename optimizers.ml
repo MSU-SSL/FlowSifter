@@ -187,8 +187,8 @@ let range_of_prefix bit_width p =
 
 let tcam_entry_of_prefix widths =
     List.backwards
-    |- map (function 0 -> Zero | 1 -> One | _ -> assert false)
-    |- Tcam.Entry.of_enum ~fields:widths
+    %> map (function 0 -> Zero | 1 -> One | _ -> assert false)
+    %> Tcam.Entry.of_enum ~fields:widths
 
 (*let sod_p = Point.create "struct_of_dec"
 let sod_t = Time.create "struct_of_dec"*)
@@ -400,6 +400,6 @@ let trazor ?rr_lim ?bit_width ~cmp root =
 
 let compress ~cmp rs =
   if Ruleset.is_complete rs then
-    RS.wrap (raz_tcam |- bitmerge ~cmp) rs
+    RS.wrap (raz_tcam %> bitmerge ~cmp) rs
   else
     RS.wrap (bitweave ~cmp) rs

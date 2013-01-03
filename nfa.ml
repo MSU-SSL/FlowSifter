@@ -274,7 +274,7 @@ let build_dfa ~labels dop reg =
 (*    if id mod 100 = 1 then eprintf "N %d @ %.2f\n%!" id (Sys.time ()); *)
     let map =
       Set.fold (fun n acc -> merge_nfa_maps acc mdfa.qs.(n).map) ns (IMap.empty ~eq:Set.equal)
-      |> IMap.map (get_id |- Id.to_int)
+      |> IMap.map (get_id %> Id.to_int)
     in
     let dec =
       Set.fold (fun n acc -> dop.merge acc mdfa.qs.(n).dec) ns dop.dec0

@@ -300,7 +300,7 @@ module Entry = struct
   (*   |- tap (Enum.clone |- Enum.print (Pair.print Int.print Int.print) stdout) *)
 
   let enum_ranges e =
-    List.map (enum_ranges_f |- List.of_enum) e |> List.n_cartesian_product
+    List.map (enum_ranges_f %> List.of_enum) e |> List.n_cartesian_product
 
 
 end
