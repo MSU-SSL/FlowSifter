@@ -1,9 +1,13 @@
 *.cmx
+*.ml.d
 *.o
 *.annot
 *.cmi
 *.a
 *.cmxa
+ns_lex.ml
+ns_yac.ml
+ns_yac.mli
 bench-upac
 bench-bpac
 *.pdf

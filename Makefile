@@ -1,10 +1,10 @@
 SHELL := /bin/bash
 DEBUG = -g
 CPPFLAGS =  -O2 $(DEBUG) -I .
-OCAMLFLAGS = -annot -w Z $(DEBUG)
 PACKAGES = batteries,benchmark
+OCAMLFLAGS = -annot -w Z $(DEBUG) -package $(PACKAGES)
 
-all: FlowSifter ns_compile
+all: FlowSifter ns_compile tcam.native
 
 #all: bench-all
 
@@ -13,12 +13,12 @@ all: FlowSifter ns_compile
 dist-clean: clean
 
 clean:
-	$(RM) *.a *.o *.cmi *.cmx *.cmo *.cmxa *.annot lib_b/*.o lib_u/*.o
+	$(RM) *.a *.o *.cmi *.cmx *.cmo *.cmxa *.annot lib_b/*.o lib_u/*.o *.ml.d
 	$(RM) ns_lex.ml ns_yac.ml ns_yac.mli
 	rm -rf _build/
 
 http-baseconn.o: http-baseconn.cc
-	g++ $(CPPFLAGS) -c $^ -o $@
+	$(CXX) $(CPPFLAGS) -c $^ -o $@
 
 ####
 #### Compile bpac.cmxa
@@ -28,7 +28,7 @@ lib_b/http_pac.cc lib_b/http_pac.h: lib_b/http.pac  lib_b/binpac-lib.pac
 	cd lib_b; ./binpac http.pac; cd ..
 
 lib_b/%.o: lib_b/%.cc
-	g++ $(CPPFLAGS) -c -I lib_b/ $^ -o $@
+	$(CXX) $(CPPFLAGS) -c -I lib_b/ $^ -o $@
 
 bpac.cmxa: http-baseconn.o lib_b/binpac_buffer.o lib_b/http_pac.o lib_b/bpac_stubs.o anypac.cmx
 	ocamlmklib -custom -o bpac $^
@@ -41,10 +41,18 @@ lib_u/http_pac_fast.cc lib_u/http_pac.h lib_u/http_pac_fast.h: lib_u/http.pac li
 	cd lib_u; ./ultrapac http.pac; cd ..
 
 lib_u/%.o: lib_u/%.cc
-	g++ $(CPPFLAGS) -c -I lib_u/ $^ -o $@
+	$(CXX) $(CPPFLAGS) -c -I lib_u/ $^ -o $@
 
 upac.cmxa: lib_u/binpac.o lib_u/http_pac_fast.o lib_u/http_matcher.o lib_u/upac_stubs.o anypac.cmx
 	ocamlmklib -custom -o upac $^
+
+####
+#### Compile siftc.cmxa
+####
+
+siftc.cmxa: siftc.o
+	ocamlmklib -custom -o siftc siftc.o
+
 
 ####
 #### Compile flow.cmxa
@@ -53,7 +61,11 @@ upac.cmxa: lib_u/binpac.o lib_u/http_pac_fast.o lib_u/http_matcher.o lib_u/upac_
 tcmalloc_stubs.o: tcmalloc_stubs.c
 	ocamlc -c $^ -o $@
 
-FLOW=hashtbl_param.cmx ean_std.cmx pcregex.cmx minreg.cmx PCFG.cmx ns_types.cmx simplify.cmx ns_yac.cmx ns_lex.cmx ruleset.cmx tcam.cmx decider.cmx fdd.cmx bdd.cmx optimizers.cmx regex_dfa.cmx nfa.cmx ns_parse.cmx ns_run.cmx prog_parse.cmx arg2.cmx genrec.cmx
+
+
+ML_SOURCES=hashtbl_param.ml ean_std.ml pcregex.ml minreg.ml PCFG.ml ns_types.ml simplify.ml ns_yac.ml ns_lex.ml ruleset.ml tcam.ml decider.ml fdd.ml bdd.ml optimizers.ml regex_dfa.ml nfa.ml ns_parse.ml disj_set.ml d2fa.ml vsdfa.ml ns_run.ml prog_parse.ml arg2.ml genrec.ml prog_parse_vs.ml pcap_parser.ml bench.ml
+
+FLOWSIFT=$(ML_SOURCES:.ml=.cmx)
 
 ns_yac.ml: ns_yac.mly
 	menhir ns_yac.mly
@@ -65,27 +77,31 @@ ns_yac.cmi: ns_yac.ml
 	ocamlc -annot -g -c ns_yac.mli
 
 ns_yac.cmx: ns_yac.cmi ns_yac.ml
-	ocamlfind ocamlopt -package $(PACKAGES) $(OCAMLFLAGS) -c ns_yac.ml
+	ocamlfind ocamlopt $(OCAMLFLAGS) -c ns_yac.ml
 
 ns_yac.cmo: ns_yac.cmi ns_yac.ml
-	ocamlfind ocamlc -package $(PACKAGES) $(OCAMLFLAGS) -c ns_yac.ml
+	ocamlfind ocamlc $(OCAMLFLAGS) -c ns_yac.ml
 
 pcap_parser.cmo: pcap_parser.ml
-	ocamlfind ocamlc $(OCAMLFLAGS) -c -syntax camlp4o -package $(PACKAGES),bitstring.syntax,bitstring pcap_parser.ml -o pcap_parser.cmo
+	ocamlfind ocamlc $(OCAMLFLAGS) -c -syntax camlp4o -package bitstring.syntax,bitstring pcap_parser.ml -o pcap_parser.cmo
 
 %.cmx: %.ml
-	ocamlfind ocamlopt -package $(PACKAGES) $(OCAMLFLAGS) -c $^
+	ocamlfind ocamlopt $(OCAMLFLAGS) -c $^
 
 %.cmo: %.ml
 	ocamlfind ocamlc -package $(PACKAGES) $(OCAMLFLAGS) -c $^
 
 OLIBS = #libocamlviz.cmxa
 
-bench-bpac: bpac.cmxa pcap_parser.cmx bench.cmx tcmalloc_stubs.o
-	ocamlfind ocamlopt $(OCAMLFLAGS) -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc bpac.cmxa tcmalloc_stubs.o $(LIBS) $(FLOW) pcap_parser.cmx bench.cmx -o $@
+bench-bpac: bpac.cmxa $(FLOWSIFT) tcmalloc_stubs.o
+	ocamlfind ocamlopt $(OCAMLFLAGS) -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc bpac.cmxa tcmalloc_stubs.o $(LIBS) $(FLOWSIFT) -o $@
 
-bench-upac: upac.cmxa pcap_parser.cmx bench.cmx tcmalloc_stubs.o
-	ocamlfind ocamlopt $(OCAMLFLAGS) -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc upac.cmxa tcmalloc_stubs.o $(LIBS) $(FLOW) pcap_parser.cmx bench.cmx -o $@
+bench-upac: upac.cmxa $(FLOWSIFT) tcmalloc_stubs.o
+	ocamlfind ocamlopt $(OCAMLFLAGS) -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc upac.cmxa tcmalloc_stubs.o $(LIBS) $(FLOWSIFT) -o $@
+
+bench-siftc: siftc.cmxa $(FLOWSIFT) tcmalloc_stubs.o
+	ocamlfind ocamlopt $(OCAMLFLAGS) -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc siftc.cmxa tcmalloc_stubs.o $(LIBS) $(FLOWSIFT) -o $@
+
 
 pcap_parser.cmx: pcap_parser.ml
 	ocamlfind ocamlopt $(OCAMLFLAGS) -c -syntax camlp4o -package $(PACKAGES),bitstring.syntax,bitstring pcap_parser.ml -o pcap_parser.cmx
@@ -131,7 +147,7 @@ TRACE2=traces/jub-http.pcap # 345M, mostly content
 	./$^ -5 $(TRACE2) | tee -a $@
 	echo >> $@
 
-MODES=bpac upac
+MODES=bpac upac #siftc
 MEM_MODES=bpac flow null
 
 bench-all: $(patsubst %,bench-%,$(MODES))
@@ -142,12 +158,13 @@ perf-all: $(patsubst %, %.perf, $(MODES))
 
 perf2-all: $(patsubst %, %.perf2, $(MODES))
 
+%.ml.d: %.ml
+	ocamlfind ocamldep -package bitstring.syntax -syntax camlp4o $< > $@
 
-mldeps:
-	$(MAKE) ns_lex.ml ns_yac.ml
-	ocamlfind ocamldep -package bitstring.syntax -syntax camlp4o *.ml > mldeps
+mldeps: *.ml ns_lex.mll ns_yac.mly
+	ocamlfind ocamldep *.ml $^ > mldeps
 
-include mldeps
+include $(ML_SOURCES:.ml=.ml.d)
 
 ns_yac.cmi: ns_types.ml PCFG.cmi
 
@@ -236,3 +253,6 @@ fs-test: fs
 	./fs ~/traces/http/use/98w2-monday.pcap
 	./fs ~/traces/http/use/99w5-friday.outside.tcpdump.gz.pcap
 #	./fs dyckTest.txt
+
+tcam.native:
+	ocamlbuild tcam.native

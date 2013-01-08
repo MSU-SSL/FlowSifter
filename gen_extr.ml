@@ -129,7 +129,7 @@ let rec gen_tree (m: GTree.tree_store) i =
       let rules =
 	if ch then List.map (children_of_iter m) children else [children]
       in
-      let child_nodes = List.map (List.map (gen_tree m) |- List.flatten) rules
+      let child_nodes = List.map (List.map (gen_tree m) %> List.flatten) rules
       in
       let n = m#get ~row:i ~column:col_name in
       let e = m#get ~row:i ~column:col_enabled in

@@ -260,7 +260,7 @@ and run_ca acts q_next st =
 
 (** Removes predicate checks at runtime for non-terminals with no predicates *)
 let optimize_preds_gen compile_ca run_dfa ca =
-  let link_run_fs i = function
+  let link_run_fs _i = function
     | `Dfa dfa ->
 (*      if Ns_types.debug_ca then
 	printf "#DFA: %d\n%a\n" i (Regex_dfa.print_array_dfa (fun oc (_,q) -> Int.print oc q)) dfa; *)

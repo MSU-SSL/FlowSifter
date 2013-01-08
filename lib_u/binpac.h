@@ -21,6 +21,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string>
+#include <cstring>
 #include <memory>
 
 #define CR '\r'
@@ -48,7 +49,7 @@ class const_datastring
 public:
 	const_datastring()
 		: begin_(0), end_(0)
-		{ 
+		{
 		}
 
 	const_datastring(T const *data, int length)
@@ -93,7 +94,7 @@ public:
 	void set_end(T const *end)	{ end_ = end; }
 
 private:
-	T const *begin_; 
+	T const *begin_;
 	T const *end_;
 };
 
@@ -104,7 +105,7 @@ class datastring
 {
 public:
 	datastring()
-		{ 
+		{
 		clear();
 		capacity_ = 1024;
 		}
@@ -273,17 +274,17 @@ inline uint16 pac_swap(uint16 x)
 
 inline int32 pac_swap(int32 x)
 	{
-	return 	(x >> 24) | 
-		((x & 0xff0000) >> 8) | 
-		((x & 0xff00) << 8) | 
+	return 	(x >> 24) |
+		((x & 0xff0000) >> 8) |
+		((x & 0xff00) << 8) |
 		((x & 0xff) << 24);
 	}
 
 inline uint32 pac_swap(uint32 x)
 	{
-	return 	(x >> 24) | 
-		((x & 0xff0000) >> 8) | 
-		((x & 0xff00) << 8) | 
+	return 	(x >> 24) |
+		((x & 0xff0000) >> 8) |
+		((x & 0xff00) << 8) |
 		((x & 0xff) << 24);
 	}
 
@@ -294,7 +295,7 @@ inline T UnMarshall(const u_char *data, int byteorder)
 	{
 	T result = 0;
 	for ( int i = 0; i < (int) sizeof(T); ++i )
-		result = ( result << 8 ) | 
+		result = ( result << 8 ) |
 			data[byteorder == bigendian ? i : sizeof(T) - 1 - i];
 	return result;
 	}
@@ -354,7 +355,7 @@ inline const char *c_str(bytestring const &s)
 	return (const char *) s.begin();
 	}
 
-inline std::string std_str(const_bytestring const &s) 
+inline std::string std_str(const_bytestring const &s)
 	{
 	return std::string((const char *) s.begin(), (const char *) s.end());
 	}
@@ -364,14 +365,14 @@ inline bool operator==(bytestring const &s1, const char *s2)
 	return strcmp(c_str(s1), s2) == 0;
 	}
 
-inline void get_pointers(const_bytestring const &s, 
+inline void get_pointers(const_bytestring const &s,
 		uint8 const **pbegin, uint8 const **pend)
 	{
 	*pbegin = s.begin();
 	*pend = s.end();
 	}
 
-inline void get_pointers(bytestring const *s, 
+inline void get_pointers(bytestring const *s,
 		uint8 const **pbegin, uint8 const **pend)
 	{
 	*pbegin = s->begin();
@@ -382,31 +383,31 @@ class SimpleFlowBuffer{
 public:
 	SimpleFlowBuffer(size_t n = 1024);
 	virtual ~SimpleFlowBuffer();
-	
+
 	void NewData(const_byteptr begin = NULL, const_byteptr end = NULL);
-	
+
 	inline bool ready() const{ return data_begin <= orig_end; }
-	
+
 	inline const_byteptr begin() const
 		{
 		return data_begin;
 	}
-	
+
 	inline const_byteptr end() const
 		{
 		return current_end;
 	}
-	
+
 	inline int length()const
 	{
 		return line_length;
 	}
-	
+
 	inline bool data_available() const
 	  {
 		return data_begin < orig_end;
 		}
-		
+
 	//void NewLine();
 	inline int Oneline(){
 		int count = 0;
@@ -417,13 +418,13 @@ public:
 		while (count > 0 && *(data_begin+count-1) == CR)	{
 			count--;
 		}
-		
+
 		current_end = data_begin+count;
 		//line_mode = true;
-		
+
 		return count;
 	}
-	
+
 	inline void TestOneline(){
 		if (data_begin < orig_end && *data_begin != CR && *data_begin!=LF)	{
 			line_length = 1;;	//only need to indicating that the line is not empty
@@ -431,10 +432,10 @@ public:
 		else	{
 			line_length = 0;
 		}
-		
+
 		//line_mode = true;
 	}
-	
+
 	inline bool CleanUpNewLine(){
 		bool cleanedup = false;
 		while (data_begin < orig_end && *data_begin == CR)	{
@@ -444,11 +445,11 @@ public:
 				data_begin++;
 				cleanedup = true;
 			}
-			
+
 		//line_mode = false;
 		return cleanedup;
 	}
-	
+
 	inline void EatLine(){
 		while (data_begin < orig_end && *data_begin != LF)	{
 			data_begin++;
@@ -531,16 +532,16 @@ public:
 	// A negative frame_length represents a frame till EOF
 	//void NewFrame(int frame_length, bool chunked_);
 	//void GrowFrame(int new_frame_length);
-	
+
 	inline bool have_pending_request() const { return true; }
-	
+
 	bool line_mode;
 	unsigned char line_length;	//only indicate whether the line is empty
 	const_byteptr data_begin;
 	const_byteptr orig_end;
 	const_byteptr current_end;
 	const_byteptr expected_end;
-	
+
 	byteptr _buf;
     size_t _capacity;
     size_t _size;
