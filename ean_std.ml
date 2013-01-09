@@ -319,6 +319,7 @@ end = struct
   let free = 0
 end
 
+let flat_map f e = Enum.map f e |> Enum.flatten
 
 
 (* print various statistics for an int enum *)
@@ -326,16 +327,16 @@ let print_statistics ?(oc=stdout) e =
   match Enum.get e with
       None -> fprintf oc "Empty enumeration - no statistics\n"
     | Some x0 ->
-	let m = ref (float x0)
-	and k = ref 1
-	and s = ref 0. in
-	let t = ref 0 in
-	Enum.iter (fun x ->
-		     t := !t + x;
-		     incr k;
-		     let x = float x in
-		     let mk = !m +. (x -. !m)/.(float !k) in
-		     s := !s +. (x -. !m) *. (x -. mk);
-		     m := mk) e;
-	let stdev = sqrt(!s /. float (!k-1)) in
-	fprintf oc "N: %d Sum: %d Mean: %.1f Stdev: %.1f\n" !k !t !m stdev
+      let m = ref (float x0)
+      and k = ref 1
+      and s = ref 0. in
+      let t = ref 0 in
+      Enum.iter (fun x ->
+	t := !t + x;
+	incr k;
+	let x = float x in
+	let mk = !m +. (x -. !m)/.(float !k) in
+	s := !s +. (x -. !m) *. (x -. mk);
+	m := mk) e;
+      let stdev = sqrt(!s /. float (!k-1)) in
+      fprintf oc "N: %d Sum: %d Mean: %.1f Stdev: %.1f\n" !k !t !m stdev

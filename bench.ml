@@ -365,7 +365,10 @@ let main () =
   if packets = [| |] then failwith "No packets";
   let run l p = l (get_fs p) !rep_cnt packets in
   match !main with
-    | Tcam -> Prog_parse_vs.gen_tcam_ruleset ~boost:1 ~stride:1 "http.pro" "extr.ca" |> Array.reduce (+) |> Printf.printf "TCAM Entries: %d\n"
+    | Tcam ->
+      let entries = Prog_parse_vs.gen_tcam_ruleset ~boost:1 ~stride:1 "http.pro" "extr.ca" in
+      Array.iter (fun ((caq,pchk,rs), _tcam_qs) -> Printf.printf "CA state: %d pred: %a TCAM Cost: TODO Rules:\n%a\n\n" caq Ns_run.print_predchk pchk (List.print Ns_parse.print_opt_rule) rs) entries;
+      Printf.printf "Total TCAM Entries: %d\n" (Array.enum entries |> map (snd %> Array.enum %> map Vect.length) |> Enum.flatten |> reduce (+))
     | Stat  -> printf "%s: %d packets, total length %d\n" !run_id (Array.length packets) !trace_len
     | Diff  -> diff_loop packets
     | Dump p_num ->

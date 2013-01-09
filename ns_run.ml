@@ -2,6 +2,7 @@ open Batteries
 open Printf
 open Ns_types
 open ParsedPCFG
+open Ean_std
 
 let get_all_rule_groups (ca:regular_grammar_arr) =
   let groups_of_rlist rs =
@@ -100,7 +101,7 @@ let compile_ca_gen gen_dfa rules =
     | _ ->
       `Dfa (gen_dfa optimize_state_acts rules)
 
-let compile_ca rules = compile_ca_gen gen_arr_dfa rules
+let compile_ca _tpred rules = compile_ca_gen gen_arr_dfa rules
 let compile_ca_vs ~boost ~stride rules = compile_ca_gen (gen_vsdfa ~boost ~stride) rules
 
 
@@ -137,12 +138,13 @@ let get_rules_v i rules =
   let pred_satisfied pred = List.for_all var_satisfied pred in
   List.filter_map (fun (p,e) -> if pred_satisfied p then Some e else None) rules
 *)
-let rec get_comb_aux i = function
-  | [] -> []
-  | (_p,rs)::t when i land 1 = 1 -> rs :: get_comb_aux (i lsr 1) t
-  | _::t (* i land 1 = 0 *) -> get_comb_aux (i lsr 1) t
 
-let get_comb i rs = get_comb_aux i (List.rev rs)
+let rec bitv_filter bv = function
+  | [] -> []
+  | h::t when bv land 1 = 1 -> h :: bitv_filter (bv lsr 1) t
+  | _::t (* bv land 1 = 0 *) -> bitv_filter (bv lsr 1) t
+
+let get_comb i rs = bitv_filter i (List.rev rs) |> List.map snd
 
 (*let rules_p = Point.create "rules"*)
 
@@ -258,6 +260,17 @@ and run_ca acts q_next st =
     else
       st.ca.(q_next) st
 
+type pred_check = NoChk | Pred of int | Rule of int
+let print_predchk oc = function
+  | NoChk -> IO.nwrite oc "*"
+  | Pred x -> fprintf oc "Prd%x" x
+  | Rule x -> fprintf oc "Rul%x" x
+module IntMap = Map.Make(Int)
+
+let get_pred_bits st vps =
+  let bitvect a (v,p) = if val_p_exp Ns_types.get_f st st.vars.(v) p then (a lsl 1) + 1 else a lsl 1 in
+  List.fold_left bitvect 0 vps
+
 (** Removes predicate checks at runtime for non-terminals with no predicates *)
 let optimize_preds_gen compile_ca run_dfa ca =
   let link_run_fs _i = function
@@ -271,13 +284,25 @@ let optimize_preds_gen compile_ca run_dfa ca =
 	printf "#CA: %a %d\n" (List.print print_iact_opt) acts next_ca;
       (run_ca acts next_ca)
   in
-  let opt_prod idx rules =
+  let opt_prod idx (rules : ('a * (int, int, int) Ns_types.regular_rule) list) =
     if List.for_all (fun (p,_) -> List.length p = 0) rules then
-      List.map snd rules |> compile_ca |> link_run_fs idx
+      List.map snd rules |> compile_ca (idx,NoChk) |> link_run_fs idx
     else
-      if List.length rules < 20 then (*TODO: PARTITION RULES BY PREDICATE *)
+(* leftover code to turn var_preds into a map var -> [pexp]
+   |> List.fold_left (fun acc (v,p) -> IntMap.modify_def [] v (List.cons p) acc) IntMap.empty *)
+      let var_preds = List.map fst rules |> List.flatten |> List.unique_cmp in
+      if List.length var_preds < 20 then (* partition by predicate *)
+        let cas = Array.init (1 lsl (List.length var_preds))
+          (fun ci ->
+            let true_varpreds = bitv_filter ci (List.rev var_preds) in
+            let active_rules = List.filter (fun (vps, _) -> List.for_all (fun vp -> List.mem vp true_varpreds) vps) rules in
+            List.map snd active_rules |> compile_ca (idx, Pred ci) |> link_run_fs idx
+          )
+        in
+        (fun st -> cas.(get_pred_bits st var_preds) st)
+      else if List.length rules < 20 then (* partition by rule *)
 	let cas = Array.init (1 lsl (List.length rules))
-	  (fun ci -> get_comb ci rules |> compile_ca |> link_run_fs idx)
+	  (fun ci -> get_comb ci rules |> compile_ca (idx, Rule ci) |> link_run_fs idx)
 	in
 	(fun st -> cas.(get_rules_bits st rules) st)
       else (
@@ -286,5 +311,15 @@ let optimize_preds_gen compile_ca run_dfa ca =
       )
   in
   Array.mapi opt_prod ca
+
+let optimize_preds_global _compile_ca _run_dfa ca =
+  let var_preds = Array.enum ca |> flat_map (List.enum %> flat_map fst) |> List.of_enum |> List.unique_cmp in
+  if List.length var_preds > 20 then failwith "This ruleset has too many predicates";
+  let _pred_idxes (vps,_) = List.map (fun vp -> try List.findi (fun _i x -> x = vp) var_preds with Not_found -> assert false) vps in
+  let opt_ca_q _idx (_rules: ('a * (int, int, int) Ns_types.regular_rule) list) =
+    assert false; (* TODO: test predicates *)
+  in
+  Array.mapi opt_ca_q ca
+
 
 let optimize_preds ca = optimize_preds_gen compile_ca run_d2fa ca

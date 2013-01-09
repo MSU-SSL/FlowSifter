@@ -253,4 +253,9 @@ let to_rs_dfa_noopt vsdfa = Regex_dfa.map_qs (table_of_q |- tcam_of_rs) vsdfa
 
 let stats_vst vst = Array.enum vst |> Enum.map Vect.length
 
-let tcam_size ~cmp ~def_dec vsdfa = Array.enum vsdfa.qs |> Enum.map (boosted_table_of_q ~cmp ~def_dec ~boost:1 %> Vect.length) |> Enum.reduce (+)
+let tcam_rs ~cmp ~def_dec vsdfa =
+  Array.map (boosted_table_of_q ~cmp ~def_dec ~boost:1) vsdfa.qs
+
+let tcam_size ~cmp ~def_dec vsdfa =
+  tcam_rs ~cmp ~def_dec vsdfa
+  |> Array.fold_left (fun acc rs -> acc + Vect.length rs) 0

@@ -26,13 +26,14 @@ let optimize_preds_gen compile_ca _run_dfa ca =
    protocol grammar specification and extraction language *)
 let gen_parser ~boost ~stride p e =
    let ca_cache = ref Map.empty in
-   let cmp = Int.compare in
+(*   let cmp = Int.compare in
    let def_dec = -1 in
    let () = at_exit (fun () ->
      Map.values !ca_cache |> Enum.map (Vsdfa.tcam_size ~cmp ~def_dec) |> Enum.reduce (+)
      |> Printf.printf "parsing automata generated: %d tcam entries\n" ) in
+*)
 (* (\*  fill_cache ca_cache ca; *\) *)
-   let compile_ca rs = Ns_run.compile_ca_vs ~boost ~stride rs
+   let compile_ca _ rs = Ns_run.compile_ca_vs ~boost ~stride rs
      |> tap (function `Dfa d -> ca_cache := Map.add rs d !ca_cache | `Ca _ -> () )
    in
 
@@ -57,9 +58,9 @@ let gen_tcam_ruleset ~boost ~stride p e =
   let dfa_cache = ref Map.empty in
   let add_cache rs = function
     | `Dfa d -> dfa_cache := Map.add rs d !dfa_cache
-    | `Ca _ -> ()
+    | `Ca (_acts,_next) -> ()
   in
-  let compile_ca rs = Ns_run.compile_ca_vs ~boost ~stride rs |> tap (add_cache rs)in
+  let compile_ca (caq,p) rs = Ns_run.compile_ca_vs ~boost ~stride rs |> tap (add_cache (caq,p,rs))in
   let proto = parse_file_as_spec p
   and extr = parse_file_as_extraction e in
   let ca,_var_count = merge_cas ~proto ~extr |> regularize
@@ -70,7 +71,7 @@ let gen_tcam_ruleset ~boost ~stride p e =
   in
   let cmp = Int.compare in
   let def_dec = -1 in
-  Map.values !dfa_cache |> Enum.map (Vsdfa.tcam_size ~cmp ~def_dec) |> Array.of_enum
+  Map.enum !dfa_cache |> Enum.map (Tuple2.map2 (Vsdfa.tcam_rs ~cmp ~def_dec)) |> Array.of_enum
 
 (*
 let _ = Callback.register "gen_parser" gen_parser
