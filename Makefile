@@ -4,7 +4,7 @@ CPPFLAGS =  -O2 $(DEBUG) -I .
 PACKAGES = batteries,benchmark
 OCAMLFLAGS = -annot -w Z $(DEBUG) -package $(PACKAGES)
 
-all: FlowSifter ns_compile tcam.native
+all: FlowSifter ns_compile bench-siftc
 
 #all: bench-all
 
@@ -50,8 +50,15 @@ upac.cmxa: lib_u/binpac.o lib_u/http_pac_fast.o lib_u/http_matcher.o lib_u/upac_
 #### Compile siftc.cmxa
 ####
 
-siftc.cmxa: siftc.o
-	ocamlmklib -custom -o siftc siftc.o
+
+siftc.c: ns_compile.native http.pro extr.ca
+	./ns_compile.native http.pro extr.ca "$@"
+
+siftc.o: siftc.c
+	g++ -std=c++0x -c $< -o $@ -g -lpcap
+
+siftc.cmxa: siftc.o siftc_stubs.o
+	ocamlmklib -custom -o siftc siftc_stubs.o
 
 
 ####
@@ -164,7 +171,7 @@ perf2-all: $(patsubst %, %.perf2, $(MODES))
 mldeps: *.ml ns_lex.mll ns_yac.mly
 	ocamlfind ocamldep *.ml $^ > mldeps
 
-include $(ML_SOURCES:.ml=.ml.d)
+#include $(ML_SOURCES:.ml=.ml.d)
 
 ns_yac.cmi: ns_types.ml PCFG.cmi
 
@@ -240,14 +247,14 @@ diff-test: all
 %.native: *.ml
 	ocamlbuild -use-ocamlfind $@
 
-fs.c: ns_compile.native http.pro extr.ca
+fs_lib.h: ns_compile.native http.pro extr.ca
 	./ns_compile.native http.pro extr.ca "$@"
 
-fs: fs.c
-	g++ -std=c++0x $< -o $@ -g -lpcap
+fs: fs_main.cpp fs_lib.h
+	g++ -std=c++0x -O3 -march=native -g $< -o $@ -lpcap
 
-fs.p: fs.c
-	g++ -std=c++0x $< -o $@ -lpcap -pg
+fs.p: fs_main.cpp fs_lib.h
+	g++ -std=c++0x -O3 -march=native $< -o $@ -lpcap -pg
 
 fs-test: fs
 	./fs ~/traces/http/use/98w2-monday.pcap

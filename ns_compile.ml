@@ -267,15 +267,11 @@ let print_includes oc =
 #include <fcntl.h>
 #include <string.h> // general string handling
 #include <sys/time.h> // for gettimeofday
-#include <pcap/pcap.h>
 #include <limits.h>
 #include <utility>
 #include <unordered_map>
 #include <string>
 #include <vector>
-#include <netinet/if_ether.h>
-#include <netinet/tcp.h>
-#include <netinet/ip.h>
 #define CALL_MEMBER_FN(object,ptrToMember)  ((object).*(ptrToMember))
 using namespace std;
 char charbuf[2];
@@ -523,9 +519,12 @@ let main p e outfile =
   (* print the function to read a file *)
   print_read_file oc;
   (* close the CA struct *)
-  end_parser_object oc;
+  end_parser_object oc
+
+
   (* print the main function *)
-  print_pcap_main oc (* PCAP INPUT *)
+    (* NO MAIN! - library! *)
+(*  print_pcap_main oc (* PCAP INPUT *) *)
 (*  print_main say (* NON_PCAP INPUT *) *)
 
 
