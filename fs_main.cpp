@@ -1,8 +1,14 @@
 #include "fs_lib.h"
+
+#include <sys/time.h> // for gettimeofday
 #include <pcap/pcap.h>
 #include <netinet/if_ether.h>
 #include <netinet/tcp.h>
 #include <netinet/ip.h>
+#include <limits.h>
+
+//char charbuf[2];
+//char* nice(unsigned char c) { if (c >= 0x20 && c <= 0x7e) sprintf(charbuf, " %c", c); else sprintf(charbuf, "%02x", c); return charbuf;}
 
 struct four_tuple {
   uint32_t src; uint32_t dest;
