@@ -102,14 +102,14 @@ pcap_parser.cmo: pcap_parser.ml
 
 OLIBS = #libocamlviz.cmxa
 
-bench-bpac: bpac.cmxa $(FLOWSIFT) bench.cmx tcmalloc_stubs.o
-	ocamlfind ocamlopt $(OCAMLFLAGS) -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc bpac.cmxa tcmalloc_stubs.o $(LIBS) $(FLOWSIFT) -o $@
+bench-bpac: bpac.cmxa tcmalloc_stubs.o $(FLOWSIFT) bench.cmx
+	ocamlfind ocamlopt $(OCAMLFLAGS) -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc $^ -o $@
 
 bench-upac: upac.cmxa $(FLOWSIFT) bench.cmx tcmalloc_stubs.o
-	ocamlfind ocamlopt $(OCAMLFLAGS) -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc upac.cmxa tcmalloc_stubs.o $(LIBS) $(FLOWSIFT) -o $@
+	ocamlfind ocamlopt $(OCAMLFLAGS) -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc $^ -o $@
 
-bench-siftc: siftc.o siftc.cmxa $(FLOWSIFT) bench.cmx tcmalloc_stubs.o
-	ocamlfind ocamlopt $(OCAMLFLAGS) -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc siftc.cmxa tcmalloc_stubs.o $(LIBS) $(FLOWSIFT) -o $@
+bench-siftc: siftc.cmxa tcmalloc_stubs.o $(FLOWSIFT) bench.cmx
+	ocamlfind ocamlopt $(OCAMLFLAGS) -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc $^ -o $@
 
 
 pcap_parser.cmx: pcap_parser.ml
