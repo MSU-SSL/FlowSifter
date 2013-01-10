@@ -214,30 +214,20 @@ let run pr =
 
   let get_dir (_,_,sp,_dp) = if sp = 80 then Downflow else Upflow in
 
-  let act_packet (flow, data, fin, off) =
+  let act_packet (flow, data, fin, _off) =
     incr packet_ctr;
+    let d = get_dir flow in
     if Ns_types.debug_ca && !main <> Diff then
       Printf.printf "\nP%a:\n%S\n" print_flow flow data;
-    (
-      match fin, off with
-	| false, 0 -> (* new conn, first packet *)
-	  let p = pr.new_parser () in
-	  Hashtbl.add ht flow p;
-	  pr.add_data p (get_dir flow) data;
-	| false, _ -> (* middle packet *)
-	  (try
-            let p = Hashtbl.find ht flow in
-	    pr.add_data p (get_dir flow) data;
-          with Not_found -> Printf.printf "new flow starts with offset > 0")
-	| true, 0 -> (* singleton flow *)
-	  let p = pr.new_parser () in
-	  pr.add_data p (get_dir flow) data;
-	  pr.delete_parser p;
-	| true, _ -> (* final packet *)
-	  let p = Hashtbl.find ht flow in
-	  pr.add_data p (get_dir flow) data;
-	  Hashtbl.remove ht flow;
-	  pr.delete_parser p;
+    (try
+       let ctx = Hashtbl.find ht flow in
+       pr.add_data ctx d data;
+       if fin then ( Hashtbl.remove ht flow; pr.delete_parser ctx; )
+     with Not_found ->
+       let ctx = pr.new_parser () in
+       pr.add_data ctx d data;
+       if fin then pr.delete_parser ctx
+       else Hashtbl.add ht flow ctx
     );
     if !check_mem_per_packet && !mem0 > 0 then (
       printf "%s %s %d %d %d\n" !run_id pr.id !packet_ctr !conc_flows (mem ());
