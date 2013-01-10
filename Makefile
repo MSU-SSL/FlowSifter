@@ -1,8 +1,11 @@
 SHELL := /bin/bash
 DEBUG = -g
-CPPFLAGS =  -O2 $(DEBUG) -I .
-PACKAGES = batteries,benchmark
+CFLAGS = $(DEBUG) -O2 -I.
+CPPFLAGS = $(CFLAGS) -std=c++0x
+PACKAGES = batteries,benchmark,bitstring
 OCAMLFLAGS = -annot -w Z $(DEBUG) -package $(PACKAGES)
+OCAMLOPT = ocamlfind ocamlopt $(OCAMLFLAGS)
+OCAMLC = ocamlfind ocamlc $(OCAMLFLAGS)
 
 all: FlowSifter ns_compile bench-siftc
 
@@ -51,14 +54,14 @@ upac.cmxa: lib_u/binpac.o lib_u/http_pac_fast.o lib_u/http_matcher.o lib_u/upac_
 ####
 
 
-siftc.c: ns_compile.native http.pro extr.ca
-	./ns_compile.native http.pro extr.ca "$@"
+siftc.o: siftc.cpp fs_lib.h
+	$(CXX) $(CPPFLAGS) -c $< -o $@ -g -lpcap
 
-siftc.o: siftc.c
-	g++ -std=c++0x -c $< -o $@ -g -lpcap
+siftc_stubs.o: siftc_stubs.c
+	$(CC) $(CFLAGS) -c $< -o $@ -g
 
-siftc.cmxa: siftc.o siftc_stubs.o
-	ocamlmklib -custom -o siftc siftc_stubs.o
+siftc.cmxa: siftc_stubs.o siftc.o anypac.cmx
+	ocamlmklib -custom -o siftc $^
 
 
 ####
@@ -69,8 +72,7 @@ tcmalloc_stubs.o: tcmalloc_stubs.c
 	ocamlc -c $^ -o $@
 
 
-
-ML_SOURCES=hashtbl_param.ml ean_std.ml pcregex.ml minreg.ml PCFG.ml ns_types.ml simplify.ml ns_yac.ml ns_lex.ml ruleset.ml tcam.ml decider.ml fdd.ml bdd.ml optimizers.ml regex_dfa.ml nfa.ml ns_parse.ml disj_set.ml d2fa.ml vsdfa.ml ns_run.ml prog_parse.ml arg2.ml genrec.ml prog_parse_vs.ml pcap_parser.ml bench.ml
+ML_SOURCES=hashtbl_param.ml ean_std.ml pcregex.ml minreg.ml PCFG.ml ns_types.ml simplify.ml ns_yac.ml ns_lex.ml ruleset.ml tcam.ml decider.ml fdd.ml bdd.ml optimizers.ml regex_dfa.ml nfa.ml ns_parse.ml disj_set.ml d2fa.ml vsdfa.ml ns_run.ml prog_parse.ml arg2.ml genrec.ml prog_parse_vs.ml pcap_parser.ml
 
 FLOWSIFT=$(ML_SOURCES:.ml=.cmx)
 
@@ -100,13 +102,13 @@ pcap_parser.cmo: pcap_parser.ml
 
 OLIBS = #libocamlviz.cmxa
 
-bench-bpac: bpac.cmxa $(FLOWSIFT) tcmalloc_stubs.o
+bench-bpac: bpac.cmxa $(FLOWSIFT) bench.cmx tcmalloc_stubs.o
 	ocamlfind ocamlopt $(OCAMLFLAGS) -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc bpac.cmxa tcmalloc_stubs.o $(LIBS) $(FLOWSIFT) -o $@
 
-bench-upac: upac.cmxa $(FLOWSIFT) tcmalloc_stubs.o
+bench-upac: upac.cmxa $(FLOWSIFT) bench.cmx tcmalloc_stubs.o
 	ocamlfind ocamlopt $(OCAMLFLAGS) -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc upac.cmxa tcmalloc_stubs.o $(LIBS) $(FLOWSIFT) -o $@
 
-bench-siftc: siftc.cmxa $(FLOWSIFT) tcmalloc_stubs.o
+bench-siftc: siftc.o siftc.cmxa $(FLOWSIFT) bench.cmx tcmalloc_stubs.o
 	ocamlfind ocamlopt $(OCAMLFLAGS) -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc siftc.cmxa tcmalloc_stubs.o $(LIBS) $(FLOWSIFT) -o $@
 
 
@@ -122,16 +124,13 @@ hwrun:
 	mv hwrun.native hwrun
 
 demo: *.ml
-	ocamlbuild demo.native
+	ocamlbuild -no-hygiene demo.native
 
 gen_extr:
-	ocamlbuild -j 0 -use-ocamlfind gen_extr.native
+	ocamlbuild -no-hygiene -j 0 -use-ocamlfind gen_extr.native
 
 FlowSifter: gen_extr
 	cp _build/gen_extr.native dist/FlowSifter
-
-ns_compile:
-	ocamlbuild -use-ocamlfind ns_compile.native
 
 #join -j 1 -o 1.1 1.2 2.2 null.20-timelog null.50-timelog | join -j 1 -o 1.1 1.2 1.3 2.2 - null.100-timelog | join -j 1 -o 1.1 1.2 1.3 1.4 2.2 - null.150-timelog | join -j 1 -o 1.1 1.2 1.3 1.4 1.5 2.2 - null.250-timelog
 
@@ -171,7 +170,7 @@ perf2-all: $(patsubst %, %.perf2, $(MODES))
 mldeps: *.ml ns_lex.mll ns_yac.mly
 	ocamlfind ocamldep *.ml $^ > mldeps
 
-#include $(ML_SOURCES:.ml=.ml.d)
+include $(ML_SOURCES:.ml=.ml.d)
 
 ns_yac.cmi: ns_types.ml PCFG.cmi
 
@@ -244,8 +243,8 @@ diff-test: all
 	./bench-bpac -f -d ~/traces/http/use/99w2-tuesday.inside* >> log; tail -n 1 log;\
 	./bench-upac -f -d ~/traces/http/use/99w2-tuesday.inside* >> log; tail -n 1 log
 
-%.native: *.ml
-	ocamlbuild -use-ocamlfind $@
+ns_compile.native: $(FLOWSIFT) ns_compile.cmx
+	$(OCAMLOPT) $^ -linkpkg -o $@
 
 fs_lib.h: ns_compile.native http.pro extr.ca
 	./ns_compile.native http.pro extr.ca "$@"
@@ -262,4 +261,4 @@ fs-test: fs
 #	./fs dyckTest.txt
 
 tcam.native:
-	ocamlbuild tcam.native
+	ocamlbuild -no-hygiene tcam.native

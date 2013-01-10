@@ -6,6 +6,8 @@
 #include <netinet/tcp.h>
 #include <netinet/ip.h>
 #include <limits.h>
+#include <utility>
+#include <unordered_map>
 
 //char charbuf[2];
 //char* nice(unsigned char c) { if (c >= 0x20 && c <= 0x7e) sprintf(charbuf, " %c", c); else sprintf(charbuf, "%02x", c); return charbuf;}
@@ -144,6 +146,7 @@ int main(int argc, char* argv[]) {
   if (pcap == NULL) { printf ("Error opening file\n"); exit(2); }
   int err = pcap_loop(pcap, -1, gen_packets, NULL); // parse pcap into packets
   matches=0;
+  bytes_processed=0;
   struct timeval t0,tf;
   gettimeofday(&t0, NULL);
   run_parse();

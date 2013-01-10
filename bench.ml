@@ -225,8 +225,10 @@ let run pr =
 	  Hashtbl.add ht flow p;
 	  pr.add_data p (get_dir flow) data;
 	| false, _ -> (* middle packet *)
-	  let p = Hashtbl.find ht flow in
-	  pr.add_data p (get_dir flow) data;
+	  (try
+            let p = Hashtbl.find ht flow in
+	    pr.add_data p (get_dir flow) data;
+          with Not_found -> Printf.printf "new flow starts with offset > 0")
 	| true, 0 -> (* singleton flow *)
 	  let p = pr.new_parser () in
 	  pr.add_data p (get_dir flow) data;

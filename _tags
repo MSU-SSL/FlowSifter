@@ -3,6 +3,7 @@
 <bench.*>: dflow, syntax_camlp4o, pkg_camlp4.macro
 <{pcap_parser,hwrun}.*>: syntax_camlp4o, pkg_bitstring.syntax
 <*_stubs.c>: include_ocaml
+<*_stubs.cpp>: include_ocaml
 <*/libbinpac.a>: precious
 <*/libubinpac.a>: precious
 <demo.*>: pkg_pcap

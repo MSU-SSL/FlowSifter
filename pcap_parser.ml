@@ -240,6 +240,7 @@ let read_file_as_str ?(verbose=false) fn =
 (* get a single flow of packets from an enum of filenames *)
 let packets_of_files fns =
   fns /@ read_file_as_str /@ to_pkt_stream
+  |> tap (fun e -> if Enum.is_empty e then failwith "No packets to parse")
   |> Enum.reduce (Enum.merge (fun (ts1,_,_,_,_) (ts2,_,_,_,_) -> ts1 < ts2))
 
 let trace_size_v v =

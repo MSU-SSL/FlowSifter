@@ -1,4 +1,6 @@
 #include "fs_lib.h"
+#include <fcntl.h>
+#include <sys/time.h> // for gettimeofday
 
 void read_file(char* filename, unsigned char*& out, int& len) {
   FILE* fd = fopen(filename, "r");

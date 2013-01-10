@@ -40,9 +40,9 @@ let declare_uint oc v = fprintf oc "  unsigned int %s;\n" v
 
 let declare_vars dfa_count oc var_count =
   let say x = fprintf oc (x ^^ "\n") in
-  declare_uint oc "matches";
-  declare_uint oc "flows";
-  declare_uint oc "skip_b";
+  declare_uint oc "matches=0";
+  declare_uint oc "flows=0";
+  declare_uint oc "skip_b=0";
   if starts then say "int dfa_starts[%d] = {0};" dfa_count;
   fprintf oc "#define PRI_DEF(dfa) ((dfa_pri##dfa[0] > 0x80) ? dfa_pri##dfa[0] : 0)\n";
   fprintf oc "struct state {\npublic:\n";
@@ -61,7 +61,9 @@ let declare_vars dfa_count oc var_count =
   declare_uint oc "dfa_pri";
   declare_uint oc "dfa_q";
   fprintf oc "  void (state::*q)();\n";
-  fprintf oc "  state() : base_pos(0), fdpos(0), flow_data(NULL), flow_data_length(0), fail_drop(0), rerun_temp(0), dfa_best_pri(PRI_DEF(0)), dfa_best_q(0), dfa_best_pos(0), dfa_pri(PRI_DEF(0)), dfa_q(0), q(&state::CA0) {flows++;}\n"
+  fprintf oc "  state() : base_pos(0), fdpos(0), flow_data(NULL), flow_data_length(0), fail_drop(0), rerun_temp(0), dfa_best_pri(PRI_DEF(0)), dfa_best_q(0), dfa_best_pos(0), dfa_pri(PRI_DEF(0)), dfa_q(0), q(&state::CA0) {flows++;}\n";
+  fprintf oc "  void reset() { base_pos = 0; fdpos=0; flow_data=NULL; flow_data_length=0; fail_drop=0; rerun_temp=0; dfa_best_pri=PRI_DEF(0); dfa_best_q=0; dfa_best_pos=0; dfa_pri=PRI_DEF(0); dfa_q=0; q=&state::CA0; flows++; }\n";
+  ()
 
 let print_builtins oc =
   let say x = fprintf oc (x ^^ "\n") in
@@ -264,10 +266,7 @@ let print_includes oc =
 #include <inttypes.h>
 #include <assert.h>
 #include <stdio.h>
-#include <fcntl.h>
 #include <string.h> // general string handling
-#include <utility>
-#include <unordered_map>
 #include <string>
 #include <vector>
 #define CALL_MEMBER_FN(object,ptrToMember)  ((object).*(ptrToMember))
