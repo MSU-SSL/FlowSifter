@@ -2,7 +2,7 @@
 #include <fcntl.h>
 #include <sys/time.h> // for gettimeofday
 
-void read_file(char* filename, unsigned char*& out, int& len) {
+void read_file(char* filename, const unsigned char*& out, size_t& len) {
   FILE* fd = fopen(filename, "r");
 #ifdef DEBUG
   printf("Subject: %s\n", basename(filename));

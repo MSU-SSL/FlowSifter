@@ -174,6 +174,8 @@ let print_ip oc x =
   let x = (Int32.to_int x) in
   fprintf oc "%d.%d.%d.%d" (x lsr 24 land 255) (x lsr 16 land 255) (x lsr 8 land 255) (x land 255)
 let print_flow oc (a,b,c,d) = fprintf oc "(%a,%a,%d,%d)" print_ip a print_ip b c d
+let get_dir (_,_,sp,_dp) = if sp = 80 then Downflow else Upflow
+
 
 let run pr =
 
@@ -212,20 +214,18 @@ let run pr =
       !trace_len gbps (mem()) !conc_flows (pr.get_event_count()) pct_parsed dropped
   in
 
-  let get_dir (_,_,sp,_dp) = if sp = 80 then Downflow else Upflow in
-
   let act_packet (flow, data, fin, _off) =
     incr packet_ctr;
-    let d = get_dir flow in
+    let dir = get_dir flow in
     if Ns_types.debug_ca && !main <> Diff then
       Printf.printf "\nP%a:\n%S\n" print_flow flow data;
     (try
        let ctx = Hashtbl.find ht flow in
-       pr.add_data ctx d data;
+       pr.add_data ctx dir data;
        if fin then ( Hashtbl.remove ht flow; pr.delete_parser ctx; )
      with Not_found ->
        let ctx = pr.new_parser () in
-       pr.add_data ctx d data;
+       pr.add_data ctx dir data;
        if fin then pr.delete_parser ctx
        else Hashtbl.add ht flow ctx
     );
@@ -235,8 +235,8 @@ let run pr =
     let events = pr.get_event_count () in
     ediff := events - !last_events;
     last_events := events;
-
   in
+
   reset_parsers, post_round, act_packet
 ;;
 
@@ -287,13 +287,13 @@ let diff_loop xs =
   let close_count = ref 0 in
   let count = ref 0 in
   let wrongs = ref [] in
-  let (_,_,f1) = get_fs `Sift and (_,_,f2) = get_fs `Pac in
+  let (_,_,act_packet_sift) = get_fs `Sift and (_,_,act_packet_pac) = get_fs `Pac in
   let rec loop i =
     if i >= Array.length xs then () else begin
       incr count;
-      f1 xs.(i);
+      act_packet_sift xs.(i);
       let e1 = !ediff in
-      f2 xs.(i);
+      act_packet_pac xs.(i);
       let wrong = abs (!ediff - e1) > 4 in
       let close = !ediff <> e1 && not wrong in
       Printf.printf "Sift: %d events, PAC: %d events (diff: %B) (close: %B) pos:%d \n" e1 !ediff wrong close i;

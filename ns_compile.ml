@@ -61,7 +61,11 @@ let declare_vars dfa_count oc var_count =
   declare_uint oc "dfa_pri";
   declare_uint oc "dfa_q";
   fprintf oc "  void (state::*q)();\n";
-  fprintf oc "  state() : base_pos(0), fdpos(0), flow_data(NULL), flow_data_length(0), fail_drop(0), rerun_temp(0), dfa_best_pri(PRI_DEF(0)), dfa_best_q(0), dfa_best_pos(0), dfa_pri(PRI_DEF(0)), dfa_q(0), q(&state::CA0) {flows++;}\n";
+  fprintf oc "  state() : ";
+  for i=0 to var_count-1 do
+    fprintf oc "v%d(0), " i;
+  done;
+  fprintf oc "base_pos(0), fdpos(0), flow_data(NULL), flow_data_length(0), fail_drop(0), rerun_temp(0), dfa_best_pri(PRI_DEF(0)), dfa_best_q(0), dfa_best_pos(0), dfa_pri(PRI_DEF(0)), dfa_q(0), q(&state::CA0) {flows++;}\n";
   fprintf oc "  void reset() { base_pos = 0; fdpos=0; flow_data=NULL; flow_data_length=0; fail_drop=0; rerun_temp=0; dfa_best_pri=PRI_DEF(0); dfa_best_q=0; dfa_best_pos=0; dfa_pri=PRI_DEF(0); dfa_q=0; q=&state::CA0; flows++; }\n";
   ()
 
@@ -100,7 +104,7 @@ let print_act_raw oc (var, act) =
 
 let print_act oc (var, act) =
   print_act_raw oc (var, act);
-  if debug then fprintf oc "printf(\"v%d=%a=%%d \", v%d); " var (print_aexp var) act var
+  if debug then fprintf oc "printf(\"v%d:=(%a)==%%d \", v%d); " var (print_aexp var) act var
 
 let print_acts oc acts =
   List.print print_act ~first:"" ~last:"" ~sep:"" oc acts
@@ -109,6 +113,7 @@ let print_pred oc idx preds =
   if preds = [] then "1" else
     let print_expr oc ps = List.print (fun oc (v,pe) -> print_pexp v oc pe) ~first:"(" ~last:")" ~sep:" && " oc ps in
     fprintf oc "    bool p%d = %a;\n" idx print_expr preds;
+    if debug then fprintf oc "    printf(\"p%d=%%d \",p%d);\n" idx idx;
     sprintf "p%d" idx
 
 open Regex_dfa
@@ -168,7 +173,7 @@ let print_dfa oc dfa (regex,id) =
   say "  unsigned int fdp = fdpos;";
   say "  while (fdp < flow_data_length) {";
   if debug then
-    say "    printf(\"q%%03dp%%1d@%%02d(%%2s) \", dq, dp, fdp, nice(flow_data[fdp]));";
+    say "    nice(flow_data[fdp]); printf(\"q%%03dp%%1d@%%02d(%%2s) \", dq, dp, fdp, charbuf);";
   say "    dq = dfa_tr%d[(dq << 8) | flow_data[fdp]]; // load qnext" id;
   say "    fdp++;";
   say "    if (dq == %s) break; //quit if qnext = -1" (dfa_type_max dfa);
@@ -271,8 +276,8 @@ let print_includes oc =
 #include <vector>
 #define CALL_MEMBER_FN(object,ptrToMember)  ((object).*(ptrToMember))
 using namespace std;
-char charbuf[2];
-char* nice(unsigned char c) { if (c >= 0x20 && c <= 0x7e) sprintf(charbuf, \" %%c\", c); else sprintf(charbuf, \"%%02x\", c); return charbuf;}
+char charbuf[3];
+void nice(unsigned char c) { if (c >= 0x20 && c <= 0x7e) sprintf(charbuf, \" %%c\", c); else sprintf(charbuf, \"%%02x\", c);}
 "
 
 

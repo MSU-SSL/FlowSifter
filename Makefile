@@ -252,6 +252,9 @@ fs_lib.h: ns_compile.native http.pro extr.ca
 fs: fs_main.cpp fs_lib.h
 	g++ -std=c++0x -O3 -march=native -g $< -o $@ -lpcap
 
+fs_single: fs_single.cpp fs_lib.h
+	g++ -std=c++0x -O3 -march=native -g $< -o $@
+
 fs.p: fs_main.cpp fs_lib.h
 	g++ -std=c++0x -O3 -march=native $< -o $@ -lpcap -pg
 
