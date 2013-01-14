@@ -5,7 +5,7 @@ open Ean_std
 let set_mhs n = Gc.set { (Gc.get()) with Gc.minor_heap_size = n; }
 let () = set_mhs 250_000;;
 
-let pac = if exe = "./bench-bpac" then "bpac" else "upac"
+let pac = if exe = "./bench-bpac" then "bpac" else if exe = "./bench-upac" then "upac" else "siftc"
 
 type parser_t = [ `Null | `Sift | `Pac ]
 let p_to_string = function `Null -> "Null" | `Sift -> "Sift" | `Pac -> "Pac "
@@ -190,7 +190,7 @@ let run pr =
     Hashtbl.iter (fun _ p -> pr.delete_parser p; decr conc_flows) ht;
     Hashtbl.clear ht;
     if (!conc_flows <> 0) then (
-      printf "#ERR: conc_flows = %d after cleanup\n" !conc_flows;
+(*      printf "#ERR: conc_flows = %d after cleanup\n" !conc_flows;*)
       conc_flows := 0
     )
   in
@@ -282,22 +282,22 @@ module String = struct
   let head ~len str = head str len
 end
 
-let diff_loop xs =
+let diff_loop packets =
   let diffs = ref 0 in
   let close_count = ref 0 in
   let count = ref 0 in
   let wrongs = ref [] in
   let (_,_,act_packet_sift) = get_fs `Sift and (_,_,act_packet_pac) = get_fs `Pac in
   let rec loop i =
-    if i >= Array.length xs then () else begin
+    if i >= Array.length packets then () else begin
       incr count;
-      act_packet_sift xs.(i);
+      act_packet_sift packets.(i);
       let e1 = !ediff in
-      act_packet_pac xs.(i);
+      act_packet_pac packets.(i);
       let wrong = abs (!ediff - e1) > 4 in
       let close = !ediff <> e1 && not wrong in
-      Printf.printf "Sift: %d events, PAC: %d events (diff: %B) (close: %B) pos:%d \n" e1 !ediff wrong close i;
-      let (flow, data, _fin, off) = xs.(i) in
+      if wrong then Printf.printf "Sift: %d events, PAC: %d events (close: %B) pos:%d \n" e1 !ediff close i;
+      let (flow, data, _fin, off) = packets.(i) in
       if wrong then (
 	incr diffs;
 	Printf.printf "\nWP%a@%d:\n%s\n%!" print_flow flow off (data |> String.head ~len:1024 |> clean_unprintable);
@@ -365,8 +365,12 @@ let main () =
     | Diff  -> diff_loop packets
     | Dump p_num ->
       let (_,kapack,_,_) = packets.(p_num) in print_string kapack
-    | _ when !check_mem_per_packet -> List.iter (run main_check_mem) !parsers
-    | _ when Ns_types.debug_ca -> List.iter (run main_debug) !parsers
-    | Parse -> if !baseline then run main_loop `Null; List.iter (run main_loop) !parsers
+    | _ when !check_mem_per_packet ->
+      List.iter (run main_check_mem) !parsers
+    | _ when Ns_types.debug_ca ->
+      List.iter (run main_debug) !parsers
+    | Parse ->
+(*      printf "#run_id\tpr.id\tround\ttime\tlen\tgbps\tmem\tc.flows\tevents\tpct_parsed\tdropped\n"; *)
+      if !baseline then run main_loop `Null; List.iter (run main_loop) !parsers
 
 let () = main ()
