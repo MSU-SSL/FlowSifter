@@ -38,7 +38,6 @@ typedef long 		int32;
 typedef unsigned char 	uint8;
 typedef unsigned short 	uint16;
 typedef unsigned int 	uint32;
-typedef void		*nullptr;
 typedef void		*voidptr;
 typedef uint8		*byteptr;
 typedef const uint8	*const_byteptr;
@@ -66,17 +65,17 @@ inline uint16 pac_swap(uint16 x)
 
 inline int32 pac_swap(int32 x)
 	{
-	return 	(x >> 24) | 
-		((x & 0xff0000) >> 8) | 
-		((x & 0xff00) << 8) | 
+	return 	(x >> 24) |
+		((x & 0xff0000) >> 8) |
+		((x & 0xff00) << 8) |
 		((x & 0xff) << 24);
 	}
 
 inline uint32 pac_swap(uint32 x)
 	{
-	return 	(x >> 24) | 
-		((x & 0xff0000) >> 8) | 
-		((x & 0xff00) << 8) | 
+	return 	(x >> 24) |
+		((x & 0xff0000) >> 8) |
+		((x & 0xff00) << 8) |
 		((x & 0xff) << 24);
 	}
 
@@ -87,7 +86,7 @@ inline T UnMarshall(const u_char *data, int byteorder)
 	{
 	T result = 0;
 	for ( int i = 0; i < (int) sizeof(T); ++i )
-		result = ( result << 8 ) | 
+		result = ( result << 8 ) |
 			data[byteorder == bigendian ? i : sizeof(T) - 1 - i];
 	return result;
 	}

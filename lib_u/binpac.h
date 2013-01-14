@@ -37,7 +37,6 @@ typedef unsigned char 	uint8;
 typedef unsigned char byte;
 typedef unsigned short 	uint16;
 //typedef unsigned long 	uint32;
-typedef void		*nullptr;
 typedef void		*voidptr;
 typedef uint8		*byteptr;
 
@@ -250,7 +249,6 @@ typedef unsigned char 	uint8;
 typedef unsigned char byte;
 typedef unsigned short 	uint16;
 typedef unsigned long 	uint32;
-typedef void		*nullptr;
 typedef void		*voidptr;
 typedef uint8		*byteptr;
 typedef const uint8	*const_byteptr;
