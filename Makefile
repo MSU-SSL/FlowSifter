@@ -1,13 +1,14 @@
 SHELL := /bin/bash
-DEBUG = -g
-CFLAGS = $(DEBUG) -O2 -I.
+DEBUG = #-g
+CFLAGS = $(DEBUG) -O2 -I. -march=native
 CPPFLAGS = $(CFLAGS) -std=c++0x
 PACKAGES = batteries,benchmark,bitstring
 OCAMLFLAGS = -annot -w Z $(DEBUG) -package $(PACKAGES)
 OCAMLOPT = ocamlfind ocamlopt $(OCAMLFLAGS)
 OCAMLC = ocamlfind ocamlc $(OCAMLFLAGS)
+OCAMLBUILD = ocamlbuild -no-hygiene -use-ocamlfind -j 0
 
-all: FlowSifter ns_compile bench-siftc
+all: ns_compile.native bench-siftc
 
 #all: bench-all
 
@@ -86,16 +87,16 @@ ns_yac.cmi: ns_yac.ml
 	ocamlc -annot -g -c ns_yac.mli
 
 ns_yac.cmx: ns_yac.cmi ns_yac.ml
-	ocamlfind ocamlopt $(OCAMLFLAGS) -c ns_yac.ml
+	$(OCAMLOPT) -c ns_yac.ml
 
 ns_yac.cmo: ns_yac.cmi ns_yac.ml
-	ocamlfind ocamlc $(OCAMLFLAGS) -c ns_yac.ml
+	$(OCAMLC) -c ns_yac.ml
 
 pcap_parser.cmo: pcap_parser.ml
-	ocamlfind ocamlc $(OCAMLFLAGS) -c -syntax camlp4o -package bitstring.syntax,bitstring pcap_parser.ml -o pcap_parser.cmo
+	$(OCAMLC) -c -syntax camlp4o -package bitstring.syntax,bitstring pcap_parser.ml -o pcap_parser.cmo
 
 %.cmx: %.ml
-	ocamlfind ocamlopt $(OCAMLFLAGS) -c $^
+	$(OCAMLOPT) -c $^
 
 %.cmo: %.ml
 	ocamlfind ocamlc -package $(PACKAGES) $(OCAMLFLAGS) -c $^
@@ -103,31 +104,35 @@ pcap_parser.cmo: pcap_parser.ml
 OLIBS = #libocamlviz.cmxa
 
 bench-bpac: bpac.cmxa tcmalloc_stubs.o $(FLOWSIFT) bench.cmx
-	ocamlfind ocamlopt $(OCAMLFLAGS) -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc $^ -o $@
+	$(OCAMLOPT) -package bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc $^ -o $@
 
-bench-upac: upac.cmxa $(FLOWSIFT) bench.cmx tcmalloc_stubs.o
-	ocamlfind ocamlopt $(OCAMLFLAGS) -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc $^ -o $@
+bench-upac: upac.cmxa tcmalloc_stubs.o $(FLOWSIFT) bench.cmx
+	$(OCAMLOPT) -package bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc $^ -o $@
 
 bench-siftc: siftc.cmxa tcmalloc_stubs.o $(FLOWSIFT) bench.cmx
-	ocamlfind ocamlopt $(OCAMLFLAGS) -package $(PACKAGES),bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc $^ -o $@
+	$(OCAMLOPT) -package bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc $^ -o $@
 
 
 pcap_parser.cmx: pcap_parser.ml
 	ocamlfind ocamlopt $(OCAMLFLAGS) -c -syntax camlp4o -package $(PACKAGES),bitstring.syntax,bitstring pcap_parser.ml -o pcap_parser.cmx
 
 pcap_parser: pcap_parser.ml
-	ocamlbuild -no-hygiene pcap_parser.native
+	$(OCAMLBUILD) pcap_parser.native
 	mv pcap_parser.native pcap_parser
 
 hwrun:
-	ocamlbuild -no-hygiene hwrun.native
+	$(OCAMLBUILD) hwrun.native
 	mv hwrun.native hwrun
 
 demo: *.ml
-	ocamlbuild -no-hygiene demo.native
+	$(OCAMLBUILD) demo.native
 
-gen_extr:
-	ocamlbuild -no-hygiene -j 0 -use-ocamlfind gen_extr.native
+##
+## Extraction grammar generation tool
+##
+
+gen_extr: $(FLOWSIFT) gen_extr.cmx
+	$(OCAMLOPT) -package $(PACKAGES) $^ -o $@
 
 FlowSifter: gen_extr
 	cp _build/gen_extr.native dist/FlowSifter
@@ -205,21 +210,21 @@ rundata: bench-bpac bench-upac bench-siftc
 	done
 
 FLOWS ?= 10000
-rectest: bench-upac
+rectest: bench-siftc
 	@mkdir -p old/
 	-mv -b $@ old/$@.bkp
 	echo -e $(HEADER) > $@
 	time for a in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do \
-	    ./bench-upac --seed 230 -n $(COUNT) -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-upac --seed 231 -n $(COUNT) -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-upac --seed 232 -n $(COUNT) -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-upac --seed 233 -n $(COUNT) -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-upac --seed 234 -n $(COUNT) -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-upac --seed 235 -n $(COUNT) -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-upac --seed 236 -n $(COUNT) -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-upac --seed 237 -n $(COUNT) -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-upac --seed 238 -n $(COUNT) -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-upac --seed 239 -n $(COUNT) -x e-soap.ca -s -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-siftc --seed 230 -n $(COUNT) -x e-soap.ca -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-siftc --seed 231 -n $(COUNT) -x e-soap.ca -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-siftc --seed 232 -n $(COUNT) -x e-soap.ca -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-siftc --seed 233 -n $(COUNT) -x e-soap.ca -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-siftc --seed 234 -n $(COUNT) -x e-soap.ca -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-siftc --seed 235 -n $(COUNT) -x e-soap.ca -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-siftc --seed 236 -n $(COUNT) -x e-soap.ca -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-siftc --seed 237 -n $(COUNT) -x e-soap.ca -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-siftc --seed 238 -n $(COUNT) -x e-soap.ca -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-siftc --seed 239 -n $(COUNT) -x e-soap.ca -g $$a $(FLOWS)|tee -a $@; \
 	done
 
 harvdata: bench-bpac bench-upac
@@ -232,20 +237,25 @@ harvdata: bench-bpac bench-upac
 	./bench-upac -n $(COUNT) ~/traces/http/use/h*t1.pcap | tee -a $@
 
 figures: rundata rectest memory.R
-	R --save < memory.R
+	R CMD BATCH memory.R
 
 outliers: bench-upac
 	./bench-upac ~/traces/http/use/98w3-wednesday.pcap
 
-diff-test: all
-	./bench-bpac -f -d ~/traces/http/use/harvest.pcap* > log; tail -n 1 log;\
-	./bench-upac -f -d ~/traces/http/use/harvest.pcap* >> log; tail -n 1 log;\
-	./bench-bpac -f -d ~/traces/http/use/harvest1.pcap* >> log; tail -n 1 log;\
-	./bench-upac -f -d ~/traces/http/use/harvest1.pcap* >> log; tail -n 1 log;\
-	./bench-bpac -f -d ~/traces/http/use/98w3-wednesday.pcap >> log; tail -n 1 log;\
-	./bench-upac -f -d ~/traces/http/use/98w3-wednesday.pcap >> log; tail -n 1 log;\
-	./bench-bpac -f -d ~/traces/http/use/99w2-tuesday.inside* >> log; tail -n 1 log;\
+#	./bench-bpac -f -d ~/traces/http/use/harvest.pcap* > log; tail -n 1 log
+#	./bench-upac -f -d ~/traces/http/use/harvest.pcap* >> log; tail -n 1 log
+#	./bench-siftc -f -d ~/traces/http/use/harvest.pcap* >> log; tail -n 1 log
+#	./bench-bpac -f -d ~/traces/http/use/harvest1.pcap* >> log; tail -n 1 log
+#	./bench-upac -f -d ~/traces/http/use/harvest1.pcap* >> log; tail -n 1 log
+#	./bench-siftc -f -d ~/traces/http/use/harvest1.pcap* >> log; tail -n 1 log
+
+diff-test: bench-bpac bench-upac bench-siftc
+	./bench-bpac -f -d ~/traces/http/use/98w3-wednesday.pcap > log; tail -n 1 log
+	./bench-upac -f -d ~/traces/http/use/98w3-wednesday.pcap >> log; tail -n 1 log
+	./bench-siftc -f -d ~/traces/http/use/98w3-wednesday.pcap >> log; tail -n 1 log
+	./bench-bpac -f -d ~/traces/http/use/99w2-tuesday.inside* >> log; tail -n 1 log
 	./bench-upac -f -d ~/traces/http/use/99w2-tuesday.inside* >> log; tail -n 1 log
+	./bench-siftc -f -d ~/traces/http/use/99w2-tuesday.inside* >> log; tail -n 1 log
 
 ns_compile.native: $(FLOWSIFT) ns_compile.cmx
 	$(OCAMLOPT) $^ -linkpkg -o $@
@@ -268,4 +278,4 @@ fs-test: fs
 #	./fs dyckTest.txt
 
 tcam.native:
-	ocamlbuild -no-hygiene tcam.native
+	$(OCAMLBUILD) -no-hygiene tcam.native
