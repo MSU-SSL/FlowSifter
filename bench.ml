@@ -292,27 +292,32 @@ let diff_loop packets =
     if i >= Array.length packets then () else begin
       incr count;
       act_packet_sift packets.(i);
-      let e1 = !ediff in
+      let sift_ediff = !ediff in
       act_packet_pac packets.(i);
-      let wrong = abs (!ediff - e1) > 4 in
-      let close = !ediff <> e1 && not wrong in
-      if wrong then Printf.printf "Sift: %d events, PAC: %d events (close: %B) pos:%d \n" e1 !ediff close i;
       let (flow, data, _fin, off) = packets.(i) in
+      let wrong = abs (!ediff - sift_ediff) > 4 in
       if wrong then (
+        printf "*****************************************************\n";
+        printf "WRONG: Sift: %d events, %s: %d events pos:%d \n" sift_ediff pac !ediff i;
+        printf "*****************************************************\n";
 	incr diffs;
-	Printf.printf "\nWP%a@%d:\n%s\n%!" print_flow flow off (data |> String.head ~len:1024 |> clean_unprintable);
+	printf "WP%a@%d:\n%s\n%!" print_flow flow off (data |> String.head ~len:1024 |> clean_unprintable);
 	wrongs := i :: !wrongs;
-      );
-      if close then (
+        printf "*****************************************************\n\n";
+      ) else if !ediff <> sift_ediff then ( (* close *)
+        printf "+++++++++++++++++++++++++++++++++++++++++++++++++++++\n";
+        printf "CLOSE: Sift: %d events, %s: %d events pos:%d \n" sift_ediff pac !ediff i;
+        printf "+++++++++++++++++++++++++++++++++++++++++++++++++++++\n";
 	incr close_count;
-	Printf.printf "\nCP%a@%d:\n%s\n%!" print_flow flow off (data |> String.head ~len:1024 |> clean_unprintable);
+	printf "CP%a@%d:\n%s\n%!" print_flow flow off (data |> String.head ~len:1024 |> clean_unprintable);
+        printf "+++++++++++++++++++++++++++++++++++++++++++++++++++++\n\n";
       );
       loop (i+1)
     end
   in
   loop 0;
-  printf "Packets with more than two events difference:\n%a\n" (List.print Int.print) (List.rev !wrongs);
-  printf "Total different flows: %d of %d (%.2f%%) %d close (%.2f%%)\n" !diffs !count (100. *. float !diffs /. float !count) !close_count (100. *. float !close_count /. float !count)
+(*  printf "Packets with more than two events difference:\n%a\n" (List.print Int.print) (List.rev !wrongs); *)
+  printf "Total different flows: %d (%.2f%%) %d close (%.2f%%)\n" !diffs (100. *. float !diffs /. float !count) !close_count (100. *. float !close_count /. float !count)
 
 
 
