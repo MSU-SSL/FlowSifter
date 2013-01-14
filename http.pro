@@ -66,8 +66,8 @@ BODY_NO_LEN [bodychunked == 0] -> BODY_VERSION;
 ## HTTP/1.0: skip rest of flow
 BODY_VERSION [httpversion == 0] -> // [bodylength := drop_tail()];
 ## HTTP/1.1, assume bodylength = 0, eat any nulls used as keepalive
-BODY_VERSION [httpversion == 1; httprequest == 1] -> /\x00*/ ;
-BODY_VERSION [httpversion == 1; httprequest == 0] -> // [bodylength := drop_tail()] ;
+BODY_VERSION [httpversion == 1] -> /\x00*/ ;
+#BODY_VERSION [httpversion == 1; httprequest == 0] -> // [bodylength := drop_tail()] ;
 
 BODY_XML -> CRLF [bodyend := bodyend + pos()] XML;
 
