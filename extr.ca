@@ -10,7 +10,7 @@ HTTP_START1 10 -> TOKEN SP token(URL) SP VERSION CRLF;
 HEADERS1 -> // [hpos := pos()] HEADER1 CRLF HEADERS1 ;
 HEADERS1 -> ;
 
-HEADER1 -> /(?i:Content-length):\s*/ [hpos:= token(hpos)] // [bodylength := getnum()] ;
-HEADER1 -> /(?i:Transfer-Encoding):\s*chunked/ [ bodychunked := 1 ] ;
+HEADER1 -> /(?i:Content-length):\s*/ [hpos:= token(hpos)] // [bodylength := getnum()] token(//) ;
+HEADER1 -> /(?i:Transfer-Encoding):\s*chunked/ [ bodychunked := 1 ] token(//) ;
 HEADER1 15 -> /(?i:Transfer-Encoding):\s*/ [hpos:= token(hpos)] token( TEXT ) ;
 HEADER1 10 -> TOKEN /:\s*/ [hpos:= token(hpos)] token( TEXT ) ;
