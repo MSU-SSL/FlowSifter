@@ -194,16 +194,19 @@ RUNS =  98w1-mon 98w1-tue 98w1-wed 98w1-thu 98w1-fri \
 HEADER = "runid\tparser\titers\ttime\tgbit\tgbps\tmem\tflows\tevents\tpct_parsed\tdropped"
 COUNT ?= 1
 
-rundata: bench-bpac bench-upac
+rundata: bench-bpac bench-upac bench-siftc
+	@mkdir -p old/
 	-mv -b $@ old/$@.bkp
 	echo -e $(HEADER) > $@
 	time for a in $(RUNS); do \
 	    ./bench-bpac -n $(COUNT) ~/traces/http/use/$$a* | tee -a $@; \
-	    ./bench-upac -n $(COUNT) ~/traces/http/use/$$a* | tee -a $@; \
+	    ./bench-upac -p -n $(COUNT) ~/traces/http/use/$$a* | tee -a $@; \
+	    ./bench-siftc -p -n $(COUNT) ~/traces/http/use/$$a* | tee -a $@; \
 	done
 
 FLOWS ?= 10000
 rectest: bench-upac
+	@mkdir -p old/
 	-mv -b $@ old/$@.bkp
 	echo -e $(HEADER) > $@
 	time for a in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do \
@@ -220,7 +223,8 @@ rectest: bench-upac
 	done
 
 harvdata: bench-bpac bench-upac
-	-mv -b $@ $@.bkp
+	@mkdir -p old/
+	-mv -b $@ old/$@.bkp
 	echo -e $(HEADER) > $@
 	./bench-bpac -n $(COUNT) ~/traces/http/use/h*t.pcap | tee -a $@
 	./bench-upac -n $(COUNT) ~/traces/http/use/h*t.pcap | tee -a $@
