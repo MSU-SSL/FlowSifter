@@ -197,7 +197,7 @@ let print_dfa oc dfa (regex,id) =
   Array.iteri (fun i q ->
                let acts, qnext = q.dec in
                if qnext = -1 then
-		 say "    case %d: q=&state::CA0; dfa_best_pos++; break;" i
+		 say "    case %d: q=NULL; break;" i
 	       else
                  say "    case %d: %aq=%a; break;" i print_acts acts print_caref qnext)
     dfa.qs;
