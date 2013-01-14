@@ -49,11 +49,11 @@ strcasestr(const char *s, const char *find)
 
 void testoutput(SimpleFlowBuffer* buffer_t, int field_length)
 {
-	
+
 	for (int i = 0; i<field_length ; i++)	{
 		printf("%c", *(buffer_t->data_begin+i));
 	}
-	
+
 }
 
 int decode_hex(char ch)
@@ -126,7 +126,7 @@ normal_bytestring record_parsed_field(fast_parser_t t_fast_parser)
 
 voidptr match_http_method(fast_parser_t t_fast_parser)
 {
-	matchHTTPMethod(t_fast_parser, (const char*)(t_fast_parser->flowbuffer->data_begin), (const char*)(t_fast_parser->flowbuffer->data_begin)+t_fast_parser->field_length, t_fast_parser->status == FastParser::NORMAL?true:false);
+//	matchHTTPMethod(t_fast_parser, (const char*)(t_fast_parser->flowbuffer->data_begin), (const char*)(t_fast_parser->flowbuffer->data_begin)+t_fast_parser->field_length, t_fast_parser->status == FastParser::NORMAL?true:false);
 	return NULL;
 }
 
@@ -157,13 +157,13 @@ bool http_header(fast_parser_t t_fast_parser)
 		if (t_fast_parser->status != FastParser::NORMAL)	{
 			return false;
 		}
-		
+
 		const_bytestring name(
 			t_fast_parser->header_name_field.begin(),
 			t_fast_parser->header_name_field.length() > 0 ?
 				t_fast_parser->header_name_field.end() - 1 :
 				t_fast_parser->header_name_field.end());
-				
+
 		const_bytestring value(t_fast_parser->startptr, t_fast_parser->field_length);
 
 		if ( bytestring_casecmp(name, "CONTENT-LENGTH") == 0 )
@@ -216,7 +216,7 @@ int match_HTTP_token(simple_flow_buffer_t flowbuffer)
 		}
 		else	{
 			return length;
-		}		
+		}
 }
 
 int match_HTTP_HEADER_NAME(simple_flow_buffer_t flowbuffer)
@@ -235,7 +235,7 @@ int match_HTTP_HEADER_NAME(simple_flow_buffer_t flowbuffer)
 	if (length == 0)	{
 		return -1;
 	}
-	
+
 	if (flowbuffer->data_begin + length < flowbuffer->orig_end && *(flowbuffer->data_begin+length) == ':')	{
 		return length+1;
 	}
@@ -246,26 +246,26 @@ int match_HTTP_HEADER_NAME(simple_flow_buffer_t flowbuffer)
 
 #define INSET(B, x) ((B)[(x) >> 3] & 1 << ((x) & 0x07))
 
-char PROTO_CHAR[128] = 
+char PROTO_CHAR[128] =
 {
 // 0x00 0x01 0x02 0x03 0x04 0x05 0x06 0x07 0x08 0x09 0x0A 0x0B 0x0C 0x0D 0x0E 0x0F
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-    
+
 // 0x10 0x11 0x12 0x13 0x14 0x15 0x16 0x17 0x18 0x19 0x1A 0x1B 0x1C 0x1D 0x1E 0x1F
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-    
+
 // ' '  '!'  '"'  '#'  '$'  '%'  '&'  '''  '('  ')'  '*'  '+'  ','  '-'  '.'  '/'
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-    
+
 // '0'  '1'  '2'  '3'  '4'  '5'  '6'  '7'  '8'  '9'  ':'  ';'  '<'  '='  '>'  '?'
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-    
+
 // '@'  'A'  'B'  'C'  'D'  'E'  'F'  'G'  'H'  'I'  'J'  'K'  'L'  'M'  'N'  'O'
     0,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
-    
+
 // 'P'  'Q'  'R'  'S'  'T'  'U'  'V'  'W'  'X'  'Y'  'Z'  '['  '\'  ']'  '^'  '_'
     1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   0,   0,   0,   0,   0,
-    
+
 // '`'  'a'  'b'  'c'  'd'  'e'  'f'  'g'  'h'  'i'  'j'  'k'  'l'  'm'  'n'  'o'
     0,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
 
@@ -273,26 +273,26 @@ char PROTO_CHAR[128] =
     1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   0,   0,   0,   0,   0
 };
 
-char HOST_CHAR[128] = 
+char HOST_CHAR[128] =
 {
 // 0x00 0x01 0x02 0x03 0x04 0x05 0x06 0x07 0x08 0x09 0x0A 0x0B 0x0C 0x0D 0x0E 0x0F
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-    
+
 // 0x10 0x11 0x12 0x13 0x14 0x15 0x16 0x17 0x18 0x19 0x1A 0x1B 0x1C 0x1D 0x1E 0x1F
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-    
+
 // ' '  '!'  '"'  '#'  '$'  '%'  '&'  '''  '('  ')'  '*'  '+'  ','  '-'  '.'  '/'
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   1,   0,
-    
+
 // '0'  '1'  '2'  '3'  '4'  '5'  '6'  '7'  '8'  '9'  ':'  ';'  '<'  '='  '>'  '?'
     1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   0,   0,   0,   0,   0,
-    
+
 // '@'  'A'  'B'  'C'  'D'  'E'  'F'  'G'  'H'  'I'  'J'  'K'  'L'  'M'  'N'  'O'
     0,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
-    
+
 // 'P'  'Q'  'R'  'S'  'T'  'U'  'V'  'W'  'X'  'Y'  'Z'  '['  '\'  ']'  '^'  '_'
     1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   0,   0,   0,   0,   0,
-    
+
 // '`'  'a'  'b'  'c'  'd'  'e'  'f'  'g'  'h'  'i'  'j'  'k'  'l'  'm'  'n'  'o'
     0,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
 
@@ -300,26 +300,26 @@ char HOST_CHAR[128] =
     1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   0,   0,   0,   0,   0
 };
 
-char DIR_CHAR[128] = 
+char DIR_CHAR[128] =
 {
 // 0x00 0x01 0x02 0x03 0x04 0x05 0x06 0x07 0x08 0x09 0x0A 0x0B 0x0C 0x0D 0x0E 0x0F
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-    
+
 // 0x10 0x11 0x12 0x13 0x14 0x15 0x16 0x17 0x18 0x19 0x1A 0x1B 0x1C 0x1D 0x1E 0x1F
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-    
+
 // ' '  '!'  '"'  '#'  '$'  '%'  '&'  '''  '('  ')'  '*'  '+'  ','  '-'  '.'  '/'
     0,   1,   0,   0,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   0,
-    
+
 // '0'  '1'  '2'  '3'  '4'  '5'  '6'  '7'  '8'  '9'  ':'  ';'  '<'  '='  '>'  '?'
     1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   0,   1,   0,   0,
-    
+
 // '@'  'A'  'B'  'C'  'D'  'E'  'F'  'G'  'H'  'I'  'J'  'K'  'L'  'M'  'N'  'O'
     1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
-    
+
 // 'P'  'Q'  'R'  'S'  'T'  'U'  'V'  'W'  'X'  'Y'  'Z'  '['  '\'  ']'  '^'  '_'
     1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   0,   0,   0,   0,   1,
-    
+
 // '`'  'a'  'b'  'c'  'd'  'e'  'f'  'g'  'h'  'i'  'j'  'k'  'l'  'm'  'n'  'o'
     0,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
 
@@ -327,26 +327,26 @@ char DIR_CHAR[128] =
     1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   0,   0,   0,   0,   0
 };
 
-char VAR_CHAR[128] = 
+char VAR_CHAR[128] =
 {
 // 0x00 0x01 0x02 0x03 0x04 0x05 0x06 0x07 0x08 0x09 0x0A 0x0B 0x0C 0x0D 0x0E 0x0F
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-    
+
 // 0x10 0x11 0x12 0x13 0x14 0x15 0x16 0x17 0x18 0x19 0x1A 0x1B 0x1C 0x1D 0x1E 0x1F
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-    
+
 // ' '  '!'  '"'  '#'  '$'  '%'  '&'  '''  '('  ')'  '*'  '+'  ','  '-'  '.'  '/'
     0,   1,   0,   0,   1,   1,   0,   1,   1,   1,   1,   1,   1,   1,   1,   0,
-    
+
 // '0'  '1'  '2'  '3'  '4'  '5'  '6'  '7'  '8'  '9'  ':'  ';'  '<'  '='  '>'  '?'
     1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   0,   0,   0,   0,
-    
+
 // '@'  'A'  'B'  'C'  'D'  'E'  'F'  'G'  'H'  'I'  'J'  'K'  'L'  'M'  'N'  'O'
     1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
-    
+
 // 'P'  'Q'  'R'  'S'  'T'  'U'  'V'  'W'  'X'  'Y'  'Z'  '['  '\'  ']'  '^'  '_'
     1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   0,   0,   0,   0,   1,
-    
+
 // '`'  'a'  'b'  'c'  'd'  'e'  'f'  'g'  'h'  'i'  'j'  'k'  'l'  'm'  'n'  'o'
     0,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
 
@@ -354,26 +354,26 @@ char VAR_CHAR[128] =
     1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   0,   0,   0,   0,   0
 };
 
-char VALUE_CHAR[128] = 
+char VALUE_CHAR[128] =
 {
 // 0x00 0x01 0x02 0x03 0x04 0x05 0x06 0x07 0x08 0x09 0x0A 0x0B 0x0C 0x0D 0x0E 0x0F
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-    
+
 // 0x10 0x11 0x12 0x13 0x14 0x15 0x16 0x17 0x18 0x19 0x1A 0x1B 0x1C 0x1D 0x1E 0x1F
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-    
+
 // ' '  '!'  '"'  '#'  '$'  '%'  '&'  '''  '('  ')'  '*'  '+'  ','  '-'  '.'  '/'
     0,   1,   0,   0,   1,   1,   0,   1,   1,   1,   1,   1,   1,   1,   1,   0,
-    
+
 // '0'  '1'  '2'  '3'  '4'  '5'  '6'  '7'  '8'  '9'  ':'  ';'  '<'  '='  '>'  '?'
     1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   0,   1,   0,   0,
-    
+
 // '@'  'A'  'B'  'C'  'D'  'E'  'F'  'G'  'H'  'I'  'J'  'K'  'L'  'M'  'N'  'O'
     1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
-    
+
 // 'P'  'Q'  'R'  'S'  'T'  'U'  'V'  'W'  'X'  'Y'  'Z'  '['  '\'  ']'  '^'  '_'
     1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   0,   0,   0,   0,   1,
-    
+
 // '`'  'a'  'b'  'c'  'd'  'e'  'f'  'g'  'h'  'i'  'j'  'k'  'l'  'm'  'n'  'o'
     0,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
 
@@ -381,26 +381,26 @@ char VALUE_CHAR[128] =
     1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   0,   1,   0,   0,   0
 };
 
-char FRAGMENT_CHAR[128] = 
+char FRAGMENT_CHAR[128] =
 {
 // 0x00 0x01 0x02 0x03 0x04 0x05 0x06 0x07 0x08 0x09 0x0A 0x0B 0x0C 0x0D 0x0E 0x0F
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-    
+
 // 0x10 0x11 0x12 0x13 0x14 0x15 0x16 0x17 0x18 0x19 0x1A 0x1B 0x1C 0x1D 0x1E 0x1F
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-    
+
 // ' '  '!'  '"'  '#'  '$'  '%'  '&'  '''  '('  ')'  '*'  '+'  ','  '-'  '.'  '/'
     0,   1,   0,   0,   1,   0,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
-    
+
 // '0'  '1'  '2'  '3'  '4'  '5'  '6'  '7'  '8'  '9'  ':'  ';'  '<'  '='  '>'  '?'
     1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   0,   1,   0,   1,
-    
+
 // '@'  'A'  'B'  'C'  'D'  'E'  'F'  'G'  'H'  'I'  'J'  'K'  'L'  'M'  'N'  'O'
     1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
-    
+
 // 'P'  'Q'  'R'  'S'  'T'  'U'  'V'  'W'  'X'  'Y'  'Z'  '['  '\'  ']'  '^'  '_'
     1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   0,   0,   0,   0,   1,
-    
+
 // '`'  'a'  'b'  'c'  'd'  'e'  'f'  'g'  'h'  'i'  'j'  'k'  'l'  'm'  'n'  'o'
     0,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
 
@@ -448,7 +448,7 @@ uint32 parse_http_uri(simple_flow_buffer_t flowbuffer)
 	uint8* p_data_begin = (uint8*)flowbuffer->data_begin;
 	uint32 data_length = flowbuffer->orig_end - flowbuffer->data_begin;
 	uint8 * p = p_data_begin;
-	
+
 	if(*p == '/')
 	{
 	    p += 1;
@@ -460,20 +460,20 @@ uint32 parse_http_uri(simple_flow_buffer_t flowbuffer)
 	    {
 	        p += 1;
         }
-        
+
         //if(strncmpi((char *)p, "://", 3) != 0)
-        if(strncasecmp((char *)p, "://", 3) != 0)      
+        if(strncasecmp((char *)p, "://", 3) != 0)
         {
            // PRINTF("HTTP URI error!\n");
         }
         p += 3;
     }
-    
+
     while(INSET(HOST, *p))
 	{
 	    p += 1;
     }
-    
+
     if(*p == '/')
 	{
 	    p += 1;
@@ -483,7 +483,7 @@ uint32 parse_http_uri(simple_flow_buffer_t flowbuffer)
 http_uri_abs_path:
 
     URI_PARSING_STATE state = ABS_PATH;
-    
+
     while(state != FINISH && state != BAD)
     {
         switch(state)
@@ -619,7 +619,7 @@ http_uri_abs_path:
         };
     }
 
-    return p - p_data_begin;    
+    return p - p_data_begin;
 }
 %}
 
