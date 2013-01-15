@@ -182,22 +182,22 @@ let make_nt_approximate grammar nt =
 		     (Nonterm newterm,
 		      VarMap.add approx_counter action VarMap.empty)
 		   ] ;
-     priority = List.map (~-) default_priority} :: acc
+     priority = default_priority} :: acc
   in
   let g0 =
     if has_episilon grammar nt then
-      [{name=nt;predicates=pred_any;expression=[];priority=[~-100]}]
+      [{name=nt;predicates=pred_any;expression=[];priority=[25]}]
     else []
   in
   let g1 = [
     {name = newterm;
      predicates = pred_is_zero;
      expression = [];
-     priority = [~-500] ;};  (* escape rule *)
+     priority = [0] ;};  (* escape rule *)
     {name = newterm;
      predicates = pred_gt_zero;
      expression = [(Term absorb, VarMap.empty); (Nonterm newterm, VarMap.empty)];
-     priority = [~-25] ;} (* absorption rule *)
+     priority = [100] ;} (* absorption rule *)
   ] in
   let g0 = TSet.fold (xrementor nt pred_any set_one) starts g0 in
   let g1 =
