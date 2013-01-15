@@ -172,10 +172,8 @@ perf2-all: $(patsubst %, %.perf2, $(MODES))
 %.ml.d: %.ml
 	ocamlfind ocamldep -package bitstring.syntax -syntax camlp4o $< > $@
 
-mldeps: *.ml ns_lex.mll ns_yac.mly
-	ocamlfind ocamldep *.ml $^ > mldeps
-
 include $(ML_SOURCES:.ml=.ml.d)
+include bench.ml.d pcap_parser.ml.d ns_compile.ml.d
 
 ns_yac.cmi: ns_types.ml PCFG.cmi
 
@@ -193,7 +191,8 @@ RUNS =  98w1-mon 98w1-tue 98w1-wed 98w1-thu 98w1-fri \
 	99w2-monday 99w2-tuesday 99w2-wednesday 99w2-thursday 99w2-friday \
 	99w3-monday 99w3-tuesday 99w3-wednesday 99w3-thursday 99w3-friday \
 	99w4-monday 99w4-tuesday 99w4-wednesday 99w4-thursday 99w4-friday \
-	99w5-monday 99w5-tuesday 99w5-wednesday 99w5-thursday 99w5-friday \
+	99w5-monday 99w5-tuesday 	   	99w5-thursday 99w5-friday
+#99w5-wednesday breaks something in sift related to resume during function
 
 
 HEADER = "runid\tparser\titers\ttime\tgbit\tgbps\tmem\tflows\tevents\tpct_parsed\tdropped"
@@ -239,6 +238,8 @@ harvdata: bench-bpac bench-upac
 figures: rundata rectest memory.R
 	R CMD BATCH memory.R
 
+
+
 outliers: bench-upac
 	./bench-upac ~/traces/http/use/98w3-wednesday.pcap
 
@@ -275,7 +276,16 @@ fs.p: fs_main.cpp fs_lib.h
 fs-test: fs
 	./fs ~/traces/http/use/98w2-monday.pcap
 	./fs ~/traces/http/use/99w5-friday.outside.tcpdump.gz.pcap
-#	./fs dyckTest.txt
+
+dyck_lib.h: dyck.pro dyck.ext ns_compile.native
+	./ns_compile.native dyck.pro dyck.ext "$@"
+
+fs_single_dyck: fs_single.cpp dyck_lib.h
+	cp dyck_lib.h fs_lib.h
+	g++ -std=c++0x -O3 -march=native -g $< -o $@
+
+dyck-test: fs_single_dyck
+	./fs_single_dyck dyckTest.txt
 
 tcam.native:
 	$(OCAMLBUILD) -no-hygiene tcam.native
