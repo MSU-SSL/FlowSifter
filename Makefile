@@ -1,8 +1,8 @@
 SHELL := /bin/bash
 DEBUG = #-g
-CFLAGS = $(DEBUG) -O2 -I. -march=native
+CFLAGS = $(DEBUG) -O2 -I. -march=native -lrt
 CPPFLAGS = $(CFLAGS) -std=c++0x
-PACKAGES = batteries,benchmark,bitstring
+PACKAGES = batteries,bitstring
 OCAMLFLAGS = -annot -w Z $(DEBUG) -package $(PACKAGES)
 OCAMLOPT = ocamlfind ocamlopt $(OCAMLFLAGS)
 OCAMLC = ocamlfind ocamlc $(OCAMLFLAGS)
@@ -64,6 +64,17 @@ siftc_stubs.o: siftc_stubs.c
 siftc.cmxa: siftc_stubs.o siftc.o anypac.cmx
 	ocamlmklib -custom -o siftc $^
 
+siftc_soap.o: siftc.cpp fs_lib_soap.h
+	$(CXX) $(CPPFLAGS) -c $< -o $@ -g -lpcap
+
+siftc_soap.cmxa: siftc_stubs.o siftc_soap.o anypac.cmx
+	ocamlmklib -custom -o siftc_soap $^
+
+siftc_dns.o: siftc.cpp fs_lib_dns.h
+	$(CXX) $(CPPFLAGS) -c $< -o $@ -g -lpcap
+
+siftc_dns.cmxa: siftc_stubs.o siftc_dns.o anypac.cmx
+	ocamlmklib -custom -o siftc_dns $^
 
 ####
 #### Compile flow.cmxa
@@ -112,6 +123,12 @@ bench-upac: upac.cmxa tcmalloc_stubs.o $(FLOWSIFT) bench.cmx
 bench-siftc: siftc.cmxa tcmalloc_stubs.o $(FLOWSIFT) bench.cmx
 	$(OCAMLOPT) -package bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc $^ -o $@
 
+bench-siftc-soap: siftc_soap.cmxa tcmalloc_stubs.o $(FLOWSIFT) bench.cmx
+	$(OCAMLOPT) -package bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc $^ -o $@
+
+bench-siftc-dns: siftc_dns.cmxa tcmalloc_stubs.o $(FLOWSIFT) bench.cmx
+	$(OCAMLOPT) -package bitstring -linkpkg -I . -cclib -lstdc++ -cclib -lpcre -cclib -ltcmalloc $^ -o $@
+
 
 pcap_parser.cmx: pcap_parser.ml
 	ocamlfind ocamlopt $(OCAMLFLAGS) -c -syntax camlp4o -package $(PACKAGES),bitstring.syntax,bitstring pcap_parser.ml -o pcap_parser.cmx
@@ -131,11 +148,17 @@ demo: *.ml
 ## Extraction grammar generation tool
 ##
 
-gen_extr: $(FLOWSIFT) gen_extr.cmx
-	$(OCAMLOPT) -package $(PACKAGES) $^ -o $@
+demo.cmx: demo.ml
+	$(OCAMLOPT) -package pcap -c $< -o $@
+
+gen_extr.cmx: gen_extr.ml demo.cmx
+	$(OCAMLOPT) -package lablgtk2 -c $< -o $@
+
+gen_extr: $(FLOWSIFT) demo.cmx gen_extr.cmx
+	$(OCAMLOPT) -package lablgtk2,pcap -linkpkg $^ -o $@
 
 FlowSifter: gen_extr
-	cp _build/gen_extr.native dist/FlowSifter
+	mv gen_extr dist/FlowSifter
 
 #join -j 1 -o 1.1 1.2 2.2 null.20-timelog null.50-timelog | join -j 1 -o 1.1 1.2 1.3 2.2 - null.100-timelog | join -j 1 -o 1.1 1.2 1.3 1.4 2.2 - null.150-timelog | join -j 1 -o 1.1 1.2 1.3 1.4 1.5 2.2 - null.250-timelog
 
@@ -195,50 +218,70 @@ RUNS =  98w1-mon 98w1-tue 98w1-wed 98w1-thu 98w1-fri \
 #99w5-wednesday breaks something in sift related to resume during function
 
 
-HEADER = "runid\tparser\titers\ttime\tgbit\tgbps\tmem\tflows\tevents\tpct_parsed\tdropped"
+HEADER = "runid\tparser\titers\ttime\tgbit\tgbps\tmem\tflows\tevents\tparsed\tdropped"
 COUNT ?= 1
 
+
+### HTTP TRACES FROM LL
 rundata: bench-bpac bench-upac bench-siftc
 	@mkdir -p old/
 	-mv -b $@ old/$@.bkp
 	echo -e $(HEADER) > $@
 	time for a in $(RUNS); do \
-	    ./bench-bpac -n $(COUNT) ~/traces/http/use/$$a* | tee -a $@; \
-	    ./bench-upac -p -n $(COUNT) ~/traces/http/use/$$a* | tee -a $@; \
+	    ./bench-bpac     -n $(COUNT) ~/traces/http/use/$$a* | tee -a $@; \
+	    ./bench-upac  -p -n $(COUNT) ~/traces/http/use/$$a* | tee -a $@; \
 	    ./bench-siftc -p -n $(COUNT) ~/traces/http/use/$$a* | tee -a $@; \
 	done
 
+### HTTP TRACES FROM WEB SPIDERING
+harvdata: bench-bpac bench-upac bench-siftc
+	@mkdir -p old/
+	-mv -b $@ old/$@.bkp
+	echo -e $(HEADER) > $@
+	time for a in ~/traces/http/use/harvest*; do \
+	    ./bench-bpac     -n $(COUNT) $$a | tee -a $@; \
+	    ./bench-upac  -p -n $(COUNT) $$a | tee -a $@; \
+	    ./bench-siftc -p -n $(COUNT) $$a | tee -a $@; \
+	done
+
+harvest.pdf: harvest.R harvdata
+	R CMD BATCH $<
+
+
+### SIMULATED XML_RPC TRACES
 FLOWS ?= 10000
-rectest: bench-siftc
+rectest: bench-siftc-soap
 	@mkdir -p old/
 	-mv -b $@ old/$@.bkp
 	echo -e $(HEADER) > $@
 	time for a in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do \
-	    ./bench-siftc --seed 230 -n $(COUNT) -x e-soap.ca -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-siftc --seed 231 -n $(COUNT) -x e-soap.ca -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-siftc --seed 232 -n $(COUNT) -x e-soap.ca -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-siftc --seed 233 -n $(COUNT) -x e-soap.ca -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-siftc --seed 234 -n $(COUNT) -x e-soap.ca -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-siftc --seed 235 -n $(COUNT) -x e-soap.ca -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-siftc --seed 236 -n $(COUNT) -x e-soap.ca -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-siftc --seed 237 -n $(COUNT) -x e-soap.ca -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-siftc --seed 238 -n $(COUNT) -x e-soap.ca -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-siftc --seed 239 -n $(COUNT) -x e-soap.ca -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-siftc-soap --seed 230 -n $(COUNT) -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-siftc-soap --seed 231 -n $(COUNT) -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-siftc-soap --seed 232 -n $(COUNT) -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-siftc-soap --seed 233 -n $(COUNT) -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-siftc-soap --seed 234 -n $(COUNT) -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-siftc-soap --seed 235 -n $(COUNT) -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-siftc-soap --seed 236 -n $(COUNT) -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-siftc-soap --seed 237 -n $(COUNT) -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-siftc-soap --seed 238 -n $(COUNT) -g $$a $(FLOWS)|tee -a $@; \
+	    ./bench-siftc-soap --seed 239 -n $(COUNT) -g $$a $(FLOWS)|tee -a $@; \
 	done
-
-harvdata: bench-bpac bench-upac
-	@mkdir -p old/
-	-mv -b $@ old/$@.bkp
-	echo -e $(HEADER) > $@
-	./bench-bpac -n $(COUNT) ~/traces/http/use/h*t.pcap | tee -a $@
-	./bench-upac -n $(COUNT) ~/traces/http/use/h*t.pcap | tee -a $@
-	./bench-bpac -n $(COUNT) ~/traces/http/use/h*t1.pcap | tee -a $@
-	./bench-upac -n $(COUNT) ~/traces/http/use/h*t1.pcap | tee -a $@
 
 figures: rundata rectest memory.R
 	R CMD BATCH memory.R
 
-
+#	    ./bench-bpac-dns     -n $(COUNT) $$a | tee -a $@;
+#	    ./bench-upac-dns  -p -n $(COUNT) $$a | tee -a $@;
+DNSCOUNT=100
+### DNS TRACES FROM LL
+dnsdata:  bench-bpac bench-upac bench-siftc-dns
+	@mkdir -p old/
+	-mv -b $@ old/$@.bkp
+	echo -e $(HEADER) > $@
+	time for a in ~/traces/ll/*/dns*; do \
+	    echo $$a;\
+	    ./bench-siftc-dns -n $(DNSCOUNT) $$a | tee -a $@; \
+	done
 
 outliers: bench-upac
 	./bench-upac ~/traces/http/use/98w3-wednesday.pcap
@@ -264,14 +307,20 @@ ns_compile.native: $(FLOWSIFT) ns_compile.cmx
 fs_lib.h: ns_compile.native http.pro extr.ca
 	./ns_compile.native http.pro extr.ca "$@"
 
+fs_lib_soap.h: ns_compile.native http.pro e-soap.ca
+	./ns_compile.native http.pro e-soap.ca "$@"
+
+fs_lib_dns.h: ns_compile.native dns.pro dns.ext
+	./ns_compile.native dns.pro dns.ext "$@"
+
 fs: fs_main.cpp fs_lib.h
-	g++ -std=c++0x -O3 -march=native -g $< -o $@ -lpcap
+	g++ -std=c++0x -O3 -march=native -g $< -o $@ -lpcap -lrt
 
 fs_single: fs_single.cpp fs_lib.h
 	g++ -std=c++0x -O3 -march=native -g $< -o $@
 
 fs.p: fs_main.cpp fs_lib.h
-	g++ -std=c++0x -O3 -march=native $< -o $@ -lpcap -pg
+	g++ -std=c++0x -O3 -march=native $< -o $@ -lpcap -lrt -pg
 
 fs-test: fs
 	./fs ~/traces/http/use/98w2-monday.pcap
