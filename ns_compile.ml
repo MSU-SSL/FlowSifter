@@ -11,6 +11,16 @@ let debug = false
 let starts = false
 let print_matches = false
 
+(* the user-defined functions that consume input, and might need resumption *)
+let consuming_functions = [| "getnum"; "gethex" |]
+let act_resumes : string list ref = ref []
+
+let rec is_consuming_act = function
+  | Plus (a,b) | Sub (a,b) | Multiply (a,b) | Divide(a,b) ->
+    is_consuming_act a || is_consuming_act b
+  | Function (n, _, _) -> Array.mem n consuming_functions
+  | Variable | Constant _ -> false
+
 (* print an arithmetic expression to an output channel oc *)
 let rec print_aexp v oc = function
   | Plus (a,b) -> bool_exp v oc '+' a b
@@ -78,18 +88,37 @@ let print_builtins oc =
   say "  int notify(int i) { matches++; return 0; }";
   say "  int cur_byte() { return flow_data[fdpos]; }";
   say "  int cur_double_byte() { return 20; } //FIXME";
-  say "  int getnum() { int acc = 0; while (flow_data[fdpos] >= '0' && flow_data[fdpos] <= '9') { acc = acc * 10 + (flow_data[fdpos] - '0'); fdpos++; } return acc; } //FIXME ACROSS PACKETS";
+  say "
+  int getnum() {
+    int acc = rerun_temp;
+    while (fdpos < flow_data_length &&
+           flow_data[fdpos] >= '0' && flow_data[fdpos] <= '9') {
+      acc = acc * 10 + (flow_data[fdpos] - '0');
+      fdpos++;
+    }
+    if (fdpos >= flow_data_length) {
+      rerun_temp = acc; throw 0; //FIXME ACROSS PACKETS
+    } else {
+      rerun_temp = 0; return acc;
+    }
+  } ";
   say "
   int gethex() {
-    int acc = 0;
-    while ((flow_data[fdpos] >= '0' && flow_data[fdpos] <= '9') ||
+    int acc = rerun_temp;
+    while (fdpos < flow_data_length &&
+           (flow_data[fdpos] >= '0' && flow_data[fdpos] <= '9') ||
            (flow_data[fdpos] >= 'a' && flow_data[fdpos] <= 'f') ||
            (flow_data[fdpos] >= 'A' && flow_data[fdpos] <= 'F')) {
       char val = (flow_data[fdpos] >= '0' && flow_data[fdpos] <= '9') ? flow_data[fdpos] - '0' : (flow_data[fdpos] >= 'a' && flow_data[fdpos] <= 'f') ? flow_data[fdpos] - 'a' + 10 : flow_data[fdpos] - 'A' + 10;
       acc = acc * 16 + val;
       fdpos++;
     }
-    return acc;
+    if (fdpos >= flow_data_length) {
+      rerun_temp = acc; throw 0;
+    } else {
+      rerun_temp = 0;
+      return acc;
+    }
   }  //FIXME ACROSS PACKETS";
   if print_matches then
     say "  int token(int start_pos) { matches++; printf(\"T:%%d-%%d: %%.*s  \", start_pos, fdpos, fdpos-start_pos+1, flow_data + start_pos - 1); return 0; }"
@@ -103,7 +132,12 @@ let print_act_raw oc (var, act) =
   fprintf oc "v%d = %a; " var (print_aexp var) act
 
 let print_act oc (var, act) =
-  print_act_raw oc (var, act);
+(*  if is_consuming_act act then (* need to add exception handler and resume function *)
+    let res_name = "actres_" ^ string_of_int (List.length !act_resumes) in
+    fprintf oc "try { %a } catch (int) { q = state::%s; }"
+
+  else *)
+    print_act_raw oc (var, act);
   if debug then fprintf oc "printf(\"v%d:=(%a)==%%d \", v%d); " var (print_aexp var) act var
 
 let print_acts oc acts =
@@ -115,6 +149,11 @@ let print_pred oc idx preds =
     fprintf oc "    bool p%d = %a;\n" idx print_expr preds;
     if debug then fprintf oc "    printf(\"p%d=%%d \",p%d);\n" idx idx;
     sprintf "p%d" idx
+
+let print_1pred oc idx (v,pe) =
+  fprintf oc "    bool p%d = %a;\n" idx (print_pexp v) pe;
+  if debug then fprintf oc "    printf(\"p%d=%%d \",p%d);\n" idx idx;
+  sprintf "p%d" idx
 
 open Regex_dfa
 
@@ -221,23 +260,64 @@ let dfaid regex dfa =
     Hashtbl.add dfa_ht dfa (regex, id);
     id
 
+let print_c_char oc c =
+  if Char.is_letter c then IO.write oc c else fprintf oc "\\x%2x" (Char.code c)
+let print_iset_chars oc is =
+  for i=0 to 254 do
+    fprintf oc "%d," (if ISet.mem i is then 1 else 0);
+  done;
+  fprintf oc "%d" (if ISet.mem 255 is then 1 else 0)
+
 (* print code to evaluate *)
 let rules_eval oc = function
   | [{rx=None; act; nt; prio=_}] ->
     let qnext = Option.default (-1) nt in
     fprintf oc " q = %a; %a" print_caref qnext print_acts act;
   | rules ->
-    let regex = List.enum rules
+    let parsed_regex = List.enum rules
       |> Enum.map Ns_run.make_rx_pair
       |> Pcregex.rx_of_dec_strings ~anchor:true
       |> Minreg.of_reg in
 (*    printf "Generating DFA for regex %a\n%!" print_regex regex; *)
-    let dfa = regex
-      |> Nfa.build_dfa ~labels:false dec_ops
-      |> Regex_dfa.minimize
-      |> Regex_dfa.to_array in
-    let dfa_id = dfaid regex dfa in
-    fprintf oc " dfa_q = %d; dfa_best_pri=PRI_DEF(%d); dfa_best_q=%d; q = &state::DFA%d; /* %a */ " dfa.q0.id dfa_id dfa.q0.id dfa_id print_regex regex
+    let open Minreg in
+    ( match parsed_regex with
+      | Concat([Kleene(Value iset); Accept((act, nt),_)],_) ->
+ 	fprintf oc "{\n";
+	fprintf oc "    char iset[256] = {%a};\n" print_iset_chars iset;
+	fprintf oc "    for(; fdpos < flow_data_length; fdpos++) {\n";
+	fprintf oc "      if (!iset[flow_data[fdpos]]) break;\n";
+	fprintf oc "    }\n";
+	fprintf oc "    if (fdpos < flow_data_length) {\n";
+	fprintf oc "      q = %a; %a\n" print_caref nt print_acts act;
+	fprintf oc "    } else {\n";
+	fprintf oc "      //need more data, do nothing?\n";
+	fprintf oc "    }\n";
+	fprintf oc "  }";
+      | Concat([Value iset1; Kleene(Value iset2); Accept((act, nt),_)],_) ->
+ 	fprintf oc "{\n";
+	fprintf oc "    char iset1[256] = {%a};\n" print_iset_chars iset1;
+ 	fprintf oc "    char iset2[256] = {%a};\n" print_iset_chars iset2;
+	fprintf oc "    if (rerun_temp != 1 && !iset1[flow_data[fdpos]]) {\n";
+	fprintf oc "      q = NULL; //parse failure\n";
+	fprintf oc "    }\n";
+	fprintf oc "    for(; fdpos < flow_data_length; fdpos++) {\n";
+	fprintf oc "      if (!iset2[flow_data[fdpos]]) break;\n";
+	fprintf oc "    }\n";
+	fprintf oc "    if (fdpos < flow_data_length) {\n";
+	fprintf oc "      rerun_temp = 0; q = %a; %a\n" print_caref nt print_acts act;
+	fprintf oc "    } else {\n";
+	fprintf oc "      rerun_temp = 1;//need more data, do nothing?\n";
+	fprintf oc "    }\n";
+	fprintf oc "  }";
+      | regex ->
+	let dfa = regex
+          |> Nfa.build_dfa ~labels:false dec_ops
+	  |> Regex_dfa.minimize
+	  |> Regex_dfa.to_array in
+	let dfa_id = dfaid regex dfa in
+	fprintf oc " dfa_q = %d; dfa_best_pri=PRI_DEF(%d); dfa_best_q=%d; q = &state::DFA%d; " dfa.q0.id dfa_id dfa.q0.id dfa_id
+    );
+    fprintf oc "/* %a */ " print_regex parsed_regex
 
 (* print a function for a CA nonterminal *)
 let ca_trans oc idx rules =
@@ -247,6 +327,23 @@ let ca_trans oc idx rules =
     (* no predicates; go directly to CA state w/ actions or DFA*)
     List.map snd rules |> rules_eval oc
   else ( (* deal with predicates *)
+
+    (* PRED-based tables *)
+    let (preds: Ns_types.pred_arr) = Ns_run.unique_predicates rules in
+    let vars = List.mapi (fun i p -> print_1pred oc i p) preds in
+    fprintf oc "    int idx = 0"; (* incomplete statement *)
+    List.iteri (fun i pi -> fprintf oc " | (%s << %d)" pi i) (List.rev vars);
+    fprintf oc ";\n"; (* end of idx declaration *)
+    if debug then fprintf oc "    printf(\" P%%x \", idx);\n";
+    fprintf oc "    switch (idx) {\n";
+    for i = 0 to (1 lsl (List.length preds)) do
+      fprintf oc "    case %d:" i;
+      Ns_run.get_pred_comb i preds rules |> rules_eval oc;
+      fprintf oc "break;\n";
+    done;
+    fprintf oc "    }\n"; (* close switch *)
+
+(* THIS CODE IS RULE-BASED PREDICATE EVALUATION
     let vars = List.mapi (fun i (p,_) -> print_pred oc i p) rules in
     (* GENERATE IDX *)
     fprintf oc "    int idx = 0";
@@ -260,6 +357,7 @@ let ca_trans oc idx rules =
       fprintf oc "break;\n";
     done;
     fprintf oc "    }\n"; (* close switch *)
+*)
   );
   fprintf oc "  }\n" (* end function *)
 

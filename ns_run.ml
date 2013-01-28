@@ -271,6 +271,13 @@ let get_pred_bits st vps =
   let bitvect a (v,p) = if val_p_exp Ns_types.get_f st st.vars.(v) p then (a lsl 1) + 1 else a lsl 1 in
   List.fold_left bitvect 0 vps
 
+let unique_predicates rules = List.map fst rules |> List.flatten |> List.unique_cmp
+
+let get_pred_comb i ps rs =
+  let true_preds = bitv_filter i (List.rev ps) in
+  List.filter (fun (p,_) -> List.for_all (fun pi -> List.mem pi true_preds) p) rs
+  |> List.map snd
+
 (** Removes predicate checks at runtime for non-terminals with no predicates *)
 let optimize_preds_gen compile_ca run_dfa ca =
   let link_run_fs _i = function
