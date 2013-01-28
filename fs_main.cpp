@@ -8,6 +8,21 @@
 #include <limits.h>
 #include <utility>
 #include <unordered_map>
+#include <iostream>
+
+#include <time.h>
+#include <sys/timeb.h>
+// needs -lrt (real-time lib)
+// 1970-01-01 epoch UTC time, 1 mcs resolution (divide by 1M to get time_t)
+uint64_t ClockGetTime()
+{
+    timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return (uint64_t)ts.tv_sec * 1000000LL + (uint64_t)ts.tv_nsec / 1000LL;
+}
+
+size_t pkt_count = 0;
+size_t time_count = 0;
 
 //char charbuf[2];
 //char* nice(unsigned char c) { if (c >= 0x20 && c <= 0x7e) sprintf(charbuf, " %c", c); else sprintf(charbuf, "%02x", c); return charbuf;}
@@ -100,8 +115,15 @@ inline void run_fs(packet& p, state& st) {
 #ifdef DEBUG
     printf("\nPKT(%luB):%.30s\n", st.flow_data_length, st.flow_data);
 #endif
+  uint64_t t0 = ClockGetTime();
   while (st.fdpos < st.flow_data_length && st.q != NULL)
     CALL_MEMBER_FN(st, st.q)();
+  uint64_t delta = ClockGetTime() - t0;
+  pkt_count++; time_count += delta;
+  int cpb = delta / st.flow_data_length;
+  if (cpb > 15) {
+    cout << "slow data: " << cpb << "(" << delta << "/" << st.flow_data_length << ")" << endl << p.payload << endl;
+  }
 
   if (st.fdpos < st.flow_data_length) {
     bytes_processed += st.fdpos;
@@ -122,6 +144,7 @@ void run_parse() {
       run_fs(p, st);
     } else if (p.fin) { //final packet of flow
       auto j = flow_table.find(p.ft);
+      if (j == flow_table.end()) { cout << "Flow does not exist" << endl; continue; }
       run_fs(p, (*j).second);
       flow_table.erase(j);
     } else if (p.off == 0) { // initial packet of flow
@@ -156,7 +179,8 @@ int main(int argc, char* argv[]) {
   double time_used = tfs - t0s;
 
   double gbps = ((double) bytes_processed) * 8 / time_used / 1000000000;
-  printf("Flows: %d Matches: %d Bytes: %lu Skipped: %u Time: %.3fs Rate: %.2fGbps\n\n", flows, matches, bytes_processed, skip_b, time_used, gbps);
+  double cpb = (double) time_count / (bytes_processed - skip_b);
+  printf("Flows: %d Matches: %d Bytes: %lu Skipped: %.1f%% Time: %.3fs Rate: %.2fGbps\nCyclesperByte:%f\n\n", flows, matches, bytes_processed, 100*(double)skip_b / bytes_processed, time_used, gbps, cpb);
   //print dfa_starts
 #ifdef STARTS
   printf("DFA starts: ");
