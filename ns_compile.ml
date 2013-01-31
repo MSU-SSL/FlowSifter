@@ -21,6 +21,8 @@ let rec is_consuming_act = function
   | Function (n, _, _) -> Array.mem n consuming_functions
   | Variable | Constant _ -> false
 
+let is_consuming_vact (_,act) = is_consuming_act act
+
 (* print an arithmetic expression to an output channel oc *)
 let rec print_aexp v oc = function
   | Plus (a,b) -> bool_exp v oc '+' a b
@@ -155,12 +157,31 @@ let print_1pred oc idx (v,pe) =
   if debug then fprintf oc "    printf(\"p%d=%%d \",p%d);\n" idx idx;
   sprintf "p%d" idx
 
+let print_caref oc q =
+  if q = -1 then fprintf oc "NULL" else fprintf oc "&state::CA%d" q
+
+let print_act_fun oc (acts,qnext) id =
+  let say x = fprintf oc (x ^^ "\n") in
+  say "void Act%d() {" id;
+  (* TODO: resume *)
+  say "%a state::CA%d();" print_acts acts qnext;
+  say "}\n"
+
+(* instantiations of actions *)
+type dec = (int * Ns_types.ParsedPCFG.a_exp) list * int
+let act_ht : (dec, int) Hashtbl.t = Hashtbl.create 20
+
+let actid d =
+  try Hashtbl.find act_ht d
+  with Not_found ->
+    Hashtbl.length act_ht
+    |> tap (Hashtbl.add act_ht d)
+
 open Regex_dfa
 
 let merge_dec (_act1,nt1 as a) (_act2, nt2 as b) = if nt1 > nt2 then a else b
 let dec_ops = {dec0 = ([],-1); merge = merge_dec; cmp = compare}
 
-type dec = (int * Ns_types.ParsedPCFG.a_exp) list * int
 type dfa = (unit, int array, dec) fa
 type regex = dec Minreg.t
 let is_accepting = function ([], -1) -> false | _ -> true
@@ -200,8 +221,7 @@ let print_dfa_table oc dfa ((regex: regex), id) =
     print_vect print_trs;
   fprintf oc "const unsigned char dfa_pri%d[%d] = %a;\n" id num_states print_vect print_pri
 
-let print_caref oc q = if q = -1 then fprintf oc "&state::CA0" else fprintf oc "&state::CA%d" q
-let print_dfa oc dfa (regex,id) =
+let print_dfa_fun oc (dfa: dfa) (regex,id) =
   let say x = fprintf oc (x ^^ "\n") in
   say "//RX: %a" print_regex regex;
   say "void DFA%d() {" id;
@@ -233,13 +253,21 @@ let print_dfa oc dfa (regex,id) =
   if debug then say "    printf(\"DBQ:%%d \", dfa_best_q);";
   say "    fdpos = dfa_best_pos;";
   say "    switch(dfa_best_q) {";
-  Array.iteri (fun i q ->
-               let acts, qnext = q.dec in
-               if qnext = -1 then
-		 say "    case %d: q=NULL; break;" i
-	       else
-                 say "    case %d: %aq=%a; break;" i print_acts acts print_caref qnext)
-    dfa.qs;
+  let print_case i q =
+    match q.dec with
+      | [], qnext -> (* no actions *)
+	say "    case %d: q=%a; break;" i print_caref qnext;
+      | _, -1 -> (* no qnext *)
+	say "    case %d: q=NULL; break;" i;
+      | acts, qnext ->
+	let cons, non_cons = List.partition is_consuming_vact acts in
+	match cons with
+	  | [] -> (* no consuming actions; just run them and go to qnext *)
+	    say "    case %d: %aq=%a; break;" i print_acts acts print_caref qnext;
+	  | _ -> (* goto action function after running all consuming actions *)
+	    say "    case %d: %aq=&state::Act%d; break;" i print_acts non_cons (actid (cons, qnext));
+  in
+  Array.iteri print_case dfa.qs;
 (*  say "    default: %s; dfa_best_pos=fdpos; q=&state::CA0; // Nothing"
     (if debug then "printf(\"No act; RESET \")" else "0"); *)
   say "    }";
@@ -251,6 +279,8 @@ let print_dfa oc dfa (regex,id) =
   if debug then say "  printf (\"X@%%02dp%%1d\\n\", fdpos, dfa_pri & 0x7f);";
   say "}\n"
 
+
+(* instantiations of lpdfa *)
 let dfa_ht : (dfa, regex * int) Hashtbl.t = Hashtbl.create 20
 
 let dfaid regex dfa =
@@ -416,7 +446,9 @@ let main p e outfile =
   (* print the CA struct header *)
   gen_header oc var_count;
   (* print the dfa handling functions *)
-  Hashtbl.iter (print_dfa oc) dfa_ht;
+  Hashtbl.iter (print_dfa_fun oc) dfa_ht;
+  (* print the action functions *)
+  Hashtbl.iter (print_act_fun oc) act_ht;
   (* write the CA transition functions that were buffered *)
   IO.nwrite oc (IO.close_out buf);
   (* close the CA struct *)
