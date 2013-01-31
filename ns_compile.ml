@@ -163,8 +163,10 @@ let print_caref oc q =
 let print_act_fun oc (acts,qnext) id =
   let say x = fprintf oc (x ^^ "\n") in
   say "void Act%d() {" id;
+  say "  try {";
   (* TODO: resume *)
-  say "%a state::CA%d();" print_acts acts qnext;
+  say "    %a state::CA%d();" print_acts acts qnext;
+  say "  } catch (int) { printf(\"caught\\n\"); }";
   say "}\n"
 
 (* instantiations of actions *)
@@ -263,9 +265,9 @@ let print_dfa_fun oc (dfa: dfa) (regex,id) =
 	let cons, non_cons = List.partition is_consuming_vact acts in
 	match cons with
 	  | [] -> (* no consuming actions; just run them and go to qnext *)
-	    say "    case %d: %aq=%a; break;" i print_acts acts print_caref qnext;
+	    say "    case %d: %areturn CA%d(); break;" i print_acts acts qnext;
 	  | _ -> (* goto action function after running all consuming actions *)
-	    say "    case %d: %aq=&state::Act%d; break;" i print_acts non_cons (actid (cons, qnext));
+	    say "    case %d: %areturn Act%d(); break;" i print_acts non_cons (actid (cons, qnext));
   in
   Array.iteri print_case dfa.qs;
 (*  say "    default: %s; dfa_best_pos=fdpos; q=&state::CA0; // Nothing"
@@ -275,6 +277,7 @@ let print_dfa_fun oc (dfa: dfa) (regex,id) =
   say "    if (fdpos < 0) { printf(\"NEED LAST PACKET\\n\"); }";
   say "  } else { ";
   if debug then say "  printf(\"input break \");" else say "0;";
+  say "    q = &state::DFA%d;" id;
   say "  }";
   if debug then say "  printf (\"X@%%02dp%%1d\\n\", fdpos, dfa_pri & 0x7f);";
   say "}\n"
@@ -290,6 +293,20 @@ let dfaid regex dfa =
     Hashtbl.add dfa_ht dfa (regex, id);
     id
 
+let iset_ht : (string, int) Hashtbl.t = Hashtbl.create 20
+
+let iset_to_array is = String.init 256 (fun i -> if ISet.mem i is then '1' else '0')
+let isetid is =
+  let arr = iset_to_array is in
+  try Hashtbl.find iset_ht arr
+  with Not_found -> (* insert and return length of hashtbl as id *)
+    Hashtbl.length iset_ht |> tap (Hashtbl.add iset_ht arr)
+
+
+let print_iset_arr oc (arr,id) =
+  let print_string_commas oc arr = List.print Char.print ~first:"" ~last:"" ~sep:"," oc (String.explode arr) in
+  fprintf oc "char iset%d[256] = {%a};\n" id print_string_commas arr
+
 let print_c_char oc c =
   if Char.is_letter c then IO.write oc c else fprintf oc "\\x%2x" (Char.code c)
 let print_iset_chars oc is =
@@ -298,11 +315,13 @@ let print_iset_chars oc is =
   done;
   fprintf oc "%d" (if ISet.mem 255 is then 1 else 0)
 
+
 (* print code to evaluate *)
 let rules_eval oc = function
-  | [{rx=None; act; nt; prio=_}] ->
-    let qnext = Option.default (-1) nt in
-    fprintf oc " q = %a; %a" print_caref qnext print_acts act;
+  | [{rx=None; act; nt=None; prio=_}] ->
+    fprintf oc " %a; q=NULL;" print_acts act;
+  | [{rx=None; act; nt=Some nt; prio=_}] ->
+    fprintf oc " %a; CA%d();" print_acts act nt;
   | rules ->
     let parsed_regex = List.enum rules
       |> Enum.map Ns_run.make_rx_pair
@@ -314,6 +333,7 @@ let rules_eval oc = function
       | Concat([Kleene(Value iset); Accept((act, nt),_)],_) ->
  	fprintf oc "{\n";
 	fprintf oc "    char iset[256] = {%a};\n" print_iset_chars iset;
+	fprintf oc "    //iset%d\n" (isetid iset);
 	fprintf oc "    for(; fdpos < flow_data_length; fdpos++) {\n";
 	fprintf oc "      if (!iset[flow_data[fdpos]]) break;\n";
 	fprintf oc "    }\n";
@@ -327,6 +347,8 @@ let rules_eval oc = function
  	fprintf oc "{\n";
 	fprintf oc "    char iset1[256] = {%a};\n" print_iset_chars iset1;
  	fprintf oc "    char iset2[256] = {%a};\n" print_iset_chars iset2;
+	fprintf oc "    //iset1 = iset%d\n" (isetid iset1);
+	fprintf oc "    //iset2 = iset%d\n" (isetid iset2);
 	fprintf oc "    if (rerun_temp != 1 && !iset1[flow_data[fdpos]]) {\n";
 	fprintf oc "      q = NULL; //parse failure\n";
 	fprintf oc "    }\n";
@@ -345,7 +367,7 @@ let rules_eval oc = function
 	  |> Regex_dfa.minimize
 	  |> Regex_dfa.to_array in
 	let dfa_id = dfaid regex dfa in
-	fprintf oc " dfa_q = %d; dfa_best_pri=PRI_DEF(%d); dfa_best_q=%d; q = &state::DFA%d; " dfa.q0.id dfa_id dfa.q0.id dfa_id
+	fprintf oc " dfa_q = %d;  dfa_best_pri=PRI_DEF(%d); dfa_best_q=%d; DFA%d(); " dfa.q0.id dfa_id dfa.q0.id dfa_id
     );
     fprintf oc "/* %a */ " print_regex parsed_regex
 
