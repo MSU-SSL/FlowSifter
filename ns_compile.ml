@@ -257,10 +257,10 @@ let print_dfa_fun oc (dfa: dfa) (regex,id) =
   say "    switch(dfa_best_q) {";
   let print_case i q =
     match q.dec with
+      | acts, -1 -> (* no qnext *)
+	say "    case %d: %aq=NULL; break;" i print_acts acts;
       | [], qnext -> (* no actions *)
-	say "    case %d: q=%a; break;" i print_caref qnext;
-      | _, -1 -> (* no qnext *)
-	say "    case %d: q=NULL; break;" i;
+	say "    case %d: return CA%d(); break;" i qnext;
       | acts, qnext ->
 	let cons, non_cons = List.partition is_consuming_vact acts in
 	match cons with
@@ -303,9 +303,9 @@ let isetid is =
     Hashtbl.length iset_ht |> tap (Hashtbl.add iset_ht arr)
 
 
-let print_iset_arr oc (arr,id) =
+let print_iset_arr oc arr id =
   let print_string_commas oc arr = List.print Char.print ~first:"" ~last:"" ~sep:"," oc (String.explode arr) in
-  fprintf oc "char iset%d[256] = {%a};\n" id print_string_commas arr
+  fprintf oc "const char iset%d[256] = {%a};\n" id print_string_commas arr
 
 let print_c_char oc c =
   if Char.is_letter c then IO.write oc c else fprintf oc "\\x%2x" (Char.code c)
@@ -331,11 +331,11 @@ let rules_eval oc = function
     let open Minreg in
     ( match parsed_regex with
       | Concat([Kleene(Value iset); Accept((act, nt),_)],_) ->
- 	fprintf oc "{\n";
-	fprintf oc "    char iset[256] = {%a};\n" print_iset_chars iset;
-	fprintf oc "    //iset%d\n" (isetid iset);
+	let isid = isetid iset in
+ 	fprintf oc "  {\n";
+(*	fprintf oc "    char iset[256] = {%a};\n" print_iset_chars iset; *)
 	fprintf oc "    for(; fdpos < flow_data_length; fdpos++) {\n";
-	fprintf oc "      if (!iset[flow_data[fdpos]]) break;\n";
+	fprintf oc "      if (!iset%d[flow_data[fdpos]]) break;\n" isid;
 	fprintf oc "    }\n";
 	fprintf oc "    if (fdpos < flow_data_length) {\n";
 	fprintf oc "      q = %a; %a\n" print_caref nt print_acts act;
@@ -344,16 +344,16 @@ let rules_eval oc = function
 	fprintf oc "    }\n";
 	fprintf oc "  }";
       | Concat([Value iset1; Kleene(Value iset2); Accept((act, nt),_)],_) ->
- 	fprintf oc "{\n";
-	fprintf oc "    char iset1[256] = {%a};\n" print_iset_chars iset1;
- 	fprintf oc "    char iset2[256] = {%a};\n" print_iset_chars iset2;
-	fprintf oc "    //iset1 = iset%d\n" (isetid iset1);
-	fprintf oc "    //iset2 = iset%d\n" (isetid iset2);
-	fprintf oc "    if (rerun_temp != 1 && !iset1[flow_data[fdpos]]) {\n";
+	let isid1 = isetid iset1 in
+	let isid2 = isetid iset2 in
+ 	fprintf oc "  {\n";
+(*	fprintf oc "    char iset1[256] = {%a};\n" print_iset_chars iset1;
+ 	fprintf oc "    char iset2[256] = {%a};\n" print_iset_chars iset2; *)
+	fprintf oc "    if (rerun_temp != 1 && !iset%d[flow_data[fdpos]]) {\n" isid1;
 	fprintf oc "      q = NULL; //parse failure\n";
 	fprintf oc "    }\n";
 	fprintf oc "    for(; fdpos < flow_data_length; fdpos++) {\n";
-	fprintf oc "      if (!iset2[flow_data[fdpos]]) break;\n";
+	fprintf oc "      if (!iset%d[flow_data[fdpos]]) break;\n" isid2;
 	fprintf oc "    }\n";
 	fprintf oc "    if (fdpos < flow_data_length) {\n";
 	fprintf oc "      rerun_temp = 0; q = %a; %a\n" print_caref nt print_acts act;
@@ -471,6 +471,8 @@ let main p e outfile =
   Hashtbl.iter (print_dfa_fun oc) dfa_ht;
   (* print the action functions *)
   Hashtbl.iter (print_act_fun oc) act_ht;
+  (* print the action functions *)
+  Hashtbl.iter (print_iset_arr oc) iset_ht;
   (* write the CA transition functions that were buffered *)
   IO.nwrite oc (IO.close_out buf);
   (* close the CA struct *)
