@@ -52,21 +52,26 @@ let declare_uint oc v = fprintf oc "  unsigned int %s;\n" v
 
 let declare_vars dfa_count oc var_count =
   let say x = fprintf oc (x ^^ "\n") in
+  fprintf oc "//Global values\n";
   declare_uint oc "matches=0";
   declare_uint oc "flows=0";
   declare_uint oc "skip_b=0";
   if starts then say "int dfa_starts[%d] = {0};" dfa_count;
   fprintf oc "#define PRI_DEF(dfa) ((dfa_pri##dfa[0] > 0x80) ? dfa_pri##dfa[0] : 0)\n";
+  fprintf oc "//Structure that holds the parsing state for each flow\n";
   fprintf oc "struct state {\npublic:\n";
+  fprintf oc "//CA counters\n";
   for i = 0 to var_count - 1 do
     declare_uint oc ("v" ^ string_of_int i);
   done;
+  fprintf oc "//State of flow: position, data, length\n";
   declare_uint oc "base_pos"; (* offset within flow of current flow_data start *)
   declare_uint oc "fdpos"; (* position within current flow data *)
   fprintf oc "  const unsigned char* flow_data;\n";
   fprintf oc "  size_t flow_data_length;\n"; (* length of flow data *)
-  declare_uint oc "fail_drop";
+  fprintf oc "//Temp variable for resuming functions between packets\n";
   declare_uint oc "rerun_temp";
+  fprintf oc "//LPDFA state\n";
   declare_uint oc "dfa_best_pri";
   declare_uint oc "dfa_best_q";
   declare_uint oc "dfa_best_pos";
@@ -77,8 +82,8 @@ let declare_vars dfa_count oc var_count =
   for i=0 to var_count-1 do
     fprintf oc "v%d(0), " i;
   done;
-  fprintf oc "base_pos(0), fdpos(0), flow_data(NULL), flow_data_length(0), fail_drop(0), rerun_temp(0), dfa_best_pri(PRI_DEF(0)), dfa_best_q(0), dfa_best_pos(0), dfa_pri(PRI_DEF(0)), dfa_q(0), q(&state::CA0) {flows++;}\n";
-  fprintf oc "  void reset() { base_pos = 0; fdpos=0; flow_data=NULL; flow_data_length=0; fail_drop=0; rerun_temp=0; dfa_best_pri=PRI_DEF(0); dfa_best_q=0; dfa_best_pos=0; dfa_pri=PRI_DEF(0); dfa_q=0; q=&state::CA0; flows++; }\n";
+  fprintf oc "base_pos(0), fdpos(0), flow_data(NULL), flow_data_length(0), rerun_temp(0), dfa_best_pri(PRI_DEF(0)), dfa_best_q(0), dfa_best_pos(0), dfa_pri(PRI_DEF(0)), dfa_q(0), q(&state::CA0) {flows++;}\n";
+  fprintf oc "  void reset() { base_pos = 0; fdpos=0; flow_data=NULL; flow_data_length=0; rerun_temp=0; dfa_best_pri=PRI_DEF(0); dfa_best_q=0; dfa_best_pos=0; dfa_pri=PRI_DEF(0); dfa_q=0; q=&state::CA0; flows++; }\n";
   ()
 
 let print_builtins oc =
@@ -160,13 +165,12 @@ let print_1pred oc idx (v,pe) =
 let print_caref oc q =
   if q = -1 then fprintf oc "NULL" else fprintf oc "&state::CA%d" q
 
-let print_act_fun oc (acts,qnext) id =
+let rec print_act_fun oc (acts,qnext) id =
   let say x = fprintf oc (x ^^ "\n") in
   say "void Act%d() {" id;
   say "  try {";
-  (* TODO: resume *)
-  say "    %a state::CA%d();" print_acts acts qnext;
-  say "  } catch (int) { printf(\"caught\\n\"); }";
+  say "    %a return state::CA%d();" print_acts acts qnext;
+  say "  } catch (int) { q=&state::Act%d; }" id;
   say "}\n"
 
 (* instantiations of actions *)
@@ -270,14 +274,12 @@ let print_dfa_fun oc (dfa: dfa) (regex,id) =
 	    say "    case %d: %areturn Act%d(); break;" i print_acts non_cons (actid (cons, qnext));
   in
   Array.iteri print_case dfa.qs;
-(*  say "    default: %s; dfa_best_pos=fdpos; q=&state::CA0; // Nothing"
-    (if debug then "printf(\"No act; RESET \")" else "0"); *)
   say "    }";
   say "    dfa_best_q = 0; dfa_pri = 0;";
   say "    if (fdpos < 0) { printf(\"NEED LAST PACKET\\n\"); }";
   say "  } else { ";
   if debug then say "  printf(\"input break \");" else say "0;";
-  say "    q = &state::DFA%d;" id;
+  say "    q=&state::DFA%d;" id;
   say "  }";
   if debug then say "  printf (\"X@%%02dp%%1d\\n\", fdpos, dfa_pri & 0x7f);";
   say "}\n"
@@ -307,14 +309,6 @@ let print_iset_arr oc arr id =
   let print_string_commas oc arr = List.print Char.print ~first:"" ~last:"" ~sep:"," oc (String.explode arr) in
   fprintf oc "const char iset%d[256] = {%a};\n" id print_string_commas arr
 
-let print_c_char oc c =
-  if Char.is_letter c then IO.write oc c else fprintf oc "\\x%2x" (Char.code c)
-let print_iset_chars oc is =
-  for i=0 to 254 do
-    fprintf oc "%d," (if ISet.mem i is then 1 else 0);
-  done;
-  fprintf oc "%d" (if ISet.mem 255 is then 1 else 0)
-
 
 (* print code to evaluate *)
 let rules_eval oc = function
@@ -327,7 +321,6 @@ let rules_eval oc = function
       |> Enum.map Ns_run.make_rx_pair
       |> Pcregex.rx_of_dec_strings ~anchor:true
       |> Minreg.of_reg in
-(*    printf "Generating DFA for regex %a\n%!" print_regex regex; *)
     let open Minreg in
     ( match parsed_regex with
       | Concat([Kleene(Value iset); Accept((act, nt),_)],_) ->
@@ -338,7 +331,7 @@ let rules_eval oc = function
 	fprintf oc "      if (!iset%d[flow_data[fdpos]]) break;\n" isid;
 	fprintf oc "    }\n";
 	fprintf oc "    if (fdpos < flow_data_length) {\n";
-	fprintf oc "      q = %a; %a\n" print_caref nt print_acts act;
+	fprintf oc "      q=%a; %a\n" print_caref nt print_acts act;
 	fprintf oc "    } else {\n";
 	fprintf oc "      //need more data, do nothing?\n";
 	fprintf oc "    }\n";
@@ -350,13 +343,13 @@ let rules_eval oc = function
 (*	fprintf oc "    char iset1[256] = {%a};\n" print_iset_chars iset1;
  	fprintf oc "    char iset2[256] = {%a};\n" print_iset_chars iset2; *)
 	fprintf oc "    if (rerun_temp != 1 && !iset%d[flow_data[fdpos]]) {\n" isid1;
-	fprintf oc "      q = NULL; //parse failure\n";
+	fprintf oc "      q=NULL; //parse failure\n";
 	fprintf oc "    }\n";
 	fprintf oc "    for(; fdpos < flow_data_length; fdpos++) {\n";
 	fprintf oc "      if (!iset%d[flow_data[fdpos]]) break;\n" isid2;
 	fprintf oc "    }\n";
 	fprintf oc "    if (fdpos < flow_data_length) {\n";
-	fprintf oc "      rerun_temp = 0; q = %a; %a\n" print_caref nt print_acts act;
+	fprintf oc "      rerun_temp = 0; q=%a; %a\n" print_caref nt print_acts act;
 	fprintf oc "    } else {\n";
 	fprintf oc "      rerun_temp = 1;//need more data, do nothing?\n";
 	fprintf oc "    }\n";
@@ -367,7 +360,7 @@ let rules_eval oc = function
 	  |> Regex_dfa.minimize
 	  |> Regex_dfa.to_array in
 	let dfa_id = dfaid regex dfa in
-	fprintf oc " dfa_q = %d;  dfa_best_pri=PRI_DEF(%d); dfa_best_q=%d; DFA%d(); " dfa.q0.id dfa_id dfa.q0.id dfa_id
+	fprintf oc " dfa_q = %d;  dfa_best_pri=PRI_DEF(%d); dfa_best_q=%d; return DFA%d(); " dfa.q0.id dfa_id dfa.q0.id dfa_id
     );
     fprintf oc "/* %a */ " print_regex parsed_regex
 
@@ -388,7 +381,7 @@ let ca_trans oc idx rules =
     fprintf oc ";\n"; (* end of idx declaration *)
     if debug then fprintf oc "    printf(\" P%%x \", idx);\n";
     fprintf oc "    switch (idx) {\n";
-    for i = 0 to (1 lsl (List.length preds)) do
+    for i = 0 to (1 lsl (List.length preds)) - 1 do
       fprintf oc "    case %d:" i;
       Ns_run.get_pred_comb i preds rules |> rules_eval oc;
       fprintf oc "break;\n";
@@ -465,14 +458,14 @@ let main p e outfile =
   print_includes oc;
   (* print the DFA data tables *)
   Hashtbl.iter (print_dfa_table oc) dfa_ht;
+  (* print the iset arrays for optimized DFAs *)
+  Hashtbl.iter (print_iset_arr oc) iset_ht;
   (* print the CA struct header *)
   gen_header oc var_count;
   (* print the dfa handling functions *)
   Hashtbl.iter (print_dfa_fun oc) dfa_ht;
   (* print the action functions *)
   Hashtbl.iter (print_act_fun oc) act_ht;
-  (* print the action functions *)
-  Hashtbl.iter (print_iset_arr oc) iset_ht;
   (* write the CA transition functions that were buffered *)
   IO.nwrite oc (IO.close_out buf);
   (* close the CA struct *)
