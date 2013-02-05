@@ -154,7 +154,6 @@ let get_ocaml_mem () = Gc.full_major(); 8 * (Gc.stat ()).Gc.live_words
 
 (*** WRAPPER FOR PARSERS TO HANDLE PACKETS AND FLOWS ***)
 
-let conc_flows = ref 0
 let packet_ctr = ref 0
 
 let mem0 = ref 0
@@ -187,12 +186,8 @@ let run pr =
   let mem = match pr.p_type with `Sift | `Null -> mem_gc | `Pac -> mem_vm in
 
   let reset_parsers () =
-    Hashtbl.iter (fun _ p -> pr.delete_parser p; decr conc_flows) ht;
+    Hashtbl.iter (fun _ p -> pr.delete_parser p) ht;
     Hashtbl.clear ht;
-    if (!conc_flows <> 0) then (
-(*      printf "#ERR: conc_flows = %d after cleanup\n" !conc_flows;*)
-      conc_flows := 0
-    )
   in
 
   let post_round round time =
@@ -211,7 +206,7 @@ let run pr =
     if !check_mem_per_packet then printf "#";
     printf "%s\t%s\t%d\t%4.3f\t" !run_id pr.id round time;
     printf "%d\t%.2f\t%d\t%d\t%d\t%.1f\t%.1f\n%!"
-      !trace_len gbps (mem()) !conc_flows (pr.get_event_count()) pct_parsed dropped
+      !trace_len gbps (mem()) (Hashtbl.length ht) (pr.get_event_count()) pct_parsed dropped
   in
 
   let act_packet (flow, data, fin, _off) =
@@ -230,7 +225,7 @@ let run pr =
        else Hashtbl.add ht flow ctx
     );
     if !check_mem_per_packet && !mem0 > 0 then (
-      printf "%s %s %d %d %d\n" !run_id pr.id !packet_ctr !conc_flows (mem ());
+      printf "%s %s %d %d\n" !run_id pr.id !packet_ctr (mem ());
     );
     let events = pr.get_event_count () in
     ediff := events - !last_events;
