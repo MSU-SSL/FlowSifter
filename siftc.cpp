@@ -27,6 +27,7 @@ void siftc_add_data(state* stp, char* str, size_t len) {
     if (st.dfa_best_pos < 0) { printf("MAYBE NEED LAST PACKET\n"); }
     bytes_processed += st.flow_data_length;
   }
+  st.flow_data = NULL;
 }
 
 extern "C"
