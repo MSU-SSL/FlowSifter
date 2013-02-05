@@ -1,9 +1,9 @@
 SHELL := /bin/bash
-DEBUG = #-g
-CFLAGS = $(DEBUG) -O2 -I. -march=native -lrt
-CPPFLAGS = $(CFLAGS) -std=c++0x
+DEBUG = -g -fno-omit-frame-pointer
+CFLAGS += -O3 -I. -march=native -lrt
+CPPFLAGS += $(CFLAGS) -std=c++0x
 PACKAGES = batteries,bitstring
-OCAMLFLAGS = -annot -w Z $(DEBUG) -package $(PACKAGES)
+OCAMLFLAGS += -annot -w Z -package $(PACKAGES)
 OCAMLOPT = ocamlfind ocamlopt $(OCAMLFLAGS)
 OCAMLC = ocamlfind ocamlc $(OCAMLFLAGS)
 OCAMLBUILD = ocamlbuild -no-hygiene -use-ocamlfind -j 0
@@ -314,13 +314,13 @@ fs_lib_dns.h: ns_compile.native dns.pro dns.ext
 	./ns_compile.native dns.pro dns.ext "$@"
 
 fs: fs_main.cpp fs_lib.h
-	g++ -std=c++0x -O3 -march=native -g $< -o $@ -lpcap -lrt
+	g++ $< -o $@ $(CPPFLAGS) -lpcap
 
 fs_single: fs_single.cpp fs_lib.h
-	g++ -std=c++0x -O3 -march=native -g $< -o $@
+	g++ $< -o $@ $(CPPFLAGS)
 
 fs.p: fs_main.cpp fs_lib.h
-	g++ -std=c++0x -O3 -march=native $< -o $@ -lpcap -lrt -pg
+	g++ $< -o $@ $(CPPFLAGS) -lpcap -pg
 
 fs-test: fs
 	./fs ~/traces/http/use/98w2-monday.pcap
@@ -331,7 +331,7 @@ dyck_lib.h: dyck.pro dyck.ext ns_compile.native
 
 fs_single_dyck: fs_single.cpp dyck_lib.h
 	cp dyck_lib.h fs_lib.h
-	g++ -std=c++0x -O3 -march=native -g $< -o $@
+	g++ $< -o $@ $(CPPFLAGS)
 
 dyck-test: fs_single_dyck
 	./fs_single_dyck dyckTest.txt
