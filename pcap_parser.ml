@@ -334,27 +334,39 @@ let pre_parse fns = packets_of_files fns /@ parseable (* very stateful check of 
 
 (***  INPUT FROM AN ENUM OF FILES - ONE FLOW PER FILE ***)
 
-let make_flows fns =
-  max_conc := 1; flow_count := Enum.count fns;
-  fns |> Enum.map (read_file_as_str ~verbose:false)
-    |> Enum.map (fun s -> ((0l,0l,1,unique()),s,true,0)) (* forge the fin flag, flow id and offset *)
+let make_flows flows =
+  max_conc := 1; flow_count := Enum.count flows;
+  (* forge the fin flag, flow id and offset *)
+  Enum.map (fun s -> ((0l,0l,1,unique()),s,true,0)) flows
+
+let make_flows_files fns =
+  fns |> Enum.map (read_file_as_str ~verbose:false) |> make_flows
 (*|> (fun v -> v, trace_size v)
     |> tap (fun (_,l) -> printf "#Flows read from file (len: %a max_conc: %d flows: %d)\n" Ean_std.print_size_B l 1 !flow_count;)
 *)
+
+let send_byte_count () =
+  match Random.int 5 with
+      0 -> 0
+    | 1 -> Random.int 50
+    | 2 -> Random.int 200
+    | 3 -> Random.int 1000
+    | 4 -> 1000 + Random.int 500
+    | _ -> 1500
+
+
+let rec packetize_flow (id,s,eop,off) =
+  let c = send_byte_count () in
+  if c = 0 then packetize_flow (id,s,eop,off)
+  else if c > String.length s then [id,s,true,off]
+  else
+    let h,t = String.head s c, String.tail s c in
+    (id,h,false,off) :: packetize_flow (id,t,true,off+c)
 
 let make_packets flows =
   let flow_ids = Enum.range 0 /@ (fun i -> (0l,0l,0,i)) in
   let flows = Enum.combine (flow_ids, flows) in
   let ret = ref Vect.empty in
-  let send_byte_count () =
-    match Random.int 5 with
-	0 -> 0
-      | 1 -> Random.int 50
-      | 2 -> Random.int 200
-      | 3 -> Random.int 1000
-      | 4 -> 1000 + Random.int 500
-      | _ -> 1500
-  in
   let split_rand (id,s) =
     let c = send_byte_count () in
     let h,t = String.head s c, String.tail s c in
