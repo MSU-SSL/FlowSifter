@@ -1,4 +1,4 @@
-#include "fs_lib.h"
+#include FSLIB
 #include <fcntl.h>
 #include <sys/time.h> // for gettimeofday
 
@@ -28,6 +28,7 @@ int main(int argc, char* argv[]) {
   state st;
   read_file(argv[1], st.flow_data, st.flow_data_length);
   struct timeval t0,tf;
+  printf("Parsing with CA\n")
   gettimeofday(&t0, NULL);
   while (st.q != NULL && st.fdpos < st.flow_data_length) CALL_MEMBER_FN(st, st.q)();
   gettimeofday(&tf, NULL);
@@ -36,5 +37,16 @@ int main(int argc, char* argv[]) {
   double time_used = tfs - t0s;
   double gbps = ((double) st.flow_data_length) * 8 / time_used / 1000000000;
   printf("\nMatches: %d Bytes: %lu Time: %.3fs Rate: %.2fGbps\n", matches, st.flow_data_length, time_used, gbps);
+
+  printf("DFA0 Only\n")
+  gettimeofday(&t0, NULL);
+  while (st.fdpos < st.flow_data_length) st->DFA0();
+  gettimeofday(&tf, NULL);
+  double t0s = t0.tv_sec+(t0.tv_usec/1000000.0);
+  double tfs = tf.tv_sec+(tf.tv_usec/1000000.0);
+  double time_used = tfs - t0s;
+  double gbps = ((double) st.flow_data_length) * 8 / time_used / 1000000000;
+  printf("\nMatches: %d Bytes: %lu Time: %.3fs Rate: %.2fGbps\n", matches, st.flow_data_length, time_used, gbps);
+
   return 0;
 }

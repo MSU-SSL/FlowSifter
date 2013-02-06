@@ -1,4 +1,4 @@
-#include "fs_lib.h"
+#include FSLIB
 
 #include <sys/time.h> // for gettimeofday
 #include <pcap/pcap.h>

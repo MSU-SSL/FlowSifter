@@ -1,4 +1,4 @@
-#include "fs_lib.h"
+#include FSLIB
 
 int bytes_processed = 0;
 

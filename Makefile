@@ -56,7 +56,7 @@ upac.cmxa: lib_u/binpac.o lib_u/http_pac_fast.o lib_u/http_matcher.o lib_u/upac_
 
 
 siftc.o: siftc.cpp fs_lib.h
-	$(CXX) $(CPPFLAGS) -c $< -o $@ -g -lpcap
+	$(CXX) $(CPPFLAGS) -c $< -o $@ -g -lpcap -DFSLIB='"fs_lib.h"'
 
 siftc_stubs.o: siftc_stubs.c
 	$(CC) $(CFLAGS) -c $< -o $@ -g
@@ -65,13 +65,13 @@ siftc.cmxa: siftc_stubs.o siftc.o anypac.cmx
 	ocamlmklib -custom -o siftc $^
 
 siftc_soap.o: siftc.cpp fs_lib_soap.h
-	$(CXX) $(CPPFLAGS) -c $< -o $@ -g -lpcap
+	$(CXX) $(CPPFLAGS) -c $< -o $@ -g -lpcap -DFSLIB='"fs_lib_soap.h"'
 
 siftc_soap.cmxa: siftc_stubs.o siftc_soap.o anypac.cmx
 	ocamlmklib -custom -o siftc_soap $^
 
 siftc_dns.o: siftc.cpp fs_lib_dns.h
-	$(CXX) $(CPPFLAGS) -c $< -o $@ -g -lpcap
+	$(CXX) $(CPPFLAGS) -c $< -o $@ -g -lpcap -DFSLIB='"fs_lib_dns.h"'
 
 siftc_dns.cmxa: siftc_stubs.o siftc_dns.o anypac.cmx
 	ocamlmklib -custom -o siftc_dns $^
@@ -314,7 +314,7 @@ fs_lib_dns.h: ns_compile.native dns.pro dns.ext
 	./ns_compile.native dns.pro dns.ext "$@"
 
 fs: fs_main.cpp fs_lib.h
-	g++ $< -o $@ $(CPPFLAGS) -lpcap
+	g++ $< -o $@ $(CPPFLAGS) -lpcap -DFSLIB='"fs_lib.h"'
 
 fs_single: fs_single.cpp fs_lib.h
 	g++ $< -o $@ $(CPPFLAGS)
