@@ -260,9 +260,9 @@ module Make (Name : Names_t) = struct
 
   let freeze_a fs a = optimize_a a |> function
     | Plus(Variable, Constant 1) -> Fast_a (fun _ x -> x+1)
-    | Sub (Variable, Constant 1) -> Fast_a (fun _ x -> x+1)
+    | Sub (Variable, Constant 1) -> Fast_a (fun _ x -> x-1)
     | Plus(Variable, Constant c) -> Fast_a (fun _ x -> x+c)
-    | Sub (Variable, Constant c) -> Fast_a (fun _ x -> x+c)
+    | Sub (Variable, Constant c) -> Fast_a (fun _ x -> x-c)
     | Function (_, f_id, []) -> let f = fs f_id in Fast_a (fun s _ -> f s [])
     | Plus (Multiply(Variable, Constant 256), Function (_, f_id, [])) -> let f = fs f_id in Fast_a (fun s x -> x lsl 8 lor f s [])
     | Constant 0 -> Fast_a (fun _ _ -> 0)
