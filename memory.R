@@ -51,11 +51,10 @@ ggsave("memimp.pdf", height=picheight, width=picwidth); ggsave("memimp.eps", hei
 d1$mpf <- d1$mem / d1$flows
 
 ggplot() +
-  scale_y_log10(breaks=c(100,300,1000,3000,10000,30000,100000),
-                labels=c("100B","300B","1KB","3KB","10KB", "30KB", "100KB")) +
-  scale_x_discrete(breaks=c("bpac","siftc","upac"),
-                   labels=c("BinPAC","FSifter", "UltraPAC")) +
-  theme_bw() + xlab(NULL) + ylab("Memory per Flow") +
+  scale_y_continuous(limits=c(0,7500)) +
+  scale_x_discrete(breaks=c("bpac","sift", "siftc","upac"),
+                   labels=c("BinPAC","FS sim.","FS comp.", "UltraPAC")) +
+  theme_bw() + xlab(NULL) + ylab("Memory per Flow(B)") +
   geom_jitter(aes(x = parser,y = mpf),data=d1)
 
 ggsave("memper.pdf", height=picheight, width=picwidth); ggsave("memper.eps", height=picheight, width=picwidth); ggsave("memper.png", height=picheight, width=picwidth, dpi=300)
