@@ -243,7 +243,7 @@ let print_dfa_fun oc (dfa: dfa) (regex,id) =
   say "    fdp++;";
   say "    if (dq == %s) break; //quit if qnext = -1" (dfa_type_max dfa);
   say "    dp = dfa_pri%d[dq]; //load this state's priority" id;
-  if debug then say "if (dp < dfa_best_pri) printf(\"RX: %a pri_quit\\n\"); " print_regex regex;
+  if debug then say "if (dp < dfa_best_pri) printf(\"pri_quit\\n\"); ";
   say "    if (dp < dfa_best_pri) break; // quit if low priority";
   say "    if (dp & 0x80) {  // accept state";
   if debug then say "      printf(\"pp:%%d@%%d \", dp & 0x7f, fdp);";
@@ -452,6 +452,9 @@ let main p e outfile =
 (*  let oc = File.open_out (e ^ ".c") in *)
   let buf = IO.output_string () in
   let oc = File.open_out outfile in
+  let grammar_str = IO.to_string Ns_parse.print_reg_ds_ca_flat ca in
+  let c_comment_gram = String.nreplace ~str:grammar_str ~sub:"*/" ~by:"* /" in
+  fprintf oc "/* CA for final grammar:\n%s*/\n" c_comment_gram;
   (* buffer the CA transitions *)
   Array.iteri (ca_trans buf) ca;
   (* print the C includes *)
