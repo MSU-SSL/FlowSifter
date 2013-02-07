@@ -57,7 +57,7 @@ let declare_vars dfa_count oc var_count =
   declare_uint oc "flows=0";
   declare_uint oc "skip_b=0";
   if starts then say "int dfa_starts[%d] = {0};" dfa_count;
-  fprintf oc "#define PRI_DEF(dfa) ((dfa_pri##dfa[0] > 0x80) ? dfa_pri##dfa[0] : 0)\n";
+  fprintf oc "#define PRI_DEF(dfa) ((dfa_pri##dfa[0] > 0x80) ? dfa_pri##dfa[0] & 0x7f : 0)\n";
   fprintf oc "//Structure that holds the parsing state for each flow\n";
   fprintf oc "struct state {\npublic:\n";
   fprintf oc "//CA counters\n";
@@ -128,7 +128,7 @@ let print_builtins oc =
     }
   }  //FIXME ACROSS PACKETS";
   if print_matches then
-    say "  int token(int start_pos) { matches++; printf(\"T:%%d-%%d: %%.*s  \", start_pos, fdpos, fdpos-start_pos+1, flow_data + start_pos - 1); return 0; }"
+    say "  int token(int start_pos) { matches++; printf(\"T:%%d-%%d: \\\"%%.*s\\\" \\n \", start_pos, fdpos, fdpos-start_pos+2, flow_data + start_pos - 1); return 0; }"
   else
     say "  int token(int start_pos) { matches++; return 0; }";
   say "  int bounds(int start_pos, int end_pos) { matches++; return 0; }";
