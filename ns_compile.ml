@@ -1,11 +1,11 @@
+(************************************************************************)
+(** Routines to output a C++ program that flowsifter-parses a pcap file *)
+(************************************************************************)
+
 open Batteries
 open Printf
 open Ns_types
 open ParsedPCFG
-
-(************************************************************************)
-(** Routines to output a C++ program that flowsifter-parses a pcap file *)
-(************************************************************************)
 
 let debug = false
 let starts = false
@@ -311,7 +311,7 @@ let print_iset_arr oc arr id =
 
 
 (* print code to evaluate *)
-let rules_eval oc = function
+let rules_eval oc idx = function
   | [{rx=None; act; nt=None; prio=_}] ->
     fprintf oc " %a; q=NULL;" print_acts act;
   | [{rx=None; act; nt=Some nt; prio=_}] ->
@@ -333,7 +333,7 @@ let rules_eval oc = function
 	fprintf oc "    if (fdpos < flow_data_length) {\n";
 	fprintf oc "      q=%a; %a\n" print_caref nt print_acts act;
 	fprintf oc "    } else {\n";
-	fprintf oc "      //need more data, do nothing?\n";
+	fprintf oc "      q=%a; //wait for more data\n" print_caref idx;
 	fprintf oc "    }\n";
 	fprintf oc "  }";
       | Concat([Value iset1; Kleene(Value iset2); Accept((act, nt),_)],_) ->
@@ -351,7 +351,7 @@ let rules_eval oc = function
 	fprintf oc "    if (fdpos < flow_data_length) {\n";
 	fprintf oc "      rerun_temp = 0; q=%a; %a\n" print_caref nt print_acts act;
 	fprintf oc "    } else {\n";
-	fprintf oc "      rerun_temp = 1;//need more data, do nothing?\n";
+	fprintf oc "      rerun_temp = 1; q=%a; //wait for more data\n" print_caref idx;
 	fprintf oc "    }\n";
 	fprintf oc "  }";
       | regex ->
@@ -370,7 +370,7 @@ let ca_trans oc idx rules =
   if debug then fprintf oc "    printf(\"CA%d\");\n" idx;
   if List.for_all (fun (p,_) -> List.length p = 0) rules then
     (* no predicates; go directly to CA state w/ actions or DFA*)
-    List.map snd rules |> rules_eval oc
+    List.map snd rules |> (rules_eval oc idx)
   else ( (* deal with predicates *)
 
     (* PRED-based tables *)
@@ -383,7 +383,7 @@ let ca_trans oc idx rules =
     fprintf oc "    switch (idx) {\n";
     for i = 0 to (1 lsl (List.length preds)) - 1 do
       fprintf oc "    case %d:" i;
-      Ns_run.get_pred_comb i preds rules |> rules_eval oc;
+      Ns_run.get_pred_comb i preds rules |> (rules_eval oc idx);
       fprintf oc "break;\n";
     done;
     fprintf oc "    }\n"; (* close switch *)
@@ -476,7 +476,11 @@ let main p e outfile =
 
 
 (*let () = main "dyck.pro" "dyck.ext" "fs.c" *)
-let () = main Sys.argv.(1) Sys.argv.(2) Sys.argv.(3)
+let () =
+  if Array.length Sys.argv < 3 then
+    printf "Usage: ns_compile <protocol grammar> <extraction grammar>\n"
+  else
+    main Sys.argv.(1) Sys.argv.(2) "fs_lib.h"
 
 (*
 int CA (state st) {
