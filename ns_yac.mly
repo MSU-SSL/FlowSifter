@@ -1,3 +1,5 @@
+(**  A yacc grammar for FlowSifter (NetSifter) protocol/extraction grammars *)
+
 %{
   open Printf
   open Lexing

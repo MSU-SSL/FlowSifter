@@ -1,3 +1,6 @@
+(** Library for representing and manipulating Nondeterministic Finite
+    Automata *)
+
 open Batteries
 open Printf
 

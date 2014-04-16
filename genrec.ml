@@ -1,3 +1,5 @@
+(** Quick program to generate XML-rpc flows randomly, with parameterizable depth and width *)
+
 
 let base_child = 1.0
 let base_sib = 0.6

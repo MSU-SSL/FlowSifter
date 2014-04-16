@@ -1,3 +1,6 @@
+(** Shim library for upac and binpac to include in OCaml program *)
+
+
 type t
 type direction = Downflow | Upflow
 external new_parser : unit -> t = "new_parser"

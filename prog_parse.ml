@@ -1,3 +1,6 @@
+(** main library that encapsulates FlowSifter as a parser for
+    benchmarking against bpac and upac.  Mostly takes care of flow state.  *)
+
 open Batteries
 open Ns_types
 open Simplify

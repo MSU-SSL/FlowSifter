@@ -1,3 +1,5 @@
+(** Disjoint set library *)
+
 type 'a node = {mutable parent: 'a node; mutable rank: int; label: 'a}
 
 let singleton x = 

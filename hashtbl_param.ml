@@ -1,3 +1,6 @@
+(** Utility library to implement polymorphic hashtbl with
+    runtime-determined hash and compare *)
+
   (* We do dynamic hashing, and resize the table and rehash the
      elements when buckets become too long. *)
 

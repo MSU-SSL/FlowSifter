@@ -1,3 +1,5 @@
+(** Eric's extensions to standard library *)
+
 open Batteries
 open Printf
 

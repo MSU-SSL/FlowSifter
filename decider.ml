@@ -1,3 +1,5 @@
+(** Abstraction of 1d classifier; decider takes a single value and returns the decision for that value; used as a building-block for FDD *)
+
 open Batteries
 
 type 'a t = 'a IMap.t

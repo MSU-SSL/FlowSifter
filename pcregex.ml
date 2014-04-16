@@ -1,11 +1,11 @@
-open Batteries
-
-(** This module parses semi-Perl compatable Regular Expressions 
+(** This module parses much of Perl-Compatable Regular Expressions 
   *  
   * It is part of the NetSifter project
   * 
   *)
   
+open Batteries
+
 type char_token = [ 
                   | `Char of int
 		  | `Escape of char list

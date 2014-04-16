@@ -1,3 +1,6 @@
+(** Library to represent and manipulate BDD (binary decision diagram)
+    data structures *)
+
 open Batteries
 open Ean_std
 open Printf

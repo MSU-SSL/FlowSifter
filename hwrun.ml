@@ -1,3 +1,6 @@
+(** Quick program for benchmarking performance of parsing PCAP files
+    into packets, not more than that *)
+
 open Batteries
 
 open Ean_std

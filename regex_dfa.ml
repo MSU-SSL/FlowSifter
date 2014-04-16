@@ -1,3 +1,6 @@
+(** Library to convert regular expresions into DFA, including
+    minimization as well as some routines to use tcam regex (regcam) *)
+
 open Batteries
 open Printf
 open Minreg

@@ -1,7 +1,7 @@
+(** Defines Predicated Context Free Grammars, the basis for FlowSifter *)
+
 open Batteries
 open Printf
-
-(** Defines Predicated Context Free Grammars *)
 
 module type Names_t = sig
   type var (* Type of variable names *)

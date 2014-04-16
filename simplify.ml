@@ -1,10 +1,11 @@
+(************************************************************************)
+(** FlowSifter Grammar Simplification Routines                          *)
+(************************************************************************)
+
+
 open Batteries
 open Ns_types
 open ParsedPCFG
-
-(************************************************************************)
-(** Grammar Simplification                                              *)
-(************************************************************************)
 
 (* nonterm.name mapping function generator *)
 let make_map label = fun nt -> nt ^ "<" ^ label ^ ">" ;;

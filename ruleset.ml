@@ -1,3 +1,10 @@
+(** A ruleset is an ordered list of rules.  Each rule has a
+    multi-dimensional predicate and a decision.  The first matching
+    rule for an input determines the decision of that input.
+
+    Rulesets also track the name and domain of each field.  They're
+    basically extended 'a Rule.t Vect.t.
+*)
 open Batteries
 open Printf
 open Ean_std

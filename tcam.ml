@@ -1,3 +1,8 @@
+(** This module is a library for representing TCAM rulesets
+    Entry is a single field of up to 63 bits
+
+*)
+
 open Batteries
 open Printf
 

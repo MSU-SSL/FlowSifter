@@ -1,3 +1,5 @@
+(** Code for final optimization and running of CA *)
+
 open Batteries
 open Printf
 open Ns_types
@@ -231,8 +233,9 @@ let rec run_d2fa qs q pri item ri tail_data st =
     if st.pos > flow_len then Waiting (skip_to_pos resume st) else Waiting resume
   ) else if st.pos < 0 then ( (* handle DFA backtrack into previous packet *)
     (* TODO: optimize backtracking? *)
+    if debug_ca then printf "BT%d %!" st.pos;
     st.base_pos <- st.base_pos + st.pos;
-    run_d2fa qs q pri item (ri - st.pos) "" {st with flow_data = tail_data ^ st.flow_data}
+    run_d2fa qs q pri item (ri - st.pos) "" {st with flow_data = tail_data ^ st.flow_data; pos=0 }
   ) else
       let dfa_result = resume_arr qs st.flow_data pri item ri q st.pos in
       match dfa_result with
@@ -240,7 +243,7 @@ let rec run_d2fa qs q pri item ri tail_data st =
 	  st.pos <- pos_new;
 	  run_ca acts q_next st; (* Run the CA *)
 	| End_of_input (q_final, pri, item, ri) ->
-	  let tail_out =
+	  let tail_out = (* figure out how much flow needs buffering *)
 	    if ri < 0 then tail_data ^ st.flow_data
 	    else String.tail st.flow_data ri
 	  in

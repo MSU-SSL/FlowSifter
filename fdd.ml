@@ -1,3 +1,5 @@
+(** Library to represent and manipulate FDDs *)
+
 open Batteries
 open Ean_std
 open Printf

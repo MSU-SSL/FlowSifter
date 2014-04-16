@@ -1,3 +1,6 @@
+(** Library to parse FlowSifter grammars from a string and optimize their
+    representation in a variety of stages *)
+
 open Batteries
 open Printf
 open Ns_types

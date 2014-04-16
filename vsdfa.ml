@@ -1,3 +1,6 @@
+(** This module implements variable stride DFA; only experimentally
+    used in flowsifter *)
+
 open Batteries
 open Printf
 

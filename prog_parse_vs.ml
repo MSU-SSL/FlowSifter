@@ -1,3 +1,7 @@
+(** Programmatic parser with variable stride (experimental).  Just
+    like prog_parse.ml but tries to build a variable stride
+    automaton. *)
+
 open Batteries
 
 open Ns_types

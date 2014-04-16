@@ -1,5 +1,9 @@
 (* Minimizing regex library - identical to pcregex's regex type,
-   except has a boolean of whether that subtree is reduced *)
+   except has a boolean of whether that subtree is reduced 
+
+   The routines here attempt to simplify regex by replacing redundant
+   constructs, such as x** -> x*, (x|x), etc.
+*)
 
 open Batteries
 open Printf

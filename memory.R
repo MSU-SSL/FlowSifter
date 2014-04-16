@@ -52,8 +52,6 @@ d1$mpf <- d1$mem / d1$flows
 
 ggplot() +
   scale_y_continuous(limits=c(0,7500)) +
-  scale_x_discrete(breaks=c("bpac","sift", "siftc","upac"),
-                   labels=c("BinPAC","FS sim.","FS comp.", "UltraPAC")) +
   theme_bw() + xlab(NULL) + ylab("Memory per Flow(B)") +
   geom_jitter(aes(x = parser,y = mpf),data=d1)
 
@@ -93,12 +91,12 @@ d2$n <- as.numeric(substr(as.character(d2$runid),5,7))
 d2$runid<-factor(d2$runid,levels=c("Soap 0","Soap 1","Soap 2","Soap 3","Soap 4","Soap 5","Soap 6","Soap 7","Soap 8","Soap 9",
  "Soap 10","Soap 11","Soap 12","Soap 14","Soap 13","Soap 15","Soap 16"),ordered=TRUE)
 
-d2.sub<-subset(d2,parser == "sift")
+d2.sub<-subset(d2,parser == "sift" | parser == "siftc")
 
 ggplot() +
- scale_y_continuous() +
- geom_bar(aes(y = gbps,x = n),data=d2.sub,fun.data = mean_sdl,mult = 1,stat = 'summary', color="white",fill="grey70") +
- geom_errorbar(aes(y = gbps,x = n),data=d2.sub,fun.data = mean_cl_normal,conf.int = 0.95,stat = 'summary') +
+ scale_y_continuous(limits=c(0,1.2)) +
+ geom_line(aes(y = gbps,x = n, linetype=parser),data=d2.sub,fun.data = mean_sdl,mult = 1,stat = 'summary') +
+ geom_errorbar(aes(y = gbps,x = n,group=parser),data=d2.sub,fun.data = mean_cl_normal,conf.int = 0.95,stat = 'summary', width=0.5) +
  theme_bw() + ylab("Gbps") + xlab(expression(n))
 
 ggsave("soapbps.pdf", height=picheight, width=picwidth); ggsave("soapbps.eps", height=picheight, width=picwidth); ggsave("soapbps.png", height=picheight, width=picwidth, dpi=300)

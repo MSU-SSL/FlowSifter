@@ -1,3 +1,6 @@
+(** Library of types and utility functions on those types used by
+    FlowSifter codebase *)
+
 open Batteries
 open Printf
 

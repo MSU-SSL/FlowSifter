@@ -1,3 +1,6 @@
+(** D2FA library for compressed DFA, not actively used by flowsifter
+    for speed reasons. *)
+
 open Batteries
 open Printf
 

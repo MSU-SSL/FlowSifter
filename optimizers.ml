@@ -1,3 +1,5 @@
+(** routines for optimizing TCAM rulesets *)
+
 open Ean_std
 
 open Batteries
