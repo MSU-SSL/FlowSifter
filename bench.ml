@@ -1,3 +1,7 @@
+(** The main benchmarking executable to compare FlowSifter with either
+    BinPAC or UltraPAC(netshield).  Lots of command-line options and
+    configurable running of parsers.  *)
+
 open Batteries
 open Printf
 open Ean_std
@@ -5,13 +9,15 @@ open Ean_std
 let set_mhs n = Gc.set { (Gc.get()) with Gc.minor_heap_size = n; }
 let () = set_mhs 250_000;;
 
+let is_http ((_sip, _dip, sp, dp),_,_,_) = sp = 80 || dp = 80
+
 let pac = if exe = "./bench-bpac" then "bpac" else if exe = "./bench-upac" then "upac" else "siftc"
 
 type parser_t = [ `Null | `Sift | `Pac ]
 let p_to_string = function `Null -> "Null" | `Sift -> "Sift" | `Pac -> "Pac "
 
 type mode = Pcap | Mux | Gen
-type main = Parse | Stat | Diff | Dump of int | Tcam
+type main = Parse | Stat | Diff of int | Dump of int | Tcam
 (*** GLOBAL CONFIGURATION ***)
 let check_mem_per_packet = ref false
 let parse_by_flow = ref false
@@ -26,6 +32,7 @@ let gen_flows = ref 0
 let packet_skip = ref 0
 let packet_limit = ref (max_int/2)
 let main = ref Parse
+let filter = ref (fun _ -> true)
 (*** ARGUMENT HANDLING ***)
 
 open Arg2
@@ -40,7 +47,7 @@ let args =
      "Assemble the pcap files into flows");
     (Both ('m', "mux"), [set_mode Mux], [],
      "Mux the given flow files into a simulated pcap");
-    (Both ('d', "diff"), [Unit (fun () -> main := Diff; parse_by_flow := true)], [],
+    (Both ('d', "diff"), [Int (fun skip -> main := Diff skip; parse_by_flow := true)], [],
      "Compare flowsifter with *PAC on events");
     (Name "stat", [Unit (fun () -> main := Stat)], [],
      "Print flow statistics on the input packets only");
@@ -59,6 +66,7 @@ let args =
     (Name "mem", [Set check_mem_per_packet; Clear parse_by_flow], [], "Do memory testing");
     (Name "dump", [Int (fun i -> main := Dump i)], [], "Dump packet i to stdout and exit");
     (Name "tcam", [Unit (fun () -> main := Tcam)], [], "Generate tcam ruleset counts");
+    (Name "filter-http", [Unit (fun () -> filter := is_http)], [], "Filter input to HTTP flows only");
   ]
 and usage_info = "bench-?pac [options] <trace_data.pcap>"
 and descr = "FlowSifter Simulation library"
@@ -128,8 +136,6 @@ let pac_p = {
   add_data = Anypac.add_data;
   get_event_count = Anypac.get_event_count;
 }
-
-(* let is_http ((_sip, _dip, sp, dp),_,_) = sp = 80 || dp = 80 *)
 
 (*** HELPER FUNCTIONS ***)
 
@@ -212,7 +218,7 @@ let run pr =
   let act_packet (flow, data, fin, _off) =
     incr packet_ctr;
     let dir = get_dir flow in
-    if Ns_types.debug_ca && !main <> Diff then
+    if Ns_types.debug_ca && (match !main with Diff _ -> false | _ -> true) then
       Printf.printf "\nP%a:\n%S\n" print_flow flow data;
     (try
        let ctx = Hashtbl.find ht flow in
@@ -277,12 +283,12 @@ module String = struct
   let head ~len str = head str len
 end
 
-let diff_loop flows =
+let diff_loop ?(start_i=0) flows =
   printf "Diff_loop: packet count=%d\n" (Array.length flows);
   let diffs = ref 0 in
   let close_count = ref 0 in
   let (_,_,act_packet_sift) = get_fs `Sift and (_,_,act_packet_pac) = get_fs `Pac in
-  for i = 0 to Array.length flows - 1 do
+  for i = start_i to Array.length flows - 1 do
     let run_sift, run_pac =
       if !parse_by_flow then
         (fun () -> act_packet_sift flows.(i)),
@@ -296,17 +302,18 @@ let diff_loop flows =
     let sift_ediff = !ediff in
     run_pac ();
     let group, pre =
-      if abs (!ediff - sift_ediff) > 4 then "WRONG", "WP"
-      else if !ediff <> sift_ediff then "CLOSE", "CP"
+      if abs (!ediff - sift_ediff) > 4 then ( incr diffs; "WRONG", "WP" )
+      else if !ediff <> sift_ediff then ( incr close_count; "CLOSE", "CP" )
       else "OK", "OP"
     in
     let (flow, data, _fin, off) = flows.(i) in
-    printf "*****************************************************\n";
-    printf "%s: Sift: %d events, %s: %d events pos:%d \n" group sift_ediff pac !ediff i;
-    printf "*****************************************************\n";
-    incr diffs;
-    printf "%s%a@%d:\n%s\n%!" pre print_flow flow off (data |> String.head ~len:1024 |> clean_unprintable);
-    printf "*****************************************************\n\n";
+    if (!ediff <> sift_ediff) then (
+      printf "*****************************************************\n";
+      printf "%s: Sift: %d events, %s: %d events pos:%d \n" group sift_ediff pac !ediff i;
+      printf "*****************************************************\n";
+      printf "%s%a@%d:\n%s\n%!" pre print_flow flow off (data |> String.head ~len:1024 |> clean_unprintable);
+      printf "*****************************************************\n\n";
+    )
   done;
   let float_count = float (Array.length flows) in
   (*  printf "Packets with more than two events difference:\n%a\n" (List.print Int.print) (List.rev !wrongs); *)
@@ -332,6 +339,12 @@ let gen_pkt () =
 let trace_size a =
   Array.fold_left (fun acc (_,x,_,_) -> acc + String.length x) 0 a
 
+let empty_usage () =
+  Arg2.usage ~keywords:args ~usage:usage_info ~descr ~notes;
+  exit 1
+
+
+
 (*** MAIN ***)
 let main () =
   run_id := if !mode = Gen then
@@ -339,16 +352,17 @@ let main () =
     else
       String.concat "," (List.map filename !fns);
   let gen_count = !packet_skip + !packet_limit in
+  if !mode <> Gen && !fns = [] then empty_usage ();
   let packet_enum =
     match !parse_by_flow, !mode with
       |	true, Pcap ->  List.enum !fns |> Pcap_parser.assemble gen_count
       | false, Pcap -> List.enum !fns |> Pcap_parser.pre_parse
-      | true, Mux -> List.enum !fns |> Pcap_parser.make_flows_files
+      | true, Mux ->   List.enum !fns |> Pcap_parser.make_flows_files
       | false, Mux ->  List.enum !fns |> Pcap_parser.make_packets_files
-      | true, Gen -> Enum.from gen_pkt |> Enum.take !gen_flows |> Pcap_parser.make_flows
+      | true, Gen ->   Enum.from gen_pkt |> Enum.take !gen_flows |> Pcap_parser.make_flows
       | false, Gen -> Enum.from gen_pkt |> Enum.take !gen_flows |> Pcap_parser.make_packets
   in
-  let packets = packet_enum |> Enum.skip !packet_skip |> Enum.take !packet_limit |> Array.of_enum in
+  let packets = packet_enum |> Enum.filter !filter |> Enum.skip !packet_skip |> Enum.take !packet_limit |> Array.of_enum in
   if packets = [| |] then failwith "No packets";
   trace_len := trace_size packets;
   let run l p = l (get_fs p) !rep_cnt packets in
@@ -358,7 +372,7 @@ let main () =
       Array.iter (fun ((caq,pchk,rs), _tcam_qs) -> Printf.printf "CA state: %d pred: %a TCAM Cost: TODO Rules:\n%a\n\n" caq Ns_run.print_predchk pchk (List.print Ns_parse.print_opt_rule) rs) entries;
       Printf.printf "Total TCAM Entries: %d\n" (Array.enum entries |> map (snd %> Array.enum %> map Vect.length) |> Enum.flatten |> reduce (+))
     | Stat  -> printf "%s: %d packets, total length %d\n" !run_id (Array.length packets) !trace_len
-    | Diff  -> diff_loop packets
+    | Diff n -> diff_loop ~start_i:n packets
     | Dump p_num ->
       let (_,kapack,_,_) = packets.(p_num) in print_string kapack
     | _ when !check_mem_per_packet ->
