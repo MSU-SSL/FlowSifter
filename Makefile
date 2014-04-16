@@ -148,14 +148,23 @@ demo: *.ml
 ## Extraction grammar generation tool
 ##
 
+#demo.cmx: demo.ml
+#	$(OCAMLOPT) -package pcap -c $< -o $@
+#
+#gen_extr.cmx: gen_extr.ml demo.cmx
+#	$(OCAMLOPT) -package lablgtk2 -c $< -o $@
+#
+#gen_extr: $(FLOWSIFT) demo.cmx gen_extr.cmx
+#	$(OCAMLOPT) -package lablgtk2,pcap -linkpkg $^ -o $@
+#
 demo.cmx: demo.ml
-	$(OCAMLOPT) -package pcap -c $< -o $@
+	$(OCAMLOPT) -c $< -o $@
 
 gen_extr.cmx: gen_extr.ml demo.cmx
 	$(OCAMLOPT) -package lablgtk2 -c $< -o $@
 
 gen_extr: $(FLOWSIFT) demo.cmx gen_extr.cmx
-	$(OCAMLOPT) -package lablgtk2,pcap -linkpkg $^ -o $@
+	$(OCAMLOPT) -package lablgtk2 -linkpkg $^ -o $@
 
 FlowSifter: gen_extr
 	mv gen_extr dist/FlowSifter
@@ -247,25 +256,70 @@ harvdata: bench-bpac bench-upac bench-siftc
 harvest.pdf: harvest.R harvdata
 	R CMD BATCH $<
 
+### HTTP TRACES FROM GENERAL USAGE
+dumpdata: bench-bpac bench-upac bench-siftc
+	@mkdir -p old/
+	-mv -b $@ old/$@.bkp
+	echo -e $(HEADER) > $@
+	time for a in ~/traces/http/use/norige-dump*; do \
+	    ./bench-bpac     -n $(COUNT) $$a | tee -a $@; \
+	    ./bench-upac  -p -n $(COUNT) $$a | tee -a $@; \
+	    ./bench-siftc -p -n $(COUNT) $$a | tee -a $@; \
+	done
+
+norigedump.pdf: norigedump.R dumpdata
+	R CMD BATCH $<
+
+### UNFILTERED NORIGE TRACES
+dumpdata2: bench-bpac bench-upac bench-siftc
+	@mkdir -p old/
+	-mv -b $@ old/$@.bkp
+	echo -e $(HEADER) > $@
+	time for a in ~/traces/fullpayload/Norige/dump.2011*; do \
+	    ./bench-bpac     -n $(COUNT) $$a | tee -a $@; \
+	    ./bench-upac  -p -n $(COUNT) $$a | tee -a $@; \
+	    ./bench-siftc -p -n $(COUNT) $$a | tee -a $@; \
+	done
+
+norigedump2.pdf: norigedump2.R dumpdata2
+	R CMD BATCH $<
+
 
 ### SIMULATED XML_RPC TRACES
 FLOWS ?= 10000
 rectest: bench-siftc-soap
 	@mkdir -p old/
 	-mv -b $@ old/$@.bkp
-	echo -e $(HEADER) > $@
+	( echo -e $(HEADER); \
 	time for a in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do \
-	    ./bench-siftc-soap --seed 230 -n $(COUNT) -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-siftc-soap --seed 231 -n $(COUNT) -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-siftc-soap --seed 232 -n $(COUNT) -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-siftc-soap --seed 233 -n $(COUNT) -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-siftc-soap --seed 234 -n $(COUNT) -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-siftc-soap --seed 235 -n $(COUNT) -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-siftc-soap --seed 236 -n $(COUNT) -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-siftc-soap --seed 237 -n $(COUNT) -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-siftc-soap --seed 238 -n $(COUNT) -g $$a $(FLOWS)|tee -a $@; \
-	    ./bench-siftc-soap --seed 239 -n $(COUNT) -g $$a $(FLOWS)|tee -a $@; \
-	done
+	    ./bench-siftc-soap --seed 230 -n $(COUNT) -g $$a $(FLOWS) -x e-soap.ca; \
+	    ./bench-siftc-soap --seed 231 -n $(COUNT) -g $$a $(FLOWS) -x e-soap.ca; \
+	    ./bench-siftc-soap --seed 232 -n $(COUNT) -g $$a $(FLOWS) -x e-soap.ca; \
+	    ./bench-siftc-soap --seed 233 -n $(COUNT) -g $$a $(FLOWS) -x e-soap.ca; \
+	    ./bench-siftc-soap --seed 234 -n $(COUNT) -g $$a $(FLOWS) -x e-soap.ca; \
+	    ./bench-siftc-soap --seed 235 -n $(COUNT) -g $$a $(FLOWS) -x e-soap.ca; \
+	    ./bench-siftc-soap --seed 236 -n $(COUNT) -g $$a $(FLOWS) -x e-soap.ca; \
+	    ./bench-siftc-soap --seed 237 -n $(COUNT) -g $$a $(FLOWS) -x e-soap.ca; \
+	    ./bench-siftc-soap --seed 238 -n $(COUNT) -g $$a $(FLOWS) -x e-soap.ca; \
+	    ./bench-siftc-soap --seed 239 -n $(COUNT) -g $$a $(FLOWS) -x e-soap.ca; \
+	done ) | tee $@
+
+rectest2: bench-siftc-soap
+	@mkdir -p old/
+	-mv -b $@ old/$@.bkp
+	( echo -e $(HEADER); \
+	time for a in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do \
+	    ./bench-siftc-soap --seed 230 -n $(COUNT) -g $$a $(FLOWS) -x e-soap2.ca; \
+	    ./bench-siftc-soap --seed 231 -n $(COUNT) -g $$a $(FLOWS) -x e-soap2.ca; \
+	    ./bench-siftc-soap --seed 232 -n $(COUNT) -g $$a $(FLOWS) -x e-soap2.ca; \
+	    ./bench-siftc-soap --seed 233 -n $(COUNT) -g $$a $(FLOWS) -x e-soap2.ca; \
+	    ./bench-siftc-soap --seed 234 -n $(COUNT) -g $$a $(FLOWS) -x e-soap2.ca; \
+	    ./bench-siftc-soap --seed 235 -n $(COUNT) -g $$a $(FLOWS) -x e-soap2.ca; \
+	    ./bench-siftc-soap --seed 236 -n $(COUNT) -g $$a $(FLOWS) -x e-soap2.ca; \
+	    ./bench-siftc-soap --seed 237 -n $(COUNT) -g $$a $(FLOWS) -x e-soap2.ca; \
+	    ./bench-siftc-soap --seed 238 -n $(COUNT) -g $$a $(FLOWS) -x e-soap2.ca; \
+	    ./bench-siftc-soap --seed 239 -n $(COUNT) -g $$a $(FLOWS) -x e-soap2.ca; \
+	done ) | tee $@
 
 figures: rundata rectest memory.R
 	R CMD BATCH memory.R
@@ -307,8 +361,8 @@ ns_compile.native: $(FLOWSIFT) ns_compile.cmx
 fs_lib.h: ns_compile.native http.pro extr.ca
 	./ns_compile.native http.pro extr.ca "$@"
 
-fs_lib_soap.h: ns_compile.native http.pro e-soap.ca
-	./ns_compile.native http.pro e-soap.ca "$@"
+fs_lib_soap.h: ns_compile.native http.pro e-soap2.ca
+	./ns_compile.native http.pro e-soap2.ca "$@"
 
 fs_lib_dns.h: ns_compile.native dns.pro dns.ext
 	./ns_compile.native dns.pro dns.ext "$@"
