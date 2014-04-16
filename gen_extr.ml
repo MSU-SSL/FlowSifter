@@ -1,11 +1,14 @@
+(** Program to help user generate an extraction grammar from a
+    protocol grammar in a user-friendly way; requires lablgtk2 *)
+
 open Batteries
 open Gobject.Data
 open Ns_types
 open ParsedPCFG
 open Printf
 
-let in_files = ["http.pro"; "dns.pro"]
-let filters = ["tcp port 80"; "udp port 53"]
+let in_files = ["http.pro"; "dns.pro"; "dyck.pro"]
+let filters = ["tcp port 80"; "udp port 53"; "udp port 99"]
 (* TODO: out_file *)
 let window_width = 500 and window_height = 700
 let filter_enabled = ref false
@@ -21,12 +24,11 @@ let children_of_nonterm g r =
   let _nts_in_prod {expression=e} = List.filter_map nts_in_exp e in
   NTMap.find r g.rules (*|> List.map nts_in_prod*) (*|> List.filter ((<>) [])*)
 
-let uniquify_ht = Hashtbl.create 17
-let uniquify =
-  fun s ->
+let uniquify s = s
+(*  fun s ->
     try s ^ string_of_int (Hashtbl.find uniquify_ht s |> Ref.post_incr)
     with Not_found -> Hashtbl.add uniquify_ht s (ref 1); s
-
+*)
 let add_child (ts:GTree.tree_store) ?parent prod =
   let row = ts#append ?parent () in
   ts#set ~row ~column:col_enabled false;
@@ -195,7 +197,7 @@ let main () =
     let fn = get_fn() in
     g := Ns_parse.parse_file_as_spec fn;
     model#clear ();
-    Hashtbl.clear uniquify_ht;
+    (*Hashtbl.clear uniquify_ht;*)
     populate_model model !g;
   ) |> ignore;
   combo#set_active 0;
@@ -228,7 +230,7 @@ let main () =
   let filter = if !filter_enabled then List.nth filters !fn_pos else "" in
   printf "Generating parser from %s and %s\n%!" proto_file extr_file;
   let new_parser = Prog_parse.new_parser proto_file extr_file in
-  printf "Done simplifying parser, starting capture\n%!";
-  Demo.pcap_act filter new_parser
+  printf "Done simplifying parser, starting capture\n%!"
+(*  Demo.pcap_act filter new_parser*)
 
 let () = main ()
